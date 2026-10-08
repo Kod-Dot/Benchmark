@@ -1,4 +1,9 @@
-# Benchmark
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/benchmark-logo-dark.svg">
+    <img src="docs/brand/benchmark-logo.svg" alt="Benchmark" width="360">
+  </picture>
+</h1>
 
 Security assessment for Active Directory, Microsoft Entra ID and Microsoft 365. Benchmark runs 800+ checks across on-premises Active Directory, AD Certificate Services, domain controllers, Windows servers and workstations, Entra ID, Intune, Exchange Online, SharePoint Online, Teams, Purview, Defender and Azure. It maps attack paths into Tier 0, hunts for signs of compromise in event and sign-in logs, and produces executive, technical and remediation reports.
 
