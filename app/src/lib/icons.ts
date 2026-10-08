@@ -1,6 +1,4 @@
 // Microsoft Fluent UI System Icons (MIT), bundled at build time as raw SVG.
-// AD object icons (user, group, OU, GPO...) will come from the Windows system
-// DLLs at runtime instead; see docs/plans/dc-assessor-app-plan.md §5.3.
 
 import add from '@fluentui/svg-icons/icons/add_20_regular.svg?raw';
 import apps from '@fluentui/svg-icons/icons/apps_20_regular.svg?raw';

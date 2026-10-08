@@ -347,7 +347,7 @@ function Invoke-Graph([string] $Path) {
     $uri = if ($Path.StartsWith('https://')) { $Path } else { "$graph/$Path" }
     for ($attempt = 1; ; $attempt++) {
         # ocp-client-name and -version identify the caller; some APIs (BitLocker) require them.
-        $r = Invoke-Http -Method GET -Uri $uri -Headers @{ Authorization = "Bearer $(Get-AccessToken)"; ConsistencyLevel = 'eventual'; 'ocp-client-name' = 'DC-Assessor'; 'ocp-client-version' = '1.0' }
+        $r = Invoke-Http -Method GET -Uri $uri -Headers @{ Authorization = "Bearer $(Get-AccessToken)"; ConsistencyLevel = 'eventual'; 'ocp-client-name' = 'Benchmark'; 'ocp-client-version' = '1.0' }
         if ($r.status -eq 200) { return $r.body }
         if (($r.status -in 429, 500, 502, 503, 504) -and $attempt -lt 6) {
             $wait = 0

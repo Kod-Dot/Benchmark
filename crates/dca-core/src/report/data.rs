@@ -201,7 +201,7 @@ pub fn sarif(view: &AssessmentView, tool_version: &str) -> Value {
             "tool": {"driver": {
                 "name": "Benchmark",
                 "version": tool_version,
-                "informationUri": "https://github.com/Kod-Dot/DC-Assessor",
+                "informationUri": "https://github.com/Kod-Dot/Benchmark",
                 "rules": rules,
             }},
             "results": results,

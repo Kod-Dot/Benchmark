@@ -248,7 +248,7 @@ mod tests {
             check: check.into(),
             scope: vec![scope.into()],
             reason: "Legacy app until migration".into(),
-            accepted_by: "CONTOSO\\mubie".into(),
+            accepted_by: "CONTOSO\\jdoe".into(),
             accepted_on: "2026-10-06".into(),
             expires_on: expires.map(str::to_string),
         }
@@ -275,7 +275,7 @@ mod tests {
         );
         assert_eq!(
             a.results.checks[0].note.as_deref(),
-            Some("Risk accepted by CONTOSO\\mubie on 2026-10-06 until 2026-10-06: Legacy app until migration")
+            Some("Risk accepted by CONTOSO\\jdoe on 2026-10-06 until 2026-10-06: Legacy app until migration")
         );
 
         // The day after the last day, it no longer applies.
