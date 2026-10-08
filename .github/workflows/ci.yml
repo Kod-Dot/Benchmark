@@ -233,6 +233,10 @@ jobs:
       - name: The password tool launches
         shell: pwsh
         run: |
+          # The C runtime is linked in (.cargo/config.toml), so the tool runs
+          # without the Visual C++ Redistributable.
+          $bytes = [System.IO.File]::ReadAllBytes((Resolve-Path target/release/benchmark-password.exe))
+          if ([Text.Encoding]::ASCII.GetString($bytes) -match '(?i)vcruntime140') { throw 'benchmark-password.exe needs VCRUNTIME140.dll.' }
           # With no account on the runner it prints guidance and exits 1,
           # before asking for any password, which proves it links and runs.
           # That expected exit 1 must not fail the step, so check the output.
@@ -249,6 +253,8 @@ jobs:
       - name: Command line works from the built app
         shell: pwsh
         run: |
+          $bytes = [System.IO.File]::ReadAllBytes((Resolve-Path target/release/Benchmark.exe))
+          if ([Text.Encoding]::ASCII.GetString($bytes) -match '(?i)vcruntime140') { throw 'Benchmark.exe needs VCRUNTIME140.dll.' }
           $exe = 'target/release/Benchmark.exe'
           & $exe list | Out-Host
           if ($LASTEXITCODE) { throw "list exited with $LASTEXITCODE" }
