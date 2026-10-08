@@ -1,6 +1,7 @@
 <script lang="ts">
   import Icon from '../components/Icon.svelte';
   import { accountName, assessmentsFolder, changePassword, inDesktopApp, listExceptions, openFolder, removeException } from '../lib/backend';
+  import { externalLinks } from '../lib/external';
   import { num } from '../lib/format';
   import { applyTheme, savedTheme, type Theme } from '../lib/theme';
   import { display, setMotion, setZoom, stepZoom, ZOOM_STEPS } from '../lib/prefs.svelte';
@@ -253,10 +254,24 @@
         <p class="empty muted">The catalog could not be read.</p>
       {/if}
     </section>
+
+    <section class="part" use:externalLinks>
+      <h3>Licence</h3>
+      <p class="muted small lead licence">
+        Free for internal use under the <a href="https://polyformproject.org/licenses/internal-use/1.0.0">PolyForm Internal Use License 1.0.0</a>:
+        an organization assessing its own environment. Consultants, auditors and service providers who use Benchmark for their
+        clients need a <a href="https://github.com/Kod-Dot/Benchmark/blob/main/COMMERCIAL-LICENSE.md">commercial licence</a>.
+        Copyright (c) 2026 Kod-Dot.
+      </p>
+    </section>
   </main>
 </div>
 
 <style>
+  /* Links in running text need more than colour to stand out. */
+  .licence a {
+    text-decoration: underline;
+  }
   .screen {
     height: 100%;
     display: flex;

@@ -290,7 +290,7 @@ jobs:
           Copy-Item target/release/Benchmark.exe (Join-Path $portable 'Benchmark.exe')
           Copy-Item target/release/benchmark-password.exe (Join-Path $portable 'BenchmarkPassword.exe')
           Copy-Item -Recurse checks, collectors $portable
-          Copy-Item README.md, LICENSE, THIRD-PARTY-NOTICES.md $portable
+          Copy-Item README.md, LICENSE, COMMERCIAL-LICENSE.md, THIRD-PARTY-NOTICES.md $portable
           Compress-Archive -Path (Join-Path $portable '*') -DestinationPath (Join-Path $dist "Benchmark-$version-portable.zip")
           Compress-Archive -Path checks/* -DestinationPath (Join-Path $dist "checks-catalog-$version.zip")
           Copy-Item target/release/bundle/msi/*.msi $dist

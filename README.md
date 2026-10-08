@@ -145,4 +145,8 @@ Push a version tag (for example `git tag v0.1.0 && git push origin v0.1.0`). CI 
 
 ## Licence
 
-Copyright (c) 2026 Kod-Dot. All rights reserved. See [LICENSE](LICENSE). Third-party components keep their own licences, listed in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+Benchmark is **free for internal use**: any organization may use it to assess its own environment, under the [PolyForm Internal Use License 1.0.0](LICENSE).
+
+Consultants, auditors, penetration testers and managed service providers who use Benchmark for their clients, and anyone reselling, hosting or redistributing it, need a **commercial licence**. See [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md).
+
+Copyright (c) 2026 Kod-Dot. Third-party components keep their own licences, listed in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
