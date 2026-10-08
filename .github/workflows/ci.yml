@@ -345,4 +345,10 @@ jobs:
             cat dist/SHA256SUMS.txt
             echo '```'
           } > notes.md
-          gh release create "$GITHUB_REF_NAME" dist/* --title "Benchmark ${GITHUB_REF_NAME#v}" --notes-file notes.md --verify-tag
+          # A release drafted on GitHub's website for this tag gets the files added.
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+            gh release edit "$GITHUB_REF_NAME" --notes-file notes.md --draft=false
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* --title "Benchmark ${GITHUB_REF_NAME#v}" --notes-file notes.md --verify-tag
+          fi
