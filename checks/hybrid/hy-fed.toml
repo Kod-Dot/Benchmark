@@ -1,0 +1,213 @@
+# HY-FED: Federation
+
+area = "HY-FED"
+
+[[check]]
+id = "HY-FED-001"
+title = "ADFS farm inventory, version, patch"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "An AD FS server runs an out-of-support farm behavior level or Windows version, or its last update is more than 60 days old. Read on the server itself (the identity part); add AD FS and sync servers to the endpoint targets."
+impact = "AD FS issues tokens for the whole organization; unpatched servers have known remote vulnerabilities."
+remediation = [
+  "Patch AD FS servers monthly, and plan the move to managed authentication.",
+]
+verify = "Get-AdfsFarmInformation; Get-HotFix | Sort-Object InstalledOn | Select-Object -Last 1"
+
+[[check.detail.references]]
+title = "AD FS operations"
+url = "https://learn.microsoft.com/windows-server/identity/ad-fs/ad-fs-operations"
+
+[[check]]
+id = "HY-FED-002"
+title = "Token-signing certificate age and key storage (Golden SAML exposure)"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "An AD FS token-signing certificate has been in use for more than a year, or its private key is not in an HSM. Read on the server itself (the identity part); add AD FS and sync servers to the endpoint targets."
+impact = "Anyone who extracts the token-signing key (from the server, or through the DKM key in AD) can forge tokens for any user without a password or MFA (Golden SAML)."
+remediation = [
+  "Move the token-signing key to an HSM, roll it over regularly, and treat AD FS servers as Tier 0.",
+]
+verify = "Get-AdfsCertificate -CertificateType Token-Signing"
+mitre = ["T1606"]
+
+[[check.detail.references]]
+title = "Best practices for securing AD FS"
+url = "https://learn.microsoft.com/windows-server/identity/ad-fs/deployment/best-practices-securing-ad-fs"
+
+[[check]]
+id = "HY-FED-003"
+title = "ADFS service account privileges and gMSA usage"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "The AD FS service does not run as a group managed service account, or its account is in a privileged AD group. Read on the server itself (the identity part); add AD FS and sync servers to the endpoint targets."
+impact = "A password-based service account can be Kerberoasted, and an admin service account turns an AD FS compromise into domain compromise."
+remediation = [
+  "Run AD FS as a gMSA with no group memberships beyond what AD FS needs.",
+]
+verify = "Get-CimInstance Win32_Service -Filter \"Name='adfssrv'\" | Select-Object StartName"
+
+[[check.detail.references]]
+title = "Best practices for securing AD FS"
+url = "https://learn.microsoft.com/windows-server/identity/ad-fs/deployment/best-practices-securing-ad-fs"
+
+[[check]]
+id = "HY-FED-004"
+title = "Extranet smart lockout enabled"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "AD FS extranet lockout is off, not smart lockout, or smart lockout is only logging. Read on the server itself (the identity part); add AD FS and sync servers to the endpoint targets."
+impact = "Password spraying through the AD FS proxy guesses AD passwords, or locks real users out."
+remediation = [
+  "Turn on extranet smart lockout in enforce mode (Set-AdfsProperties -ExtranetLockoutMode AdfsSmartLockoutEnforce).",
+]
+verify = "Get-AdfsProperties | Select-Object ExtranetLockoutEnabled, ExtranetLockoutMode"
+mitre = ["T1110.003"]
+
+[[check.detail.references]]
+title = "AD FS extranet smart lockout"
+url = "https://learn.microsoft.com/windows-server/identity/ad-fs/operations/configure-ad-fs-extranet-smart-lockout-protection"
+
+[[check]]
+id = "HY-FED-005"
+title = "ADFS endpoints exposed unnecessarily (WS-Trust usernamemixed, etc.)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "A legacy WS-Trust usernamemixed or windowstransport endpoint is published through the Web Application Proxy. Read on the server itself (the identity part); add AD FS and sync servers to the endpoint targets."
+impact = "These endpoints accept a user name and password directly and skip MFA, a common password spraying and bypass route."
+remediation = [
+  "Turn off proxy for the usernamemixed and windowstransport endpoints (Set-AdfsEndpoint -Proxy $false).",
+]
+verify = "Get-AdfsEndpoint | Where-Object { $_.Enabled -and $_.Proxy } | Select-Object AddressPath"
+mitre = ["T1110"]
+
+[[check.detail.references]]
+title = "Best practices for securing AD FS"
+url = "https://learn.microsoft.com/windows-server/identity/ad-fs/deployment/best-practices-securing-ad-fs"
+
+[[check]]
+id = "HY-FED-006"
+title = "Federated domain configuration in Entra (supportsMfa, federatedIdpMfaBehavior, preferredAuthenticationProtocol)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "A federated domain has federatedIdpMfaBehavior set to a value other than rejectMfaByFederatedIdp. Entra ID accepts an MFA claim made by the federation server instead of always doing MFA itself."
+impact = "Whoever steals the token-signing key of the federation server can forge tokens that also claim MFA was done, so Conditional Access MFA requirements no longer protect federated users."
+attack = [
+  "Steals the token-signing key from the federation server.",
+  "Forges a SAML token for an administrator that includes the MFA claim.",
+  "Signs in to Entra ID and passes Conditional Access MFA requirements without a second factor.",
+]
+remediation = [
+  "Make sure users in the domain are registered for Entra MFA.",
+  "Set federatedIdpMfaBehavior to rejectMfaByFederatedIdp with Update-MgDomainFederationConfiguration so Entra ID always performs MFA itself.",
+  "Plan the move of the domain to managed authentication (password hash synchronization or pass-through authentication).",
+]
+verify = "Get-MgDomainFederationConfiguration -DomainId <domain> | Select-Object IssuerUri, FederatedIdpMfaBehavior, PreferredAuthenticationProtocol"
+cvss = "AV:N/AC:H/PR:H/UI:N/S:U/C:H/I:H/A:N"
+mitre = ["T1556", "T1606.002", "T1484.002"]
+
+[[check.detail.references]]
+title = "internalDomainFederation resource type (Microsoft Graph)"
+url = "https://learn.microsoft.com/graph/api/resources/internaldomainfederation"
+
+[[check.detail.references]]
+title = "What is federation with Microsoft Entra ID?"
+url = "https://learn.microsoft.com/entra/identity/hybrid/connect/whatis-fed"
+
+[[check]]
+id = "HY-FED-007"
+title = "Unexpected federated domains or added certificates (backdoor indicator)"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "A federated domain in Entra ID trusts a signing certificate or issuer that is not one of the AD FS farms read on-premises."
+impact = "An attacker with Global Administrator or Hybrid Identity Administrator rights can add a federation trust or certificate they control and sign in as any user of the domain."
+remediation = [
+  "Remove certificates and issuers that are not the organization's own, investigate who added them, and alert on federation changes.",
+]
+verify = "Get-MgDomainFederationConfiguration -DomainId <domain>"
+mitre = ["T1484.002"]
+
+[[check.detail.references]]
+title = "Federation backdoor detection"
+url = "https://learn.microsoft.com/entra/identity/hybrid/connect/how-to-connect-fed-management"
+
+[[check]]
+id = "HY-FED-008"
+title = "Migration readiness: federation still needed or can move to PHS/PTA"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "One or more domains are still federated. When password hash sync is already enabled the domain can move to managed authentication, for example with staged rollout; when it is not, password hash sync has to be enabled first."
+impact = "Federated sign-in depends on the federation servers and their token-signing key. Keeping them for domains that no longer need them keeps an attack surface (forged SAML tokens) and an outage risk."
+attack = [
+  "Compromises the federation server and steals the token-signing key.",
+  "Forges SAML tokens for any user of the federated domain.",
+]
+remediation = [
+  "Enable password hash synchronization if it is not on, and let it run for all users.",
+  "Test managed authentication with staged rollout for a pilot group.",
+  "Convert the domain to managed authentication after confirming no apps or claims still depend on the federation server, then retire the farm.",
+]
+verify = "Get-MgDomain | Where-Object AuthenticationType -eq 'Federated' | Select-Object Id, AuthenticationType; on the sync server run Get-ADSyncAADCompanyFeature and check PasswordHashSync."
+cvss = "AV:N/AC:H/PR:H/UI:N/S:U/C:L/I:L/A:N"
+mitre = ["T1606.002", "T1484.002"]
+
+[[check.detail.references]]
+title = "Migrate from federation to cloud authentication"
+url = "https://learn.microsoft.com/entra/identity/hybrid/connect/migrate-from-federation-to-cloud-authentication"
+
+[[check.detail.references]]
+title = "Cloud authentication: Staged rollout"
+url = "https://learn.microsoft.com/entra/identity/hybrid/connect/how-to-connect-staged-rollout"
+
+[[check]]
+id = "HY-FED-009"
+title = "ADFS auditing enabled"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "AD FS auditing is off, its log level lacks success or failure audits, or Windows does not record Application Generated events. Read on the server itself (the identity part); add AD FS and sync servers to the endpoint targets."
+impact = "Token issuance and failed sign-ins through AD FS are not recorded, so attacks on it cannot be investigated."
+remediation = [
+  "Set-AdfsProperties -AuditLevel Verbose -LogLevel with SuccessAudits and FailureAudits, and auditpol /set /subcategory:\"Application Generated\" /success:enable /failure:enable.",
+]
+verify = "Get-AdfsProperties | Select-Object AuditLevel, LogLevel; auditpol /get /subcategory:\"Application Generated\""
+mitre = ["T1562.002"]
+
+[[check.detail.references]]
+title = "AD FS auditing"
+url = "https://learn.microsoft.com/windows-server/identity/ad-fs/troubleshooting/ad-fs-tshoot-logging"
+
+[[check]]
+id = "HY-FED-010"
+title = "Relying party trusts inventory with weak claims rules"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "An enabled relying party trust permits every authenticated user with no access control policy, or signs tokens with SHA-1. Read on the server itself (the identity part); add AD FS and sync servers to the endpoint targets."
+impact = "Every account in AD, including stale and service accounts, can get a token for the application."
+remediation = [
+  "Assign an access control policy that limits the trust to the people who need the application, and use SHA-256.",
+]
+verify = "Get-AdfsRelyingPartyTrust | Select-Object Name, AccessControlPolicyName, SignatureAlgorithm"
+
+[[check.detail.references]]
+title = "Best practices for securing AD FS"
+url = "https://learn.microsoft.com/windows-server/identity/ad-fs/deployment/best-practices-securing-ad-fs"

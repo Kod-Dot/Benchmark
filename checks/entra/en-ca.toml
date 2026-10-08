@@ -1,0 +1,578 @@
+# EN-CA: Conditional Access
+
+area = "EN-CA"
+
+[[check]]
+id = "EN-CA-001"
+title = "CA policy inventory with state (on, report-only, off)"
+status = "implemented"
+severity = "info"
+
+[check.detail]
+description = "Inventory of the Conditional Access policies in the tenant, grouped by state: enabled, report-only, and disabled."
+remediation = [
+  "Review policies in report-only or disabled state and either enforce them or delete them.",
+]
+verify = "Get-MgIdentityConditionalAccessPolicy -All | Select-Object DisplayName, State"
+
+[[check.detail.references]]
+title = "What is Conditional Access?"
+url = "https://learn.microsoft.com/entra/identity/conditional-access/overview"
+
+[[check]]
+id = "EN-CA-002"
+title = "Policy requiring MFA for all users exists and is enforced"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "No enabled Conditional Access policy requires multifactor authentication, or an authentication strength, for All users on All resources. When security defaults is on instead, the check passes with a note."
+impact = "Users can sign in with a password alone in at least some situations, so a sprayed, phished, or leaked password is enough to access the tenant."
+attack = [
+  "Obtains a valid password through spraying, phishing, or a breach list.",
+  "Signs in from the internet to Microsoft 365 or Azure without an MFA prompt.",
+  "Reads mail and files and uses the account for further phishing.",
+]
+remediation = [
+  "In the Microsoft Entra admin center, go to Protection > Conditional Access > Policies and create a policy for All users and All resources.",
+  "Under Grant, select Require multifactor authentication or Require authentication strength.",
+  "Exclude only emergency access accounts, start in report-only, then switch to On.",
+]
+verify = "Get-MgIdentityConditionalAccessPolicy -All | Select-Object DisplayName, State"
+frameworks = [
+  "CIS Microsoft 365 5.2.2.2",
+  "Microsoft Secure Score",
+]
+cvss = "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:L/A:N"
+mitre = ["T1078.004", "T1110.003"]
+
+[[check.detail.references]]
+title = "Require multifactor authentication for all users"
+url = "https://learn.microsoft.com/entra/identity/conditional-access/policy-all-users-mfa-strength"
+
+[[check]]
+id = "EN-CA-003"
+title = "Policy requiring phishing-resistant MFA for admins"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "No enabled Conditional Access policy requires the built-in Phishing-resistant MFA authentication strength for administrator roles, including at least Global Administrator."
+impact = "Administrators can satisfy MFA with methods that an adversary-in-the-middle phishing page can relay, so a phished administrator session gives control over the tenant."
+attack = [
+  "Sends an administrator a link to a phishing proxy page.",
+  "Relays the password and MFA response to Microsoft Entra ID.",
+  "Steals the session cookie and uses it to make administrative changes.",
+]
+remediation = [
+  "Make sure every administrator has registered a phishing-resistant method (see EN-AUTH-002).",
+  "In the Microsoft Entra admin center, go to Protection > Conditional Access > Policies and create a policy targeting Directory roles, with at least the privileged roles selected.",
+  "Under Grant, select Require authentication strength: Phishing-resistant MFA. Exclude only emergency access accounts.",
+]
+verify = "Get-MgIdentityConditionalAccessPolicy -All | Where-Object { $_.Conditions.Users.IncludeRoles } | Select-Object DisplayName, State, @{n='Strength';e={$_.GrantControls.AuthenticationStrength.DisplayName}}"
+cvss = "AV:N/AC:L/PR:N/UI:R/S:C/C:H/I:H/A:N"
+mitre = ["T1557", "T1078.004"]
+
+[[check.detail.references]]
+title = "Require phishing-resistant multifactor authentication for administrators"
+url = "https://learn.microsoft.com/entra/identity/conditional-access/policy-admin-phish-resistant-mfa"
+
+[[check]]
+id = "EN-CA-004"
+title = "Legacy authentication blocked for all users"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "No enabled Conditional Access policy blocks legacy authentication protocols (Exchange ActiveSync with basic auth, POP, IMAP, SMTP AUTH, older Office clients) for all users. Legacy protocols cannot do multifactor authentication."
+impact = "Password spraying and stolen passwords work against these protocols even for users who are registered for MFA, so MFA does not protect the tenant."
+attack = [
+  "Collects a list of user names, for example from email addresses.",
+  "Sprays common passwords against a legacy protocol endpoint.",
+  "Signs in to mailboxes or other resources without an MFA prompt.",
+]
+remediation = [
+  "Check the sign-in logs for the Client app filter \"Other clients\" and legacy clients to find who still uses them.",
+  "Create a Conditional Access policy for All users, All resources, Client apps: Exchange ActiveSync clients and Other clients, Grant: Block. Start in report-only.",
+  "Exclude only emergency access accounts.",
+]
+frameworks = [
+  "CIS Microsoft 365 5.2.2.3",
+  "Microsoft Secure Score",
+]
+cvss = "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:L/A:N"
+mitre = ["T1110.003", "T1078.004"]
+
+[[check.detail.references]]
+title = "Block legacy authentication with Conditional Access"
+url = "https://learn.microsoft.com/entra/identity/conditional-access/policy-block-legacy-authentication"
+
+[[check]]
+id = "EN-CA-005"
+title = "Device code flow and authentication transfer restricted"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "No enabled Conditional Access policy blocks the device code flow through the authentication flows condition."
+impact = "Device code phishing lets an attacker get tokens for a user who completes a normal sign-in, including MFA, on a Microsoft page."
+attack = [
+  "Starts a device code sign-in and sends the code to the user with a plausible pretext.",
+  "The user enters the code at the Microsoft device login page and completes MFA.",
+  "Receives access and refresh tokens for the user's account.",
+]
+remediation = [
+  "Use the sign-in logs to find legitimate device code use (Authentication protocol: Device code).",
+  "In the Microsoft Entra admin center, go to Protection > Conditional Access > Policies and create a policy for All users and All resources with Conditions > Authentication flows > Device code flow, Grant: Block.",
+  "Exclude only the users or devices that need it, and also consider blocking Authentication transfer.",
+]
+verify = "(Invoke-MgGraphRequest -Method GET -Uri \"https://graph.microsoft.com/beta/identity/conditionalAccess/policies\").value | ForEach-Object { [pscustomobject]@{ Name = $_.displayName; State = $_.state; Flows = $_.conditions.authenticationFlows.transferMethods } }"
+cvss = "AV:N/AC:L/PR:N/UI:R/S:U/C:H/I:L/A:N"
+mitre = ["T1078.004"]
+
+[[check.detail.references]]
+title = "Block authentication flows with Conditional Access policy"
+url = "https://learn.microsoft.com/entra/identity/conditional-access/policy-block-authentication-flows"
+
+[[check]]
+id = "EN-CA-006"
+title = "Sign-in risk policy (P2)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "No enabled Conditional Access policy acts on sign-in risk. Not assessed for tenants without Microsoft Entra ID P2."
+impact = "Sign-ins that Identity Protection rates as risky, such as from anonymous IP addresses or with token anomalies, are not challenged or blocked."
+attack = [
+  "Signs in with a stolen password from an unfamiliar location or anonymizing network.",
+  "Completes the sign-in because no policy requires extra verification for the detected risk.",
+]
+remediation = [
+  "In the Microsoft Entra admin center, go to Protection > Conditional Access > Policies and create a policy for All users and All resources.",
+  "Under Conditions > Sign-in risk, select High and Medium. Under Grant, require multifactor authentication or an authentication strength, and set Session > Sign-in frequency to Every time.",
+  "Exclude only emergency access accounts.",
+]
+verify = "Get-MgIdentityConditionalAccessPolicy -All | Where-Object { $_.Conditions.SignInRiskLevels } | Select-Object DisplayName, State"
+frameworks = [
+  "Microsoft Secure Score",
+]
+cvss = "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:L/A:N"
+mitre = ["T1078.004"]
+
+[[check.detail.references]]
+title = "Require multifactor authentication for elevated sign-in risk"
+url = "https://learn.microsoft.com/entra/identity/conditional-access/policy-risk-based-sign-in"
+
+[[check]]
+id = "EN-CA-007"
+title = "User risk policy (P2)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "No enabled Conditional Access policy acts on user risk. Not assessed for tenants without Microsoft Entra ID P2."
+impact = "Accounts that Identity Protection believes are compromised, for example because their credentials were found leaked, keep working without a forced password change."
+attack = [
+  "Uses a leaked password for a user that Identity Protection has already marked high risk.",
+  "Signs in and keeps access because nothing forces remediation.",
+]
+remediation = [
+  "In the Microsoft Entra admin center, go to Protection > Conditional Access > Policies and create a policy for All users and All resources.",
+  "Under Conditions > User risk, select High. Under Grant, require authentication strength and password change, and set Session > Sign-in frequency to Every time.",
+  "Exclude only emergency access accounts.",
+]
+verify = "Get-MgIdentityConditionalAccessPolicy -All | Where-Object { $_.Conditions.UserRiskLevels } | Select-Object DisplayName, State"
+frameworks = [
+  "Microsoft Secure Score",
+]
+cvss = "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:L/A:N"
+mitre = ["T1078.004"]
+
+[[check.detail.references]]
+title = "Require remediation for risky users"
+url = "https://learn.microsoft.com/entra/identity/conditional-access/policy-risk-based-user"
+
+[[check]]
+id = "EN-CA-008"
+title = "Security info registration protected (trusted location or compliant device)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "No enabled Conditional Access policy protects the Register security information user action."
+impact = "An attacker who has only a user's password can register their own MFA method from anywhere, especially for users who have not registered yet, and then pass MFA as that user."
+attack = [
+  "Signs in with a stolen password for a user who has no MFA method registered.",
+  "Is sent to security info registration and registers an attacker-controlled phone or authenticator app.",
+  "Uses that method to satisfy MFA from then on.",
+]
+remediation = [
+  "In the Microsoft Entra admin center, go to Protection > Conditional Access > Policies and create a policy for All users.",
+  "Under Target resources, select User actions > Register security information.",
+  "Grant access only from trusted locations, compliant or hybrid-joined devices, or with an authentication strength, and allow Temporary Access Pass for new users.",
+]
+verify = "(Invoke-MgGraphRequest -Method GET -Uri \"https://graph.microsoft.com/v1.0/identity/conditionalAccess/policies\").value | ForEach-Object { [pscustomobject]$_ } | Where-Object { $_.conditions.applications.includeUserActions -contains \"urn:user:registersecurityinfo\" } | Select-Object displayName, state"
+cvss = "AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:L/A:N"
+mitre = ["T1098", "T1078.004"]
+
+[[check.detail.references]]
+title = "Protect security info registration with Conditional Access policy"
+url = "https://learn.microsoft.com/entra/identity/conditional-access/policy-all-users-security-info-registration"
+
+[[check]]
+id = "EN-CA-009"
+title = "Azure management / admin portals require MFA"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "No enabled Conditional Access policy requires multifactor authentication for the Microsoft admin portals or Windows Azure Service Management API. A policy that requires MFA for All users on All resources also satisfies this check."
+impact = "A password alone may be enough to reach the Azure portal, Azure CLI and PowerShell, or Microsoft 365 admin portals, where an account with roles can change the tenant or Azure resources."
+attack = [
+  "Obtains a password for an account that holds an admin or Azure role.",
+  "Signs in to Azure Resource Manager or an admin portal without an MFA prompt.",
+  "Changes configuration, reads data, or creates persistence.",
+]
+remediation = [
+  "In the Microsoft Entra admin center, go to Protection > Conditional Access > Policies and create a policy for All users.",
+  "Under Target resources, select Microsoft Admin Portals and Windows Azure Service Management API.",
+  "Under Grant, require multifactor authentication or an authentication strength. Exclude only emergency access accounts.",
+]
+verify = "Get-MgIdentityConditionalAccessPolicy -All | Select-Object DisplayName, State"
+cvss = "AV:N/AC:H/PR:N/UI:N/S:C/C:H/I:H/A:N"
+mitre = ["T1078.004"]
+
+[[check.detail.references]]
+title = "Require MFA for Azure management"
+url = "https://learn.microsoft.com/entra/identity/conditional-access/policy-old-require-mfa-azure-mgmt"
+
+[[check]]
+id = "EN-CA-010"
+title = "Compliant or hybrid-joined device required for admins"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "No enabled Conditional Access policy requires a compliant or Microsoft Entra hybrid joined device for administrator roles."
+impact = "Administrators can sign in from any unmanaged device, so stolen admin credentials or tokens can be used from attacker infrastructure."
+attack = [
+  "Phishes or steals an administrator's credentials or session.",
+  "Uses them from an attacker-owned device, which no policy blocks.",
+]
+remediation = [
+  "Make sure administrators use managed devices, ideally privileged access workstations.",
+  "In the Microsoft Entra admin center, go to Protection > Conditional Access > Policies and create a policy targeting the privileged Directory roles.",
+  "Under Grant, select Require device to be marked as compliant or Require Microsoft Entra hybrid joined device. Exclude only emergency access accounts.",
+]
+verify = "Get-MgIdentityConditionalAccessPolicy -All | Where-Object { $_.Conditions.Users.IncludeRoles } | Select-Object DisplayName, State, @{n='Grant';e={$_.GrantControls.BuiltInControls -join ','}}"
+cvss = "AV:N/AC:H/PR:N/UI:R/S:U/C:H/I:H/A:N"
+mitre = ["T1078.004"]
+
+[[check.detail.references]]
+title = "Require a compliant device, Microsoft Entra hybrid joined device, or multifactor authentication for all users"
+url = "https://learn.microsoft.com/entra/identity/conditional-access/policy-alt-all-users-compliant-hybrid-or-mfa"
+
+[[check]]
+id = "EN-CA-011"
+title = "Guest access policies"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "No enabled Conditional Access policy requires multifactor authentication for guests and external users. A policy that requires MFA for All users also satisfies this check."
+impact = "Guest accounts can reach shared Teams, SharePoint sites, and applications with a password alone, and their home organization's protections may be weak."
+attack = [
+  "Compromises the password of a partner user who has guest access.",
+  "Signs in to the tenant as that guest without an MFA prompt and reads shared data.",
+]
+remediation = [
+  "In the Microsoft Entra admin center, go to Protection > Conditional Access > Policies and create a policy for Guest or external users, all types.",
+  "Target All resources and, under Grant, require multifactor authentication or an authentication strength.",
+  "Review cross-tenant access settings to decide whether to trust MFA from partner tenants.",
+]
+verify = "Get-MgIdentityConditionalAccessPolicy -All | Select-Object DisplayName, State"
+cvss = "AV:N/AC:H/PR:N/UI:N/S:U/C:L/I:L/A:N"
+mitre = ["T1078.004"]
+
+[[check.detail.references]]
+title = "Require multifactor authentication strength for external users"
+url = "https://learn.microsoft.com/entra/identity/conditional-access/policy-guests-mfa-strength"
+
+[[check]]
+id = "EN-CA-012"
+title = "Session controls: sign-in frequency and persistent browser for admins"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "No enabled Conditional Access policy sets a sign-in frequency or a non-persistent browser session for administrator roles."
+impact = "Administrator sessions stay valid for long periods and survive browser restarts, so a stolen session cookie or an unattended device gives administrative access for longer."
+attack = [
+  "Steals an administrator's browser session cookie, for example with malware or phishing.",
+  "Replays the session long after the administrator stopped working.",
+]
+remediation = [
+  "In the Microsoft Entra admin center, go to Protection > Conditional Access > Policies and create a policy targeting the privileged Directory roles.",
+  "Under Session, set Sign-in frequency to a short period, such as 4 hours, and Persistent browser session to Never persistent.",
+]
+verify = "Get-MgIdentityConditionalAccessPolicy -All | Select-Object DisplayName, State, @{n='SignInFrequency';e={$_.SessionControls.SignInFrequency.Value}}, @{n='PersistentBrowser';e={$_.SessionControls.PersistentBrowser.Mode}}"
+cvss = "AV:N/AC:H/PR:N/UI:R/S:U/C:H/I:L/A:N"
+mitre = ["T1550", "T1539"]
+
+[[check.detail.references]]
+title = "Configure adaptive session lifetime policies"
+url = "https://learn.microsoft.com/entra/identity/conditional-access/howto-conditional-access-session-lifetime"
+
+[[check]]
+id = "EN-CA-013"
+title = "Token protection / continuous access evaluation settings"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "An enabled Conditional Access policy disables continuous access evaluation."
+impact = "For the users and applications in that policy, revoked sessions, disabled accounts, and password changes take effect only when the access token expires instead of almost immediately."
+remediation = [
+  "In the Microsoft Entra admin center, go to Protection > Conditional Access > Policies and open the policy.",
+  "Under Session > Customize continuous access evaluation, clear Disable, unless a documented application compatibility issue requires it.",
+]
+verify = "Get-MgIdentityConditionalAccessPolicy -All | Where-Object { $_.SessionControls.ContinuousAccessEvaluation.Mode -eq 'disabled' } | Select-Object DisplayName, State"
+mitre = ["T1550", "T1539"]
+
+[[check.detail.references]]
+title = "Continuous access evaluation in Microsoft Entra"
+url = "https://learn.microsoft.com/entra/identity/conditional-access/concept-continuous-access-evaluation"
+
+[[check]]
+id = "EN-CA-014"
+title = "Named locations: overly broad trusted IP ranges"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "A named location marked as trusted contains a very broad IP range: an IPv4 prefix shorter than /16, an IPv6 prefix shorter than /32, or 0.0.0.0/0."
+impact = "Policies that exclude or relax controls for trusted locations then apply to large parts of the internet, and Identity Protection treats sign-ins from those ranges as lower risk."
+attack = [
+  "Signs in with a stolen password from an address inside the overly broad trusted range.",
+  "Avoids the MFA or block that applies outside trusted locations.",
+]
+remediation = [
+  "In the Microsoft Entra admin center, go to Protection > Conditional Access > Named locations.",
+  "Replace broad ranges with the specific egress IP addresses of your offices and VPNs.",
+  "Remove the trusted mark from locations that are not under your control.",
+]
+verify = "(Invoke-MgGraphRequest -Method GET -Uri \"https://graph.microsoft.com/v1.0/identity/conditionalAccess/namedLocations\").value | ForEach-Object { [pscustomobject]$_ } | Select-Object displayName, isTrusted, ipRanges"
+cvss = "AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:L/A:N"
+mitre = ["T1078.004"]
+
+[[check.detail.references]]
+title = "Conditional Access: Network assignment"
+url = "https://learn.microsoft.com/entra/identity/conditional-access/concept-assignment-network"
+
+[[check]]
+id = "EN-CA-015"
+title = "Exclusions analysis: users, groups and apps excluded from critical policies"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "The critical Conditional Access policies, the MFA policy for all users and the legacy authentication block, exclude more than two users or exclude at least one group. The excluded users and groups are listed."
+impact = "Every excluded account can sign in without MFA or over legacy protocols, so these accounts are the first target for password spraying."
+attack = [
+  "Enumerates policy exclusions or finds excluded accounts by trial sign-ins.",
+  "Sprays passwords against the excluded accounts and signs in without MFA.",
+]
+remediation = [
+  "Review each exclusion and remove those without a documented, current reason.",
+  "Keep exclusions to the two emergency access accounts, and monitor their sign-ins.",
+  "Replace other exclusions with a narrower policy, for example one that requires a compliant device instead.",
+]
+verify = "Get-MgIdentityConditionalAccessPolicy -All | Select-Object DisplayName, State, @{n='ExcludeUsers';e={$_.Conditions.Users.ExcludeUsers -join ','}}, @{n='ExcludeGroups';e={$_.Conditions.Users.ExcludeGroups -join ','}}"
+cvss = "AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:L/A:N"
+mitre = ["T1110.003", "T1078.004"]
+
+[[check.detail.references]]
+title = "Conditional Access: Users, groups, agents, and workload identities"
+url = "https://learn.microsoft.com/entra/identity/conditional-access/concept-conditional-access-users-groups"
+
+[[check]]
+id = "EN-CA-016"
+title = "Excluded groups that are large, dynamic, or editable by non-admins"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "A group excluded from an enabled Conditional Access policy is dynamic, or is not role-assignable. Members of a group that is not role-assignable can be changed by Groups Administrators, User Administrators, and group owners; members of a dynamic group change with user attributes."
+impact = "Anyone who can change the group's membership, or the user attributes its rule uses, can take an account out of the policy and bypass MFA or other controls."
+attack = [
+  "Compromises an account that owns the excluded group or holds a group management role.",
+  "Adds a target account to the group, or edits an attribute so the account matches the dynamic rule.",
+  "Signs in as the target account without the controls of the policy.",
+]
+remediation = [
+  "Replace the excluded group with a role-assignable, assigned-membership group, which only Privileged Role Administrators and Global Administrators can manage.",
+  "Remove group owners who are not administrators, and protect the group with a restricted management administrative unit if needed.",
+  "Review the exclusion list (see EN-CA-015).",
+]
+verify = "Get-MgGroup -GroupId <group-id> -Property DisplayName,GroupTypes,IsAssignableToRole | Select-Object DisplayName, GroupTypes, IsAssignableToRole"
+cvss = "AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:N"
+mitre = ["T1098", "T1078.004"]
+
+[[check.detail.references]]
+title = "Use Microsoft Entra groups to manage role assignments"
+url = "https://learn.microsoft.com/entra/identity/role-based-access-control/groups-concept"
+
+[[check.detail.references]]
+title = "Conditional Access: Users, groups, agents, and workload identities"
+url = "https://learn.microsoft.com/entra/identity/conditional-access/concept-conditional-access-users-groups"
+
+[[check]]
+id = "EN-CA-017"
+title = "Policies that target \"All users\" but exclude a role that has many members"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "An enabled policy for all users excludes a directory role with more than five members."
+impact = "Every holder of the excluded role skips the policy, often MFA, so the exclusion covers far more accounts than a break-glass exception should."
+remediation = [
+  "Remove the role from the exclusions and exclude only the named break-glass accounts.",
+  "If the role needs different controls, give it its own policy instead of an exclusion.",
+]
+verify = "Get-MgPolicyConditionalAccessPolicy | Format-List DisplayName, State, Conditions, GrantControls"
+mitre = ["T1078.004"]
+
+[[check.detail.references]]
+title = "Conditional Access deployment planning"
+url = "https://learn.microsoft.com/entra/identity/conditional-access/plan-conditional-access"
+
+[[check]]
+id = "EN-CA-018"
+title = "Coverage gap analysis: users or apps not covered by any MFA policy (what-if simulation across all users × apps)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "No enforced policy requires MFA for all users on all resources and client apps, or some users or groups are excluded from every such policy. Break-glass accounts are left out of the count; EN-CA-023 checks them."
+impact = "Users outside the all-users MFA policies sign in with a password alone wherever no narrower policy applies."
+remediation = [
+  "Create or enable a policy that requires MFA for all users on all resources.",
+  "Remove exclusions that are not break-glass accounts.",
+]
+verify = "Get-MgPolicyConditionalAccessPolicy | Format-List DisplayName, State, Conditions, GrantControls"
+mitre = ["T1078.004"]
+
+[[check.detail.references]]
+title = "Conditional Access deployment planning"
+url = "https://learn.microsoft.com/entra/identity/conditional-access/plan-conditional-access"
+
+[[check]]
+id = "EN-CA-019"
+title = "Report-only policies left for a long time"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Conditional Access policies in report-only state have not been changed for more than 30 days."
+impact = "A report-only policy enforces nothing. Policies left in this state may give a false impression that the control is in place."
+remediation = [
+  "Review the policy's impact in the sign-in logs or the Conditional Access insights and reporting workbook.",
+  "Switch the policy to On, or delete it if it is no longer needed.",
+]
+verify = "Get-MgIdentityConditionalAccessPolicy -All | Where-Object { $_.State -eq 'enabledForReportingButNotEnforced' } | Select-Object DisplayName, ModifiedDateTime"
+
+[[check.detail.references]]
+title = "Analyze Conditional Access policy impact"
+url = "https://learn.microsoft.com/entra/identity/conditional-access/concept-conditional-access-report-only"
+
+[[check]]
+id = "EN-CA-020"
+title = "Conflicting or redundant policies"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Two enabled policies have identical conditions and controls, or the same users, apps and clients with one blocking and one granting access."
+impact = "Redundant and contradictory policies make the effective configuration hard to understand and easy to break when one of them is changed."
+remediation = [
+  "Merge or delete the redundant policy.",
+  "Decide which of the conflicting policies is meant to apply and remove the other.",
+]
+verify = "Get-MgPolicyConditionalAccessPolicy | Format-List DisplayName, State, Conditions, GrantControls"
+
+[[check.detail.references]]
+title = "Conditional Access deployment planning"
+url = "https://learn.microsoft.com/entra/identity/conditional-access/plan-conditional-access"
+
+[[check]]
+id = "EN-CA-021"
+title = "Workload identity CA policies (service principals)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "No enabled Conditional Access policy targets service principals, while the tenant has its own single-tenant apps."
+impact = "A leaked client secret or certificate can be used from anywhere; a workload identity policy limits where the app's service principal can sign in from."
+remediation = [
+  "Create a policy for workload identities that blocks sign-in from outside named locations (needs Workload Identities Premium).",
+]
+verify = "Get-MgPolicyConditionalAccessPolicy | Where-Object { $_.Conditions.ClientApplications.IncludeServicePrincipals }"
+mitre = ["T1078.004", "T1528"]
+
+[[check.detail.references]]
+title = "Conditional Access for workload identities"
+url = "https://learn.microsoft.com/entra/identity/conditional-access/workload-identity"
+
+[[check]]
+id = "EN-CA-022"
+title = "Policies relying on deprecated conditions (e.g., legacy \"require approved client app\")"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Enabled Conditional Access policies use the retired Require approved client app grant control."
+impact = "Microsoft has retired this grant control, so the policy may not enforce the intended mobile app protection."
+remediation = [
+  "In the Microsoft Entra admin center, go to Protection > Conditional Access > Policies and open each affected policy.",
+  "Replace Require approved client app with Require app protection policy, and keep the policy in report-only until the result is verified.",
+]
+verify = "Get-MgIdentityConditionalAccessPolicy -All | Where-Object { $_.GrantControls.BuiltInControls -contains 'approvedApplication' } | Select-Object DisplayName, State"
+
+[[check.detail.references]]
+title = "Migrate approved client app to application protection policy"
+url = "https://learn.microsoft.com/entra/identity/conditional-access/migrate-approved-client-app"
+
+[[check]]
+id = "EN-CA-023"
+title = "Break-glass accounts excluded from all blocking policies"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "An enabled account named or described as break-glass or emergency access is not excluded from every enabled policy that blocks or requires a control. If no such account is found, that is reported instead."
+impact = "If a policy that includes the break-glass account fails (a bad location, an MFA outage, a misconfigured block) nobody can sign in to fix it."
+remediation = [
+  "Exclude the break-glass accounts from every Conditional Access policy, and alert on every sign-in by them.",
+  "Keep two cloud-only break-glass accounts with long random passwords or FIDO2 keys.",
+]
+verify = "Get-MgPolicyConditionalAccessPolicy | Format-List DisplayName, State, Conditions, GrantControls"
+
+[[check.detail.references]]
+title = "Manage emergency access accounts"
+url = "https://learn.microsoft.com/entra/identity/role-based-access-control/security-emergency-access"
+
+[[check]]
+id = "EN-CA-024"
+title = "Policy change history in the last 30 days (from audit logs)"
+status = "implemented"
+severity = "info"
+
+[check.detail]
+description = "Lists Conditional Access policy changes in the last 30 days from the audit log, with who made them."
+impact = "An attacker with admin rights weakens or adds an exclusion to Conditional Access to keep access; the changes should all be known."
+remediation = [
+  "Confirm each change with its owner and revert the ones that are not known.",
+  "Alert on Conditional Access changes.",
+]
+verify = "Search the Entra audit log for activities containing \"conditional access policy\"."
+mitre = ["T1556", "T1562"]

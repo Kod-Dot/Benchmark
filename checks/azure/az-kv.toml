@@ -1,0 +1,302 @@
+# AZ-KV: Key Vault and secrets
+
+area = "AZ-KV"
+
+[[check]]
+id = "AZ-KV-001"
+title = "Key Vaults using access policies instead of RBAC"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "One or more Key Vaults use the vault access policy permission model instead of Azure role-based access control (enableRbacAuthorization is false). Access policies are managed separately from Azure RBAC, cannot be made PIM eligible and cannot be scoped to a single secret, key or certificate."
+impact = "Data plane access is invisible to RBAC reviews and PIM, so standing access to secrets is easy to miss. Any principal with Contributor or Key Vault Contributor on the vault can add an access policy granting itself access to all secrets, keys and certificates."
+attack = [
+  "Uses Contributor or Key Vault Contributor on the vault, or on its resource group or subscription.",
+  "Adds an access policy that grants itself get and list on secrets.",
+  "Reads the secrets, keys and certificates in the vault.",
+]
+remediation = [
+  "Map existing access policies to Key Vault built-in roles and assign them at vault scope.",
+  "In the vault, Settings, Access configuration, set Permission model to Azure role-based access control, or run Update-AzKeyVault -VaultName <name> -ResourceGroupName <rg> -EnableRbacAuthorization $true.",
+  "Enforce the RBAC permission model with the built-in Azure Policy definition for Key Vault.",
+]
+frameworks = [
+  "Microsoft cloud security benchmark",
+  "CIS Microsoft Azure Foundations Benchmark",
+  "NIST 800-53 AC-6",
+]
+verify = '''
+az keyvault list --query "[].{name:name, rbac:properties.enableRbacAuthorization}" -o table'''
+cvss = "AV:N/AC:H/PR:H/UI:N/S:U/C:H/I:L/A:N"
+mitre = ["T1552"]
+
+[[check.detail.references]]
+title = "Migrate to Azure role-based access control (Key Vault)"
+url = "https://learn.microsoft.com/azure/key-vault/general/rbac-migration"
+
+[[check.detail.references]]
+title = "Provide access to Key Vault keys, certificates, and secrets with Azure role-based access control"
+url = "https://learn.microsoft.com/azure/key-vault/general/rbac-guide"
+
+[[check]]
+id = "AZ-KV-002"
+title = "Broad secret/key get or list permissions"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "One or more vault access policies grant \"all\" or \"purge\" permissions on secrets, keys or certificates, or the Key Vault Administrator, Key Vault Secrets Officer or Key Vault Secrets User role is assigned at subscription scope or above. A role at subscription or management group scope applies to every vault below it."
+impact = "The principal can read, change or permanently delete the contents of many vaults at once, including vaults that hold service credentials, certificates and keys for identity infrastructure. Purge permission lets it destroy keys and secrets beyond recovery from soft delete."
+attack = [
+  "Compromises a principal with broad Key Vault data plane permissions.",
+  "Lists and reads secrets from every vault in scope, looking for service principal secrets, connection strings and private keys.",
+  "Uses the recovered credentials to move to other systems, or deletes and purges keys to cause an outage.",
+]
+remediation = [
+  "Replace \"all\" in access policies with the specific permissions each principal needs, and remove purge unless the principal manages vault lifecycle.",
+  "Move Key Vault Administrator, Secrets Officer and Secrets User assignments from subscription or management group scope to the individual vaults that need them.",
+  "Make remaining administrative Key Vault role assignments PIM eligible.",
+]
+frameworks = [
+  "Microsoft cloud security benchmark",
+  "CIS Microsoft Azure Foundations Benchmark",
+  "NIST 800-53 AC-6",
+]
+verify = '''
+Get-AzKeyVault | ForEach-Object { Get-AzKeyVault -VaultName $_.VaultName } |
+  ForEach-Object { $v = $_.VaultName; $_.AccessPolicies | Select-Object @{n='Vault';e={$v}}, DisplayName, PermissionsToSecrets, PermissionsToKeys, PermissionsToCertificates }
+Get-AzRoleAssignment | Where-Object { $_.RoleDefinitionName -in 'Key Vault Administrator','Key Vault Secrets Officer','Key Vault Secrets User' -and $_.Scope -notmatch '/resourceGroups/' } |
+  Select-Object DisplayName, RoleDefinitionName, Scope'''
+cvss = "AV:N/AC:L/PR:L/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1552", "T1528", "T1490"]
+
+[[check.detail.references]]
+title = "Provide access to Key Vault keys, certificates, and secrets with Azure role-based access control"
+url = "https://learn.microsoft.com/azure/key-vault/general/rbac-guide"
+
+[[check.detail.references]]
+title = "Azure Key Vault security features"
+url = "https://learn.microsoft.com/azure/key-vault/general/security-features"
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1552: Unsecured Credentials"
+url = "https://attack.mitre.org/techniques/T1552/"
+
+[[check]]
+id = "AZ-KV-003"
+title = "Soft delete and purge protection"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "One or more Key Vaults have soft delete turned off or purge protection turned off. Soft delete keeps deleted vaults and objects recoverable for the retention period; purge protection stops anyone, including administrators, from permanently deleting them before that period ends."
+impact = "An attacker or a mistaken administrator can delete the vault or its keys and purge them immediately. Data encrypted with a purged key, such as storage accounts or disks using customer-managed keys, becomes unrecoverable."
+attack = [
+  "Compromises a principal with delete and purge permissions on the vault.",
+  "Deletes keys and secrets and purges them so they cannot be recovered.",
+  "Leaves services that depend on those keys unable to decrypt their data.",
+]
+remediation = [
+  "Turn on purge protection in the vault's Properties page, or run Update-AzKeyVault -VaultName <name> -ResourceGroupName <rg> -EnablePurgeProtection. Purge protection cannot be turned off afterwards.",
+  "For older vaults without soft delete, turn it on with az keyvault update --name <name> --enable-soft-delete true.",
+  "Enforce both settings with the built-in Azure Policy definitions for Key Vault.",
+]
+frameworks = [
+  "Microsoft cloud security benchmark",
+  "CIS Microsoft Azure Foundations Benchmark",
+  "NIST 800-53 CP-9",
+]
+verify = '''
+az keyvault list --query "[].id" -o tsv | ForEach-Object { az keyvault show --id $_ --query "{name:name, softDelete:properties.enableSoftDelete, purgeProtection:properties.enablePurgeProtection}" }'''
+cvss = "AV:N/AC:H/PR:H/UI:N/S:C/C:N/I:N/A:H"
+mitre = ["T1490"]
+
+[[check.detail.references]]
+title = "Azure Key Vault soft-delete overview"
+url = "https://learn.microsoft.com/azure/key-vault/general/soft-delete-overview"
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1490: Inhibit System Recovery"
+url = "https://attack.mitre.org/techniques/T1490/"
+
+[[check]]
+id = "AZ-KV-004"
+title = "Public network access enabled"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "One or more Key Vaults have public network access set to a value other than Disabled. The vault's data plane endpoint can then be reached from the internet, limited only by any firewall rules configured on the vault."
+impact = "Anyone holding a stolen token or credential for a principal with vault access can read secrets from any network, not only from your own. Network location stops being a second barrier for the most sensitive data in the subscription."
+attack = [
+  "Steals a token or client secret for a principal with access to the vault.",
+  "Connects to the vault's public endpoint from attacker infrastructure.",
+  "Reads secrets, keys and certificates.",
+]
+remediation = [
+  "Create a private endpoint for the vault, then in Networking set Public network access to Disable, or run az keyvault update --name <name> --public-network-access Disabled.",
+  "If public access must stay, allow only selected networks and specific IP ranges (see AZ-KV-010).",
+]
+frameworks = [
+  "Microsoft cloud security benchmark",
+  "CIS Microsoft Azure Foundations Benchmark",
+  "NIST 800-53 SC-7",
+]
+verify = '''
+az keyvault list --query "[].id" -o tsv | ForEach-Object { az keyvault show --id $_ --query "{name:name, publicNetworkAccess:properties.publicNetworkAccess}" }'''
+cvss = "AV:N/AC:H/PR:L/UI:N/S:U/C:H/I:L/A:N"
+mitre = ["T1552", "T1078.004"]
+
+[[check.detail.references]]
+title = "Configure Azure Key Vault networking settings"
+url = "https://learn.microsoft.com/azure/key-vault/general/network-security"
+
+[[check.detail.references]]
+title = "Integrate Key Vault with Azure Private Link"
+url = "https://learn.microsoft.com/azure/key-vault/general/private-link-service"
+
+[[check]]
+id = "AZ-KV-005"
+title = "Secrets and certificates without expiry, or expiring soon"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "An enabled Key Vault secret or key has no expiry date, has expired but is still enabled, or expires within 30 days. Read from the management plane: names and dates only, never values."
+impact = "Credentials without expiry live forever once leaked; expired or soon-expiring ones cause outages that lead to rushed, insecure fixes."
+remediation = [
+  "Set expiry dates on every secret and key and alert before they expire (Event Grid or Azure Policy).",
+  "Disable or delete expired items.",
+]
+verify = "Get-AzKeyVaultSecret -VaultName <vault> | Select-Object Name, Expires"
+
+[[check.detail.references]]
+title = "Azure Key Vault security"
+url = "https://learn.microsoft.com/azure/key-vault/general/secure-key-vault"
+
+[[check]]
+id = "AZ-KV-006"
+title = "Secret rotation for app credentials stored in vaults"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "An enabled Key Vault secret has not been updated for more than a year."
+impact = "A secret that never changes stays valid for anyone who copied it, including former staff and past breaches."
+remediation = [
+  "Rotate the secret, ideally automatically (Key Vault rotation or managed identities instead of secrets).",
+]
+verify = "Get-AzKeyVaultSecret -VaultName <vault> | Select-Object Name, Updated"
+
+[[check.detail.references]]
+title = "Secret rotation"
+url = "https://learn.microsoft.com/azure/key-vault/secrets/tutorial-rotation"
+
+[[check]]
+id = "AZ-KV-007"
+title = "Key Vault diagnostic logging"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "One or more Key Vaults have no diagnostic setting that sends the AuditEvent log category, or the audit or allLogs category group, to a Log Analytics workspace, event hub or storage account. AuditEvent records every data plane operation, including who read which secret."
+impact = "Secret, key and certificate reads are not recorded anywhere you can search. After a compromise you cannot tell which secrets an attacker read, so you cannot scope which credentials must be rotated, and no alert can fire on unusual secret access."
+attack = [
+  "Reads secrets from the vault with a stolen identity.",
+  "Relies on the reads not being logged, so the defenders cannot tell which credentials were exposed.",
+]
+remediation = [
+  "In the vault, Monitoring, Diagnostic settings, add a setting that sends the audit category group (or AuditEvent) to the central Log Analytics workspace.",
+  "Apply the setting at scale with the built-in Azure Policy that deploys Key Vault diagnostic settings to a Log Analytics workspace.",
+]
+frameworks = [
+  "Microsoft cloud security benchmark",
+  "CIS Microsoft Azure Foundations Benchmark",
+  "NIST 800-53 AU-2",
+  "NIST 800-53 AU-12",
+]
+verify = '''
+Get-AzKeyVault | ForEach-Object { $v = $_.VaultName; Get-AzDiagnosticSetting -ResourceId $_.ResourceId |
+  Select-Object @{n='Vault';e={$v}}, Name, WorkspaceId, @{n='Logs';e={($_.Log | Where-Object Enabled | ForEach-Object { $_.Category + $_.CategoryGroup }) -join ','}} }'''
+cvss = "AV:N/AC:H/PR:L/UI:N/S:U/C:L/I:N/A:N"
+mitre = ["T1552"]
+
+[[check.detail.references]]
+title = "Azure Key Vault logging"
+url = "https://learn.microsoft.com/azure/key-vault/general/logging"
+
+[[check]]
+id = "AZ-KV-008"
+title = "Managed HSM / key type and size for critical keys"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "An enabled RSA key is shorter than 2048 bits, or a key in a vault holding Tier 0 material is software-protected instead of HSM-protected."
+impact = "Short keys can be broken; software keys in a Standard vault can be exported by anyone with key backup rights, while HSM keys cannot leave the HSM."
+remediation = [
+  "Replace short keys with 2048-bit or longer RSA, or EC keys.",
+  "Keep critical keys in a Premium vault or Managed HSM with an HSM key type.",
+]
+verify = "Get-AzKeyVaultKey -VaultName <vault> | Select-Object Name, KeyType, KeySize"
+
+[[check.detail.references]]
+title = "Azure Key Vault security"
+url = "https://learn.microsoft.com/azure/key-vault/general/secure-key-vault"
+
+[[check]]
+id = "AZ-KV-009"
+title = "Vaults holding ADFS / Entra Connect / CA material (Tier 0 vaults)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "A Key Vault holds secrets or keys named like AD FS, Entra Connect, certificate authority or other Tier 0 material, and lists who can reach it (Owner, Contributor, User Access Administrator or Key Vault data roles at or above the vault)."
+impact = "Whoever can read the token-signing certificate or the sync credentials can forge sign-ins or take over the directory; the vault and everyone with access to it are Tier 0."
+remediation = [
+  "Move Tier 0 material to a dedicated vault in a Tier 0 subscription, reachable only by Tier 0 admins, with PIM and logging.",
+]
+verify = "Get-AzRoleAssignment -Scope <vault id>"
+mitre = ["T1552"]
+
+[[check.detail.references]]
+title = "Azure Key Vault security"
+url = "https://learn.microsoft.com/azure/key-vault/general/secure-key-vault"
+
+[[check]]
+id = "AZ-KV-010"
+title = "Firewall and private endpoint configuration"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "One or more Key Vaults have a firewall default action other than Deny and no approved private endpoint connection. With default action Allow, the vault accepts data plane requests from any network."
+impact = "The vault can be reached from any IP address, so a stolen token or client secret for a principal with vault access is enough to read its secrets from anywhere. There is no network-level control to limit exposure."
+attack = [
+  "Steals a token or client secret for a principal with access to the vault.",
+  "Connects to the vault from an external network, which the firewall allows.",
+  "Reads secrets, keys and certificates.",
+]
+remediation = [
+  "Create a private endpoint for the vault and approve the connection.",
+  "In the vault, Networking, Firewalls and virtual networks, choose Allow public access from specific virtual networks and IP addresses, or run az keyvault update --name <name> --default-action Deny, then add only the required networks.",
+  "Allow trusted Microsoft services to bypass the firewall only if a service that needs it is in use.",
+]
+frameworks = [
+  "Microsoft cloud security benchmark",
+  "CIS Microsoft Azure Foundations Benchmark",
+  "NIST 800-53 SC-7",
+]
+verify = '''
+az keyvault list --query "[].id" -o tsv | ForEach-Object { az keyvault show --id $_ --query "{name:name, defaultAction:properties.networkAcls.defaultAction, privateEndpoints:properties.privateEndpointConnections[].id}" }'''
+cvss = "AV:N/AC:H/PR:L/UI:N/S:U/C:H/I:L/A:N"
+mitre = ["T1552", "T1078.004"]
+
+[[check.detail.references]]
+title = "Configure Azure Key Vault networking settings"
+url = "https://learn.microsoft.com/azure/key-vault/general/network-security"
+
+[[check.detail.references]]
+title = "Integrate Key Vault with Azure Private Link"
+url = "https://learn.microsoft.com/azure/key-vault/general/private-link-service"

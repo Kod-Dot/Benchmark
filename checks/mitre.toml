@@ -1,0 +1,322 @@
+# MITRE ATT&CK techniques referenced by checks. Names and tactics from
+# attack.mitre.org (Enterprise matrix). A check may only use IDs listed here.
+
+[[technique]]
+id = "T1003.006"
+name = "OS Credential Dumping: DCSync"
+tactic = "Credential Access"
+
+[[technique]]
+id = "T1078"
+name = "Valid Accounts"
+tactic = "Persistence"
+
+[[technique]]
+id = "T1078.002"
+name = "Valid Accounts: Domain Accounts"
+tactic = "Privilege Escalation"
+
+[[technique]]
+id = "T1078.003"
+name = "Valid Accounts: Local Accounts"
+tactic = "Lateral Movement"
+
+[[technique]]
+id = "T1078.004"
+name = "Valid Accounts: Cloud Accounts"
+tactic = "Privilege Escalation"
+
+[[technique]]
+id = "T1098"
+name = "Account Manipulation"
+tactic = "Persistence"
+
+[[technique]]
+id = "T1110.003"
+name = "Brute Force: Password Spraying"
+tactic = "Credential Access"
+
+[[technique]]
+id = "T1187"
+name = "Forced Authentication"
+tactic = "Credential Access"
+
+[[technique]]
+id = "T1484.001"
+name = "Domain or Tenant Policy Modification: Group Policy Modification"
+tactic = "Defense Evasion"
+
+[[technique]]
+id = "T1550"
+name = "Use Alternate Authentication Material"
+tactic = "Lateral Movement"
+
+[[technique]]
+id = "T1550.003"
+name = "Use Alternate Authentication Material: Pass the Ticket"
+tactic = "Lateral Movement"
+
+[[technique]]
+id = "T1552.006"
+name = "Unsecured Credentials: Group Policy Preferences"
+tactic = "Credential Access"
+
+[[technique]]
+id = "T1557"
+name = "Adversary-in-the-Middle"
+tactic = "Credential Access"
+
+[[technique]]
+id = "T1557.001"
+name = "Adversary-in-the-Middle: LLMNR/NBT-NS Poisoning and SMB Relay"
+tactic = "Credential Access"
+
+[[technique]]
+id = "T1558"
+name = "Steal or Forge Kerberos Tickets"
+tactic = "Credential Access"
+
+[[technique]]
+id = "T1558.001"
+name = "Steal or Forge Kerberos Tickets: Golden Ticket"
+tactic = "Credential Access"
+
+[[technique]]
+id = "T1558.003"
+name = "Steal or Forge Kerberos Tickets: Kerberoasting"
+tactic = "Credential Access"
+
+[[technique]]
+id = "T1621"
+name = "Multi-Factor Authentication Request Generation"
+tactic = "Credential Access"
+
+[[technique]]
+id = "T1649"
+name = "Steal or Forge Authentication Certificates"
+tactic = "Credential Access"
+
+[[technique]]
+id = "T1003"
+name = "OS Credential Dumping"
+tactic = "Credential Access"
+
+[[technique]]
+id = "T1068"
+name = "Exploitation for Privilege Escalation"
+tactic = "Privilege Escalation"
+
+[[technique]]
+id = "T1069.002"
+name = "Permission Groups Discovery: Domain Groups"
+tactic = "Discovery"
+
+[[technique]]
+id = "T1087.002"
+name = "Account Discovery: Domain Account"
+tactic = "Discovery"
+
+[[technique]]
+id = "T1110"
+name = "Brute Force"
+tactic = "Credential Access"
+
+[[technique]]
+id = "T1134.005"
+name = "Access Token Manipulation: SID-History Injection"
+tactic = "Privilege Escalation"
+
+[[technique]]
+id = "T1136.002"
+name = "Create Account: Domain Account"
+tactic = "Persistence"
+
+[[technique]]
+id = "T1482"
+name = "Domain Trust Discovery"
+tactic = "Discovery"
+
+[[technique]]
+id = "T1552"
+name = "Unsecured Credentials"
+tactic = "Credential Access"
+
+[[technique]]
+id = "T1556"
+name = "Modify Authentication Process"
+tactic = "Credential Access"
+
+[[technique]]
+id = "T1558.004"
+name = "Steal or Forge Kerberos Tickets: AS-REP Roasting"
+tactic = "Credential Access"
+
+[[technique]]
+id = "T1003.001"
+name = "OS Credential Dumping: LSASS Memory"
+tactic = "Credential Access"
+
+[[technique]]
+id = "T1021.001"
+name = "Remote Services: Remote Desktop Protocol"
+tactic = "Lateral Movement"
+
+[[technique]]
+id = "T1040"
+name = "Network Sniffing"
+tactic = "Credential Access"
+
+[[technique]]
+id = "T1070.001"
+name = "Indicator Removal: Clear Windows Event Logs"
+tactic = "Defense Evasion"
+
+[[technique]]
+id = "T1112"
+name = "Modify Registry"
+tactic = "Defense Evasion"
+
+[[technique]]
+id = "T1210"
+name = "Exploitation of Remote Services"
+tactic = "Lateral Movement"
+
+[[technique]]
+id = "T1222.001"
+name = "File and Directory Permissions Modification: Windows"
+tactic = "Defense Evasion"
+
+[[technique]]
+id = "T1490"
+name = "Inhibit System Recovery"
+tactic = "Impact"
+
+[[technique]]
+id = "T1562"
+name = "Impair Defenses"
+tactic = "Defense Evasion"
+
+[[technique]]
+id = "T1562.002"
+name = "Impair Defenses: Disable Windows Event Logging"
+tactic = "Defense Evasion"
+
+[[technique]]
+id = "T1562.004"
+name = "Impair Defenses: Disable or Modify System Firewall"
+tactic = "Defense Evasion"
+
+[[technique]]
+id = "T1098.001"
+name = "Account Manipulation: Additional Cloud Credentials"
+tactic = "Persistence"
+
+[[technique]]
+id = "T1098.003"
+name = "Account Manipulation: Additional Cloud Roles"
+tactic = "Persistence"
+
+[[technique]]
+id = "T1098.005"
+name = "Account Manipulation: Device Registration"
+tactic = "Persistence"
+
+[[technique]]
+id = "T1528"
+name = "Steal Application Access Token"
+tactic = "Credential Access"
+
+[[technique]]
+id = "T1566.002"
+name = "Phishing: Spearphishing Link"
+tactic = "Initial Access"
+
+[[technique]]
+id = "T1199"
+name = "Trusted Relationship"
+tactic = "Initial Access"
+
+[[technique]]
+id = "T1556.006"
+name = "Modify Authentication Process: Multi-Factor Authentication"
+tactic = "Credential Access"
+
+[[technique]]
+id = "T1556.007"
+name = "Modify Authentication Process: Hybrid Identity"
+tactic = "Credential Access"
+
+[[technique]]
+id = "T1111"
+name = "Multi-Factor Authentication Interception"
+tactic = "Credential Access"
+
+[[technique]]
+id = "T1539"
+name = "Steal Web Session Cookie"
+tactic = "Credential Access"
+
+[[technique]]
+id = "T1606.002"
+name = "Forge Web Credentials: SAML Tokens"
+tactic = "Credential Access"
+
+[[technique]]
+id = "T1087.004"
+name = "Account Discovery: Cloud Account"
+tactic = "Discovery"
+
+[[technique]]
+id = "T1069.003"
+name = "Permission Groups Discovery: Cloud Groups"
+tactic = "Discovery"
+
+[[technique]]
+id = "T1136.003"
+name = "Create Account: Cloud Account"
+tactic = "Persistence"
+
+[[technique]]
+id = "T1484.002"
+name = "Domain or Tenant Policy Modification: Trust Modification"
+tactic = "Defense Evasion"
+
+[[technique]]
+id = "T1207"
+name = "Rogue Domain Controller"
+tactic = "Defense Evasion"
+
+[[technique]]
+id = "T1543.003"
+name = "Create or Modify System Process: Windows Service"
+tactic = "Persistence"
+
+[[technique]]
+id = "T1053.005"
+name = "Scheduled Task/Job: Scheduled Task"
+tactic = "Execution"
+
+[[technique]]
+id = "T1569.002"
+name = "System Services: Service Execution"
+tactic = "Execution"
+
+[[technique]]
+id = "T1564"
+name = "Hide Artifacts"
+tactic = "Defense Evasion"
+
+[[technique]]
+id = "T1546"
+name = "Event Triggered Execution"
+tactic = "Persistence"
+
+[[technique]]
+id = "T1606"
+name = "Forge Web Credentials"
+tactic = "Credential Access"
+
+[[technique]]
+id = "T1651"
+name = "Cloud Administration Command"
+tactic = "Execution"

@@ -1,0 +1,45 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Benchmark",
+  "mainBinaryName": "Benchmark",
+  "identifier": "io.github.kod-dot.dcassessor",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Benchmark",
+        "width": 1360,
+        "height": 860,
+        "minWidth": 1024,
+        "minHeight": 640,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src ipc: http://ipc.localhost"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["msi"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ],
+    "resources": {
+      "../../checks/": "checks/",
+      "../../collectors/": "collectors/"
+    },
+    "windows": {
+      "webviewInstallMode": { "type": "embedBootstrapper" }
+    }
+  }
+}

@@ -1,0 +1,81 @@
+# Data sources the collectors read from, and the rights each one needs.
+# `kind = "onprem"` sources are probed by collectors/Test-DCAAccess.ps1.
+# `kind = "cloud"` sources are probed after Microsoft sign-in.
+
+[[source]]
+id = "ldap"
+title = "Active Directory (LDAP)"
+needs = "Any domain user account"
+kind = "onprem"
+
+[[source]]
+id = "sysvol"
+title = "SYSVOL share"
+needs = "Any domain user account"
+kind = "onprem"
+
+[[source]]
+id = "dc-remote"
+title = "Domain controller configuration"
+needs = "Local administrator on domain controllers (WinRM)"
+kind = "onprem"
+
+[[source]]
+id = "dc-events"
+title = "Domain controller event logs"
+needs = "Event Log Readers on domain controllers"
+kind = "onprem"
+
+[[source]]
+id = "endpoints"
+title = "Workstations and member servers"
+needs = "Local administrator on target machines (WinRM)"
+kind = "onprem"
+
+[[source]]
+id = "graph"
+title = "Microsoft Entra ID (Microsoft Graph)"
+needs = "Global Reader role"
+kind = "cloud"
+
+[[source]]
+id = "graph-logs"
+title = "Entra sign-in and audit logs"
+needs = "Global Reader role and an Entra ID P1 license"
+kind = "cloud"
+
+[[source]]
+id = "exo"
+title = "Exchange Online"
+needs = "View-Only Organization Management"
+kind = "cloud"
+
+[[source]]
+id = "spo"
+title = "SharePoint Online and OneDrive"
+needs = "Global Reader role"
+kind = "cloud"
+
+[[source]]
+id = "teams"
+title = "Microsoft Teams"
+needs = "Global Reader role"
+kind = "cloud"
+
+[[source]]
+id = "purview"
+title = "Microsoft Purview"
+needs = "Global Reader role"
+kind = "cloud"
+
+[[source]]
+id = "defender"
+title = "Microsoft Defender XDR"
+needs = "Security Reader role"
+kind = "cloud"
+
+[[source]]
+id = "arm"
+title = "Azure resources"
+needs = "Reader on the root management group"
+kind = "cloud"

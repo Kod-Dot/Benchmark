@@ -1,0 +1,552 @@
+# EN-PRIV: Privileged roles and PIM
+
+area = "EN-PRIV"
+
+[[check]]
+id = "EN-PRIV-001"
+title = "Global Administrator count (target 2 to 4 including break-glass)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "The tenant has fewer than two or more than four Global Administrator holders, counting emergency access accounts. Microsoft recommends between two and four."
+impact = "With more than four, each extra holder is another account whose compromise gives full control of the tenant. With fewer than two, losing access to a single account can lock the organization out of its own tenant."
+attack = [
+  "Targets the largest available set of Global Administrator accounts with phishing or password spraying.",
+  "Uses any one compromised Global Administrator to take over the tenant, add credentials and create new admins.",
+]
+remediation = [
+  "In the Microsoft Entra admin center, go to Identity > Roles & admins > Global Administrator and review every assignment, including eligible ones.",
+  "Move holders who do not need tenant-wide control to a least-privileged role such as User Administrator or Exchange Administrator.",
+  "Keep at least two Global Administrators, one of which can be a cloud-only emergency access account.",
+]
+verify = "Get-MgRoleManagementDirectoryRoleAssignment -Filter \"roleDefinitionId eq '62e90394-69f5-4237-9190-012177145e10'\" -ExpandProperty Principal"
+frameworks = ["CIS Microsoft 365 1.1.3"]
+cvss = "AV:N/AC:H/PR:N/UI:R/S:U/C:H/I:H/A:H"
+mitre = ["T1078.004", "T1098.003"]
+
+[[check.detail.references]]
+title = "Best practices for Microsoft Entra roles"
+url = "https://learn.microsoft.com/entra/identity/role-based-access-control/best-practices"
+
+[[check.detail.references]]
+title = "Manage emergency access admin accounts"
+url = "https://learn.microsoft.com/entra/identity/role-based-access-control/security-emergency-access"
+
+[[check]]
+id = "EN-PRIV-002"
+title = "Permanent (active) assignments to privileged roles instead of PIM eligible"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Privileged Entra roles are assigned as permanent active assignments instead of eligible assignments activated through Privileged Identity Management."
+impact = "The roles are usable at all times, so a stolen session or token for one of these accounts gives immediate admin access without an approval, justification or MFA step at activation."
+remediation = [
+  "In PIM, convert active assignments of privileged roles to eligible, keeping two emergency access accounts permanent.",
+  "Require MFA and justification on activation, and approval for Global Administrator and Privileged Role Administrator.",
+]
+frameworks = [
+  "CIS Microsoft 365 5.3.1",
+  "Microsoft Secure Score",
+]
+cvss = "AV:N/AC:H/PR:N/UI:R/S:U/C:H/I:H/A:N"
+mitre = ["T1078.004", "T1098.003"]
+
+[[check.detail.references]]
+title = "Start using Privileged Identity Management"
+url = "https://learn.microsoft.com/entra/id-governance/privileged-identity-management/pim-getting-started"
+
+[[check]]
+id = "EN-PRIV-003"
+title = "PIM role settings: MFA on activation, approval, justification, max duration"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "The PIM role settings for Global Administrator, Privileged Role Administrator or Privileged Authentication Administrator do not require MFA on activation, do not require approval to activate Global Administrator, or allow an activation to last longer than 8 hours."
+impact = "An attacker who controls an eligible account can activate the role without a fresh MFA prompt or a second person's approval, and keep it active for most of a working day or longer."
+attack = [
+  "Compromises an account or session that is eligible for one of these roles.",
+  "Activates the role in PIM without being challenged for MFA or waiting for an approver.",
+  "Uses the long activation window to add credentials, create admins or change policies.",
+]
+remediation = [
+  "In the Microsoft Entra admin center, go to Identity governance > Privileged Identity Management > Microsoft Entra roles > Settings and open each of the three roles.",
+  "Under Activation, set the maximum duration to 8 hours or less and require Azure MFA (or a Conditional Access authentication context) on activation.",
+  "For Global Administrator, turn on Require approval to activate and name at least two approvers.",
+]
+verify = "Get-MgPolicyRoleManagementPolicyAssignment -Filter \"scopeId eq '/' and scopeType eq 'DirectoryRole' and roleDefinitionId eq '62e90394-69f5-4237-9190-012177145e10'\" -ExpandProperty 'policy($expand=rules)'"
+frameworks = ["CIS Microsoft 365 5.3.4"]
+cvss = "AV:N/AC:H/PR:L/UI:N/S:U/C:H/I:H/A:N"
+mitre = ["T1078.004"]
+
+[[check.detail.references]]
+title = "Configure Microsoft Entra role settings in PIM"
+url = "https://learn.microsoft.com/entra/id-governance/privileged-identity-management/pim-how-to-change-default-settings"
+
+[[check]]
+id = "EN-PRIV-004"
+title = "Privileged Role Administrator / Privileged Authentication Administrator holders"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "More than three accounts hold Privileged Role Administrator or Privileged Authentication Administrator. Privileged Role Administrator can assign any directory role, including Global Administrator, and Privileged Authentication Administrator can reset passwords and authentication methods of any user, including Global Administrators."
+impact = "Each holder is effectively equivalent to a Global Administrator, so every extra holder widens the set of accounts whose compromise gives full control of the tenant."
+attack = [
+  "Compromises one of the role holders.",
+  "Assigns Global Administrator to an account it controls, or resets the authentication methods of an existing Global Administrator.",
+  "Signs in as Global Administrator and takes over the tenant.",
+]
+remediation = [
+  "In the Microsoft Entra admin center, go to Identity > Roles & admins and review the assignments of both roles.",
+  "Reduce holders to the smallest group that needs them, and make the remaining assignments eligible in PIM with approval.",
+  "Use narrower roles such as Authentication Administrator or User Administrator for day-to-day support work.",
+]
+verify = "Get-MgRoleManagementDirectoryRoleAssignment -Filter \"roleDefinitionId eq 'e8611ab8-c189-46e8-94e1-60213ab1f814' or roleDefinitionId eq '7be44c8a-adaf-4e2a-84d6-ab2649e08a13'\" -ExpandProperty Principal"
+cvss = "AV:N/AC:H/PR:N/UI:R/S:U/C:H/I:H/A:H"
+mitre = ["T1078.004", "T1098", "T1098.003"]
+
+[[check.detail.references]]
+title = "Microsoft Entra built-in roles"
+url = "https://learn.microsoft.com/entra/identity/role-based-access-control/permissions-reference"
+
+[[check.detail.references]]
+title = "Best practices for Microsoft Entra roles"
+url = "https://learn.microsoft.com/entra/identity/role-based-access-control/best-practices"
+
+[[check]]
+id = "EN-PRIV-005"
+title = "Role-assignable groups and their owners"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "One or more role-assignable groups have owners. A group owner can add members to the group, and every member receives the directory roles assigned to the group."
+impact = "The owners can grant themselves or others the group's roles without holding a role-management role, which bypasses the normal controls on who can assign privileged roles."
+attack = [
+  "Compromises an account that owns a role-assignable group.",
+  "Adds itself or another controlled account as a member of the group.",
+  "Uses the roles inherited through the group.",
+]
+remediation = [
+  "In the Microsoft Entra admin center, go to Identity > Groups > All groups, filter on role-assignable groups and review Owners for each.",
+  "Remove owners who are not already trusted at the level of the roles the group carries.",
+  "If delegated membership management is needed, use PIM for Groups with eligible membership and approval instead of ownership.",
+]
+verify = "Get-MgGroup -Filter 'isAssignableToRole eq true' -ExpandProperty Owners | Select-Object DisplayName, @{n='Owners';e={$_.Owners.Id}}"
+cvss = "AV:N/AC:H/PR:L/UI:N/S:U/C:H/I:H/A:N"
+mitre = ["T1098", "T1078.004"]
+
+[[check.detail.references]]
+title = "Use Microsoft Entra groups to manage role assignments"
+url = "https://learn.microsoft.com/entra/identity/role-based-access-control/groups-concept"
+
+[[check]]
+id = "EN-PRIV-006"
+title = "Roles assigned to service principals"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "One or more service principals hold directory roles. Service principals sign in with secrets or certificates, are not covered by user MFA, and cannot use PIM activation."
+impact = "Anyone who obtains the credentials of one of these service principals, or who can add a credential to it, gets the role permanently and without an MFA prompt."
+attack = [
+  "Finds a secret or certificate for the service principal in code, a pipeline or a configuration file, or adds a new one through an owner account.",
+  "Authenticates as the service principal with the client credentials flow.",
+  "Uses the directory role from a context that user sign-in policies do not cover.",
+]
+remediation = [
+  "In the Microsoft Entra admin center, go to Identity > Roles & admins, open each role and filter assignments by service principals.",
+  "Remove roles that the workload does not need, and replace broad roles with narrower ones or with specific Graph permissions.",
+  "For the remaining service principals, use certificates or managed identities, restrict owners and monitor their sign-ins.",
+]
+verify = "Get-MgRoleManagementDirectoryRoleAssignment -All -ExpandProperty Principal | Where-Object { $_.Principal.AdditionalProperties['@odata.type'] -eq '#microsoft.graph.servicePrincipal' }"
+cvss = "AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:N"
+mitre = ["T1078.004", "T1098.003"]
+
+[[check.detail.references]]
+title = "Best practices for Microsoft Entra roles"
+url = "https://learn.microsoft.com/entra/identity/role-based-access-control/best-practices"
+
+[[check]]
+id = "EN-PRIV-007"
+title = "Roles assigned to guests"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "One or more guest accounts hold a directory role. The check reports any role, privileged or not."
+impact = "Guest accounts are authenticated by another organization, so the security of these role assignments depends on that organization's account controls, joiner and leaver process and MFA."
+attack = [
+  "Compromises the guest's home account, which this tenant does not manage.",
+  "Signs in to this tenant as the guest.",
+  "Uses the directory role to read or change directory data.",
+]
+remediation = [
+  "In the Microsoft Entra admin center, go to Identity > Roles & admins, and for each role filter assignments by user type Guest.",
+  "Remove the role, or create an internal member account for the person if they need administrative access.",
+  "If a guest must keep a role, make it eligible in PIM and require MFA through a Conditional Access policy that targets guests.",
+]
+verify = "Get-MgRoleManagementDirectoryRoleAssignment -All -ExpandProperty Principal | Where-Object { $_.Principal.AdditionalProperties['userType'] -eq 'Guest' }"
+cvss = "AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:N"
+mitre = ["T1078.004"]
+
+[[check.detail.references]]
+title = "B2B guest user properties"
+url = "https://learn.microsoft.com/entra/external-id/user-properties"
+
+[[check.detail.references]]
+title = "Best practices for Microsoft Entra roles"
+url = "https://learn.microsoft.com/entra/identity/role-based-access-control/best-practices"
+
+[[check]]
+id = "EN-PRIV-008"
+title = "Administrative units and restricted management AUs"
+status = "implemented"
+severity = "info"
+
+[check.detail]
+description = "Lists the administrative units in the tenant, including restricted management administrative units, with their scoped role assignments. This is an inventory and always passes."
+impact = "Administrative units define where scoped administrators can act, and restricted management units protect their members from tenant-level admins. The list helps review whether delegation is scoped as intended."
+remediation = [
+  "In the Microsoft Entra admin center, go to Identity > Roles & admins > Admin units and review membership and scoped role assignments.",
+  "Consider restricted management administrative units for sensitive accounts and groups that should only be managed by named admins.",
+]
+verify = "Get-MgDirectoryAdministrativeUnit -All | Select-Object DisplayName, IsMemberManagementRestricted"
+
+[[check.detail.references]]
+title = "Administrative units in Microsoft Entra ID"
+url = "https://learn.microsoft.com/entra/identity/role-based-access-control/administrative-units"
+
+[[check.detail.references]]
+title = "Restricted management administrative units in Microsoft Entra ID"
+url = "https://learn.microsoft.com/entra/identity/role-based-access-control/admin-units-restricted-management"
+
+[[check]]
+id = "EN-PRIV-009"
+title = "Custom roles with dangerous permissions"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "One or more custom directory roles include permissions that allow privilege escalation: updating credentials or owners of applications or service principals, managing role assignments, resetting passwords or authentication methods, or updating Conditional Access policies."
+impact = "Holders of these custom roles can reach Global Administrator level indirectly, for example by adding a secret to a privileged application or resetting an admin's password, even though the role looks limited."
+attack = [
+  "Compromises an account that holds the custom role.",
+  "Adds a credential to an application with high privileges, resets an administrator's authentication method or assigns itself a role.",
+  "Acts with the higher privileges gained.",
+]
+remediation = [
+  "In the Microsoft Entra admin center, go to Identity > Roles & admins, filter on custom roles and review the permissions of each.",
+  "Remove the escalation permissions from the role, or scope the role to specific applications or an administrative unit.",
+  "Treat any remaining holders as privileged accounts: eligible in PIM, MFA required, dedicated admin accounts.",
+]
+verify = "Get-MgRoleManagementDirectoryRoleDefinition -Filter 'isBuiltIn eq false' | Select-Object DisplayName, @{n='Actions';e={$_.RolePermissions.AllowedResourceActions}}"
+cvss = "AV:N/AC:H/PR:L/UI:N/S:U/C:H/I:H/A:N"
+mitre = ["T1098", "T1078.004", "T1098.003"]
+
+[[check.detail.references]]
+title = "Create a custom role in Microsoft Entra ID"
+url = "https://learn.microsoft.com/entra/identity/role-based-access-control/custom-create"
+
+[[check.detail.references]]
+title = "Privileged roles and permissions in Microsoft Entra ID"
+url = "https://learn.microsoft.com/entra/identity/role-based-access-control/privileged-roles-permissions"
+
+[[check]]
+id = "EN-PRIV-010"
+title = "Admins without a dedicated admin account (same account for email and admin)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "A user who holds a privileged directory role also has a licence and a mail address, so the admin account is the same as the daily account."
+impact = "Phishing mail and browsing reach the admin account directly; one stolen session gives an attacker the admin role."
+remediation = [
+  "Give admins a separate cloud-only admin account without a mailbox, and remove roles from daily accounts.",
+]
+verify = "Get-MgUser -UserId <id> -Property Mail,AssignedLicenses"
+mitre = ["T1078.004"]
+
+[[check.detail.references]]
+title = "Securing privileged access"
+url = "https://learn.microsoft.com/security/privileged-access-workstations/overview"
+
+[[check]]
+id = "EN-PRIV-011"
+title = "Admin accounts with mailboxes/licenses for productivity apps"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "One or more users who hold privileged directory roles also have licenses assigned for productivity apps. The same account is used for email, Teams or Office documents and for administration."
+impact = "Daily-use accounts receive phishing mail and open untrusted content, so a successful phish or token theft against the user also gives the attacker the admin role."
+attack = [
+  "Sends a phishing email or malicious document to the administrator's mailbox.",
+  "Steals the password or session token when the user interacts with it.",
+  "Uses the same identity to sign in to admin portals with the privileged role.",
+]
+remediation = [
+  "Create a separate, cloud-only admin account for each administrator and move the role assignments to it.",
+  "Remove productivity licenses from the admin accounts, keeping only licenses needed for administration such as Microsoft Entra ID P2.",
+  "In the Microsoft Entra admin center, check Identity > Users > (admin account) > Licenses after the change.",
+]
+verify = "Get-MgUser -UserId <admin UPN> -Property displayName,assignedLicenses | Select-Object DisplayName, AssignedLicenses"
+cvss = "AV:N/AC:H/PR:N/UI:R/S:U/C:H/I:H/A:N"
+mitre = ["T1078.004"]
+
+[[check.detail.references]]
+title = "Best practices for Microsoft Entra roles"
+url = "https://learn.microsoft.com/entra/identity/role-based-access-control/best-practices"
+
+[[check]]
+id = "EN-PRIV-012"
+title = "PIM alerts unresolved"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Privileged Identity Management has active alerts for directory roles, such as too many Global Administrators, roles assigned outside PIM, or roles that do not require MFA to activate."
+impact = "Each alert is a known weakness in how privileged roles are assigned that is waiting for someone to fix it."
+remediation = [
+  "Open PIM > Microsoft Entra roles > Alerts and fix or dismiss each alert with a reason.",
+]
+verify = "Invoke-MgGraphRequest GET \"beta/identityGovernance/roleManagementAlerts/alerts?`$filter=scopeId eq '/' and scopeType eq 'DirectoryRole'\""
+mitre = ["T1098.003"]
+
+[[check.detail.references]]
+title = "Configure security alerts for Entra roles in PIM"
+url = "https://learn.microsoft.com/entra/id-governance/privileged-identity-management/pim-how-to-configure-security-alerts"
+
+[[check]]
+id = "EN-PRIV-013"
+title = "Access reviews for privileged roles"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Privileged role holders exist and no active access review covers directory role assignments."
+impact = "Role assignments accumulate as people change jobs; nobody confirms they are still needed."
+remediation = [
+  "Create a recurring access review of Entra roles in PIM, reviewed by a second admin or the user's manager.",
+]
+verify = "Get-MgIdentityGovernanceAccessReviewDefinition"
+
+[[check.detail.references]]
+title = "Access reviews of Entra roles"
+url = "https://learn.microsoft.com/entra/id-governance/privileged-identity-management/pim-create-roles-and-resource-roles-review"
+
+[[check]]
+id = "EN-PRIV-014"
+title = "Stale privileged accounts (no sign-in, no activation)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "One or more users who hold privileged directory roles have not signed in for 90 days or more."
+impact = "Unused privileged accounts are rarely watched, often have old passwords and keep their roles, so a compromise can go unnoticed while giving admin access."
+attack = [
+  "Identifies a dormant account that still holds a privileged role.",
+  "Takes it over through password spraying, an old leaked password or a reset process.",
+  "Uses the role without the legitimate owner noticing.",
+]
+remediation = [
+  "In the Microsoft Entra admin center, go to Identity > Users > All users, add the Last sign-in column and compare with the role holders.",
+  "Remove the role from accounts that no longer need it and disable or delete accounts that are no longer used.",
+  "Set up a recurring access review for privileged roles in Identity governance > Access reviews.",
+]
+verify = "Get-MgUser -UserId <UPN> -Property displayName,signInActivity | Select-Object DisplayName, @{n='LastSignIn';e={$_.SignInActivity.LastSignInDateTime}}"
+cvss = "AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:N"
+mitre = ["T1078.004"]
+
+[[check.detail.references]]
+title = "How to manage inactive user accounts"
+url = "https://learn.microsoft.com/entra/identity/monitoring-health/howto-manage-inactive-user-accounts"
+
+[[check]]
+id = "EN-PRIV-015"
+title = "Azure subscription Owner / User Access Administrator held by Entra admins (elevate access state)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "A principal with a privileged Entra role also holds Owner or User Access Administrator on Azure resources."
+impact = "One account controls both the directory and the Azure estate, so its compromise is a compromise of both."
+remediation = [
+  "Split Azure ownership onto separate accounts or groups, and use PIM for both.",
+]
+verify = "Get-AzRoleAssignment -ObjectId <id>"
+mitre = ["T1078.004", "T1098"]
+
+[[check.detail.references]]
+title = "Securing privileged access"
+url = "https://learn.microsoft.com/security/privileged-access-workstations/overview"
+
+[[check]]
+id = "EN-PRIV-016"
+title = "\"Access management for Azure resources\" (root elevate) toggled on"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "A principal holds User Access Administrator at the root scope (\"/\"). This is what \"Access management for Azure resources\" grants a Global Administrator, and it stays until it is turned off."
+impact = "The principal can give itself any role on every subscription and management group in the tenant."
+remediation = [
+  "Turn off \"Access management for Azure resources\" in the Entra properties, or remove the assignment: Remove-AzRoleAssignment -Scope / -RoleDefinitionName 'User Access Administrator' -ObjectId <id>.",
+]
+verify = "Get-AzRoleAssignment -Scope / -RoleDefinitionName 'User Access Administrator'"
+mitre = ["T1098", "T1078.004"]
+
+[[check.detail.references]]
+title = "Elevate access to manage all Azure subscriptions"
+url = "https://learn.microsoft.com/azure/role-based-access-control/elevate-access-global-admin"
+
+[[check]]
+id = "EN-PRIV-017"
+title = "Directory synchronization accounts role holders"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "The Directory Synchronization Accounts role is held by one or more accounts that are not the Microsoft Entra Connect or Cloud Sync service account (named Sync_* or On-Premises Directory Synchronization Service Account)."
+impact = "The role carries the directory write permissions used by the synchronization service and is meant for that one account. An extra holder is a privileged identity that is easy to overlook and can be used to change synchronized objects."
+attack = [
+  "Assigns the role to an account it controls, or compromises an account that was given it.",
+  "Uses the synchronization permissions to change users or credentials of synchronized accounts.",
+  "Keeps the access because the role is rarely reviewed.",
+]
+remediation = [
+  "In the Microsoft Entra admin center, go to Identity > Roles & admins > Directory Synchronization Accounts and review every assignment.",
+  "Remove the role from any account that is not the service account created by Entra Connect or Cloud Sync.",
+  "Investigate how the extra assignment was made using the audit logs for the Add member to role activity.",
+]
+verify = "Get-MgRoleManagementDirectoryRoleAssignment -Filter \"roleDefinitionId eq 'd29b2b05-8046-44ba-8758-1e26182fcf32'\" -ExpandProperty Principal"
+cvss = "AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:N"
+mitre = ["T1098", "T1078.004"]
+
+[[check.detail.references]]
+title = "Microsoft Entra Connect: Accounts and permissions"
+url = "https://learn.microsoft.com/entra/identity/hybrid/connect/reference-connect-accounts-permissions"
+
+[[check.detail.references]]
+title = "Microsoft Entra built-in roles"
+url = "https://learn.microsoft.com/entra/identity/role-based-access-control/permissions-reference"
+
+[[check]]
+id = "EN-PRIV-018"
+title = "Partner relationships (GDAP / DAP) and delegated admin privileges"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "The tenant has one or more partner relationships with delegated admin privileges (DAP). DAP gives the partner's admin agents broad roles in this tenant, usually Global Administrator, with no expiry."
+impact = "A compromise of the partner's tenant or of one of its admin agents gives the attacker Global Administrator access to this tenant, outside this organization's own sign-in controls."
+attack = [
+  "Compromises a partner (for example an MSP) that has delegated admin privileges in many customer tenants.",
+  "Uses the partner relationship to sign in to this tenant with Global Administrator rights.",
+  "Exfiltrates data or creates persistent access.",
+]
+remediation = [
+  "In the Microsoft 365 admin center, go to Settings > Partner relationships and review each partner and its roles.",
+  "Remove DAP relationships that are no longer needed, and ask current partners to move to granular delegated admin privileges (GDAP) with least-privileged roles and an end date.",
+]
+verify = "Get-MgContract -All | Select-Object DisplayName, ContractType, CustomerId"
+cvss = "AV:N/AC:H/PR:N/UI:N/S:C/C:H/I:H/A:N"
+mitre = ["T1078.004", "T1199"]
+
+[[check.detail.references]]
+title = "Granular delegated admin privileges (GDAP) introduction"
+url = "https://learn.microsoft.com/partner-center/customers/gdap-introduction"
+
+[[check]]
+id = "EN-PRIV-019"
+title = "Privileged roles assigned through nested or dynamic groups"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "A group that holds a privileged role contains other groups, or has dynamic membership."
+impact = "Nested and dynamic membership hide who really holds the role: anyone who can change the inner group, or the attributes the rule uses, gets the role."
+remediation = [
+  "Put users directly in role-assignable groups, or assign the role directly with PIM.",
+]
+verify = "Get-MgGroupTransitiveMember -GroupId <id>"
+mitre = ["T1098.003"]
+
+[[check]]
+id = "EN-PRIV-020"
+title = "Intune / Exchange / SharePoint administrators inventory"
+status = "implemented"
+severity = "info"
+
+[check.detail]
+description = "Lists who holds Intune Administrator, Exchange Administrator and SharePoint Administrator."
+impact = "These roles can push code to every managed device, read every mailbox or every site; they should be few and known."
+remediation = [
+  "Review the holders and move them to eligible assignments in PIM.",
+]
+verify = "Get-MgRoleManagementDirectoryRoleAssignment -Filter \"roleDefinitionId eq '29232cdf-9323-42fd-ade2-1d097af3e4de'\""
+
+[[check.detail.references]]
+title = "Securing privileged access"
+url = "https://learn.microsoft.com/security/privileged-access-workstations/overview"
+
+[[check]]
+id = "EN-PRIV-021"
+title = "Cloud Device Local Administrator / Entra joined device local admins"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "One or more accounts hold the Microsoft Entra Joined Device Local Administrator role. Holders are added to the local Administrators group on every Microsoft Entra joined device."
+impact = "A compromise of any holder gives local administrator rights on all Entra joined devices, which allows credential theft from those devices and lateral movement."
+attack = [
+  "Compromises an account that holds the role.",
+  "Signs in to any Entra joined device as a local administrator.",
+  "Dumps cached credentials and tokens of other users on those devices.",
+]
+remediation = [
+  "In the Microsoft Entra admin center, go to Identity > Roles & admins > Microsoft Entra Joined Device Local Administrator and review the assignments.",
+  "Remove permanent holders and make remaining assignments eligible in PIM.",
+  "For scoped local admin rights, use Intune account protection policies or Windows LAPS instead of the tenant-wide role.",
+]
+verify = "Get-MgRoleManagementDirectoryRoleAssignment -Filter \"roleDefinitionId eq '9f06204d-73c1-4d4c-880a-6edb90606fd8'\" -ExpandProperty Principal"
+cvss = "AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:N"
+mitre = ["T1078.004"]
+
+[[check.detail.references]]
+title = "How to manage local administrators on Microsoft Entra joined devices"
+url = "https://learn.microsoft.com/entra/identity/devices/assign-local-admin"
+
+[[check]]
+id = "EN-PRIV-022"
+title = "Roles with Tier 0 equivalence (Application Admin, Cloud App Admin, Hybrid Identity Admin)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Application Administrator, Cloud Application Administrator, Hybrid Identity Administrator or Authentication Administrator is held as a permanent active assignment instead of an eligible assignment in PIM."
+impact = "These roles can reach Global Administrator indirectly, for example by adding credentials to a privileged application or changing federation and sync settings, and a permanent assignment makes that path usable at any time."
+attack = [
+  "Compromises an account that holds one of these roles permanently.",
+  "Adds a secret to an application or service principal that holds high privileges, or changes hybrid identity settings.",
+  "Authenticates as the application and acts with its privileges.",
+]
+remediation = [
+  "In the Microsoft Entra admin center, go to Identity governance > Privileged Identity Management > Microsoft Entra roles > Assignments and review the active assignments of these roles.",
+  "Convert them to eligible assignments with MFA and justification on activation.",
+  "Reduce the number of holders, and scope application management to specific apps where possible.",
+]
+verify = "Get-MgRoleManagementDirectoryRoleAssignmentScheduleInstance -All -ExpandProperty Principal | Where-Object { $_.AssignmentType -eq 'Assigned' }"
+cvss = "AV:N/AC:H/PR:N/UI:R/S:U/C:H/I:H/A:N"
+mitre = ["T1098", "T1078.004", "T1098.003"]
+
+[[check.detail.references]]
+title = "Privileged roles and permissions in Microsoft Entra ID"
+url = "https://learn.microsoft.com/entra/identity/role-based-access-control/privileged-roles-permissions"
+
+[[check.detail.references]]
+title = "Configure Microsoft Entra role settings in PIM"
+url = "https://learn.microsoft.com/entra/id-governance/privileged-identity-management/pim-how-to-change-default-settings"

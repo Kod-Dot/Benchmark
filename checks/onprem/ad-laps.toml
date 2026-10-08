@@ -1,0 +1,204 @@
+# AD-LAPS: LAPS and local admin management
+
+area = "AD-LAPS"
+
+[[check]]
+id = "AD-LAPS-001"
+title = "Windows LAPS or legacy LAPS schema present"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Neither Windows LAPS nor legacy LAPS attributes are in the schema, so local administrator passwords cannot be managed by LAPS."
+impact = "Without LAPS, local administrator passwords are usually the same on many machines. One stolen hash lets an attacker move to all of them."
+remediation = [
+  "Extend the schema for Windows LAPS (Update-LapsADSchema) and deploy a Windows LAPS policy to all computers.",
+]
+verify = "Get-ADObject -SearchBase (Get-ADRootDSE).schemaNamingContext -LDAPFilter '(lDAPDisplayName=msLAPS-Password)'"
+mitre = ["T1078.003"]
+
+[[check.detail.references]]
+title = "Windows LAPS overview"
+url = "https://learn.microsoft.com/windows-server/identity/laps/laps-overview"
+
+[[check]]
+id = "AD-LAPS-002"
+title = "Percentage of computers with a managed LAPS password"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Active member computers (enabled, seen in the last 90 days, not DCs) have no managed local administrator password in the directory. Both Windows LAPS and legacy LAPS are counted."
+impact = "Without LAPS the local administrator password is often shared across computers, so one stolen hash gives access to many."
+remediation = [
+  "Deploy Windows LAPS to the remaining computers and confirm each backs up its password to Active Directory.",
+  "Remove stale computer accounts so coverage figures are accurate.",
+]
+frameworks = [
+  "NIST 800-53 IA-5",
+]
+verify = "Get-ADComputer -Filter * -Properties msLAPS-PasswordExpirationTime, ms-Mcs-AdmPwdExpirationTime | Where-Object { -not $_.'msLAPS-PasswordExpirationTime' -and -not $_.'ms-Mcs-AdmPwdExpirationTime' }"
+mitre = ["T1078.003"]
+
+[[check]]
+id = "AD-LAPS-003"
+title = "Computers with expired LAPS passwords"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Active computers have LAPS passwords that expired more than 7 days ago, so the password is not being rotated."
+impact = "The local administrator password stays the same, and anyone who read it earlier can still use it."
+remediation = [
+  "Check the LAPS policy and client on these computers; run Invoke-LapsPolicyProcessing and review the LAPS event log.",
+]
+verify = "Get-LapsADPassword -Identity <computer> -AsPlainText:$false"
+mitre = ["T1078.003"]
+
+[[check.detail.references]]
+title = "Windows LAPS overview"
+url = "https://learn.microsoft.com/windows-server/identity/laps/laps-overview"
+
+[[check]]
+id = "AD-LAPS-004"
+title = "LAPS password encryption enabled (Windows LAPS)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "GPOs that back up Windows LAPS passwords to AD (BackupDirectory set to 2) also set ADPasswordEncryptionEnabled to 0, read from Registry.pol in SYSVOL. The check is not assessed when no GPO backs up Windows LAPS passwords to AD."
+impact = "With encryption off, the password is stored in clear text in msLAPS-Password. Anyone allowed to read that attribute, and any backup or copy of the directory database, reveals local administrator passwords. Encryption also lets you choose exactly who can decrypt."
+remediation = [
+  "In each listed GPO, set \"Enable password encryption\" to Enabled (the domain functional level must be Windows Server 2016 or later).",
+  "Optionally set \"Configure authorized password decryptors\" to a dedicated group.",
+  "After the change, rotate the managed passwords so no clear text copy remains.",
+]
+frameworks = [
+  "NIST 800-53 SC-28",
+  "NIST 800-53 IA-5",
+]
+verify = '''
+Get-GPO -All | ForEach-Object {
+  $g = $_
+  Get-GPRegistryValue -Guid $g.Id -Key 'HKLM\Software\Microsoft\Windows\CurrentVersion\Policies\LAPS' -ErrorAction SilentlyContinue |
+    Where-Object { $_.ValueName -in 'BackupDirectory', 'ADPasswordEncryptionEnabled' } |
+    Select-Object @{n='GPO';e={$g.DisplayName}}, ValueName, Value
+}'''
+mitre = ["T1552", "T1078.003"]
+
+[[check.detail.references]]
+title = "Windows LAPS overview"
+url = "https://learn.microsoft.com/windows-server/identity/laps/laps-overview"
+
+[[check]]
+id = "AD-LAPS-005"
+title = "LAPS policy settings (length, complexity, age)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "GPOs that configure Windows LAPS or legacy LAPS set a password length under 14 characters, a complexity under 4 (all character sets), or a password age over 30 days, read from Registry.pol in SYSVOL. Settings a GPO leaves unset are not flagged. The check is not assessed when no GPO sets any of these values."
+impact = "Short or simple local administrator passwords are easier to guess, and passwords that rotate rarely stay usable longer after they are read or leaked."
+remediation = [
+  "In each listed GPO, set the password length to at least 14 characters.",
+  "Set complexity to large letters, small letters, numbers and specials.",
+  "Set the password age to 30 days or less.",
+]
+frameworks = [
+  "NIST 800-53 IA-5",
+]
+verify = '''
+Get-GPO -All | ForEach-Object {
+  $g = $_
+  'HKLM\Software\Microsoft\Windows\CurrentVersion\Policies\LAPS', 'HKLM\Software\Policies\Microsoft Services\AdmPwd' | ForEach-Object {
+    Get-GPRegistryValue -Guid $g.Id -Key $_ -ErrorAction SilentlyContinue |
+      Where-Object { $_.ValueName -in 'PasswordLength', 'PasswordComplexity', 'PasswordAgeDays' } |
+      Select-Object @{n='GPO';e={$g.DisplayName}}, KeyPath, ValueName, Value
+  }
+}'''
+mitre = ["T1110", "T1078.003"]
+
+[[check.detail.references]]
+title = "Windows LAPS overview"
+url = "https://learn.microsoft.com/windows-server/identity/laps/laps-overview"
+
+[[check]]
+id = "AD-LAPS-006"
+title = "DSRM password managed by Windows LAPS on DCs"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "No GPO that applies to domain controllers backs up Windows LAPS passwords to AD (BackupDirectory set to 2), read from Registry.pol in SYSVOL and GPO links. On a domain controller Windows LAPS manages the DSRM account. The separate DSRM backup setting is not read."
+impact = "Without Windows LAPS, the DSRM password is set by hand when a DC is promoted and rarely changed. It is often the same on every DC, and it gives local administrator access to the DC in recovery mode, or over the network if DSRM sign-in has been allowed."
+remediation = [
+  "Create or extend a Windows LAPS GPO linked to the Domain Controllers OU with \"Configure password backup directory\" set to Active Directory.",
+  "In the same GPO, enable \"Enable password backup for DSRM accounts\" and \"Enable password encryption\".",
+  "Restrict who can decrypt the DSRM passwords to Domain Admins or a dedicated Tier 0 group.",
+]
+frameworks = [
+  "NIST 800-53 IA-5",
+]
+verify = '''
+(Get-GPInheritance -Target "OU=Domain Controllers,$((Get-ADDomain).DistinguishedName)").InheritedGpoLinks | ForEach-Object {
+  $l = $_
+  Get-GPRegistryValue -Guid $l.GpoId -Key 'HKLM\Software\Microsoft\Windows\CurrentVersion\Policies\LAPS' -ErrorAction SilentlyContinue |
+    Select-Object @{n='GPO';e={$l.DisplayName}}, ValueName, Value
+}'''
+mitre = ["T1078.003"]
+
+[[check.detail.references]]
+title = "Windows LAPS overview"
+url = "https://learn.microsoft.com/windows-server/identity/laps/laps-overview"
+
+[[check.detail.references]]
+title = "DSRM administrator logon behavior"
+url = "https://learn.microsoft.com/archive/blogs/askds/ds-restore-mode-password-maintenance"
+
+[[check]]
+id = "AD-LAPS-007"
+title = "Broad read access to LAPS attributes (links to AD-ACL-013)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Inheritable allow ACEs on OUs and the domain head, that apply to computer objects, let a principal read LAPS passwords: Full Control, All Extended Rights, Control Access on a LAPS attribute, or Read Property on ms-Mcs-AdmPwd, msLAPS-Password or msLAPS-EncryptedPassword. Default admins, Tier 0 principals and SELF are skipped. The check reports when LAPS is not in the schema."
+impact = "Every listed principal can read the local administrator password of each computer under that OU. A helpdesk group or a broad group that can read LAPS passwords on servers turns one compromised account into local admin on all of them."
+remediation = [
+  "Review each listed principal and OU, and confirm the access is meant.",
+  "Remove All Extended Rights and Full Control grants that are broader than needed.",
+  "Grant LAPS read access with Set-LapsADReadPasswordPermission (or Set-AdmPwdReadPasswordPermission for legacy LAPS) only to dedicated groups, per OU.",
+]
+frameworks = [
+  "NIST 800-53 AC-6",
+]
+verify = '''
+Get-ADOrganizationalUnit -Filter * | ForEach-Object {
+  $ou = $_.DistinguishedName
+  (Get-Acl "AD:$ou").Access |
+    Where-Object { $_.AccessControlType -eq 'Allow' -and $_.InheritanceType -ne 'None' -and $_.ActiveDirectoryRights -match 'GenericAll|ExtendedRight|ReadProperty' } |
+    Select-Object @{n='OU';e={$ou}}, IdentityReference, ActiveDirectoryRights, ObjectType, InheritedObjectType
+}'''
+cvss = "AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:N"
+mitre = ["T1552", "T1078.003"]
+
+[[check.detail.references]]
+title = "Windows LAPS overview"
+url = "https://learn.microsoft.com/windows-server/identity/laps/laps-overview"
+
+[[check]]
+id = "AD-LAPS-008"
+title = "Legacy LAPS and Windows LAPS both present (migration state)"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Both legacy LAPS and Windows LAPS are in the schema, and active computers are still managed by legacy LAPS."
+impact = "Legacy LAPS is deprecated, stores passwords unencrypted and has no history; mixing both makes coverage hard to verify."
+remediation = [
+  "Move the remaining computers to Windows LAPS and remove the legacy LAPS client.",
+]
+
+[[check.detail.references]]
+title = "Windows LAPS overview"
+url = "https://learn.microsoft.com/windows-server/identity/laps/laps-overview"

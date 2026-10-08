@@ -1,0 +1,390 @@
+# AD-REP: Replication and topology
+
+area = "AD-REP"
+
+[[check]]
+id = "AD-REP-001"
+title = "Replication failures per partner (repadmin /showrepl equivalent)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "For each domain controller, reads the inbound replication status of every partner and naming context, as repadmin /showrepl shows it. A link is listed when its last replication attempt returned an error or it has consecutive failures."
+impact = "Changes made on one DC do not reach the others. A disabled account, a password reset or a removed group membership can stay in effect on some DCs, and Group Policy or security settings can differ depending on which DC a client uses. A DC that fails long enough can pass the tombstone lifetime and need a rebuild."
+remediation = [
+  "Run repadmin /showrepl on the DC and look up the error code of each failing link.",
+  "Fix the cause, most often DNS resolution, blocked RPC ports, time differences or a partner that no longer exists.",
+  "Force replication with repadmin /syncall once fixed and confirm that the failure count returns to zero.",
+]
+frameworks = [
+  "NIST 800-53 CM-6",
+]
+verify = '''
+Get-ADReplicationPartnerMetadata -Target <dc> -Scope Server |
+  Where-Object { $_.LastReplicationResult -ne 0 -or $_.ConsecutiveReplicationFailures -gt 0 } |
+  Select-Object Server, Partner, Partition, LastReplicationResult, ConsecutiveReplicationFailures
+repadmin /showrepl <dc> /errorsonly'''
+
+[[check.detail.references]]
+title = "Get-ADReplicationPartnerMetadata"
+url = "https://learn.microsoft.com/powershell/module/activedirectory/get-adreplicationpartnermetadata"
+
+[[check.detail.references]]
+title = "repadmin"
+url = "https://learn.microsoft.com/windows-server/administration/windows-commands/repadmin"
+
+[[check]]
+id = "AD-REP-002"
+title = "Last successful replication older than 24 hours"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "For each domain controller, reads the time of the last successful inbound replication from every partner and naming context. A link is listed when it has never succeeded or its last success is one day old or more."
+impact = "The DC works on outdated data. Account changes, password resets and group membership changes made elsewhere are not seen there, and if the gap reaches the tombstone lifetime the DC can reintroduce deleted objects or must be rebuilt."
+remediation = [
+  "Run repadmin /showrepl on the DC to see the error of each stale link.",
+  "Check that the partner still exists, can be resolved in DNS and can be reached over RPC.",
+  "Remove connection objects to partners that were decommissioned, and clean up their metadata.",
+]
+frameworks = [
+  "NIST 800-53 CM-6",
+]
+verify = '''
+Get-ADReplicationPartnerMetadata -Target <dc> -Scope Server |
+  Select-Object Server, Partner, Partition, LastReplicationSuccess'''
+
+[[check.detail.references]]
+title = "Get-ADReplicationPartnerMetadata"
+url = "https://learn.microsoft.com/powershell/module/activedirectory/get-adreplicationpartnermetadata"
+
+[[check.detail.references]]
+title = "repadmin"
+url = "https://learn.microsoft.com/windows-server/administration/windows-commands/repadmin"
+
+[[check]]
+id = "AD-REP-003"
+title = "USN rollback indicators"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Reads the Dsa Not Writable value under HKLM\\SYSTEM\\CurrentControlSet\\Services\\NTDS\\Parameters on each domain controller. Windows sets it to 4 when it detects a USN rollback, usually after the DC was restored from a snapshot or an unsupported image, and other values put the directory database in read-only quarantine."
+impact = "The DC has stopped inbound and outbound replication and its directory database is no longer trusted. Changes made on it may never reach other DCs, and clients that use it see a different directory from the rest of the domain."
+remediation = [
+  "Do not try to clear the value to resume replication.",
+  "Demote the DC (forcibly if needed), clean up its metadata and promote it again, or restore it from a supported system state backup.",
+  "Find how the rollback happened, such as a VM snapshot revert, and stop that practice.",
+]
+frameworks = [
+  "NIST 800-53 CP-9",
+]
+verify = '''
+Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Services\NTDS\Parameters' -Name 'Dsa Not Writable' -ErrorAction SilentlyContinue'''
+
+[[check.detail.references]]
+title = "Detect and recover from a USN rollback"
+url = "https://learn.microsoft.com/troubleshoot/windows-server/active-directory/detect-and-recover-from-usn-rollback"
+
+[[check]]
+id = "AD-REP-004"
+title = "Lingering objects risk (strict replication consistency disabled)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Strict Replication Consistency is not on for the DC."
+impact = "A DC that was offline longer than the tombstone lifetime can reintroduce deleted objects (lingering objects), including deleted admin accounts."
+remediation = [
+  "Set \"Strict Replication Consistency\" to 1 under HKLM\\SYSTEM\\CurrentControlSet\\Services\\NTDS\\Parameters, for example with repadmin /regkey * +strict.",
+]
+verify = "repadmin /regkey <dc>"
+
+[[check.detail.references]]
+title = "Strict replication consistency"
+url = "https://learn.microsoft.com/troubleshoot/windows-server/active-directory/active-directory-replication-event-id-1388-1988"
+
+[[check]]
+id = "AD-REP-005"
+title = "ISTG missing or invalid, or automatic topology off"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "For every site that contains domain controllers, reads the NTDS Site Settings object. The site is listed when no inter-site topology generator (ISTG) is set, the ISTG is a deleted DC, no longer exists or sits in another site, or when automatic intra-site or inter-site topology generation is turned off in its options."
+impact = "Without a working ISTG, or with automatic topology off, the KCC does not create or repair the connections between DCs. Replication paths are not rebuilt when a DC fails or is added, so changes can stop flowing to or from the site without any error on the remaining DCs."
+remediation = [
+  "If the ISTG is missing or points at a removed DC, check that a DC in the site is online and replicating; the role is claimed again automatically once the old entry ages out. Clean up metadata of removed DCs.",
+  "Turn automatic topology generation back on unless manual connection objects are maintained on purpose, for example with repadmin /siteoptions <dc> -IS_AUTO_TOPOLOGY_DISABLED -IS_INTER_SITE_AUTO_TOPOLOGY_DISABLED.",
+  "If manual topology is intended, document it and review the connection objects regularly.",
+]
+frameworks = [
+  "NIST 800-53 CM-6",
+]
+verify = '''
+Get-ADReplicationSite -Filter * |
+  Select-Object Name, InterSiteTopologyGenerator, AutomaticTopologyGenerationEnabled, AutomaticInterSiteTopologyGenerationEnabled'''
+
+[[check.detail.references]]
+title = "Get-ADReplicationSite"
+url = "https://learn.microsoft.com/powershell/module/activedirectory/get-adreplicationsite"
+
+[[check]]
+id = "AD-REP-006"
+title = "Sites with no DCs"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Lists sites in the configuration partition that contain no domain controller, with the number of subnets mapped to each. Clients in such a site are served by a DC in another site through site coverage."
+impact = "Clients in the site sign in at whichever DC covers it, which may be far away or across a slow link. Sign-ins and Group Policy processing are slower, and an outage of the link stops sign-ins there. Empty sites left over from closed offices also make the topology harder to review."
+remediation = [
+  "Confirm for each listed site whether it is intentionally without a DC.",
+  "Delete sites that are no longer used, after moving or removing their subnets.",
+  "For sites that are kept, make sure their site links lead to the DCs that should cover them.",
+]
+frameworks = [
+  "NIST 800-53 CM-8",
+]
+verify = '''
+Get-ADReplicationSite -Filter * | Select-Object Name
+Get-ADDomainController -Filter * | Select-Object Name, Site'''
+
+[[check.detail.references]]
+title = "Get-ADReplicationSite"
+url = "https://learn.microsoft.com/powershell/module/activedirectory/get-adreplicationsite"
+
+[[check]]
+id = "AD-REP-007"
+title = "Subnets not assigned to a site"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Lists subnet objects that have no site assigned. The result also notes when no subnet is defined at all while there are several sites."
+impact = "Clients in an unassigned subnet get no site, so they may sign in at any DC in the domain, including DCs across slow links or in other regions. Sign-ins, Group Policy and DFS referrals become slow and unpredictable."
+remediation = [
+  "In Active Directory Sites and Services, open each listed subnet and assign it to the site where its clients are.",
+  "Remove subnets that are no longer used.",
+]
+frameworks = [
+  "NIST 800-53 CM-8",
+]
+verify = '''
+Get-ADReplicationSubnet -Filter * | Where-Object { -not $_.Site } | Select-Object Name'''
+
+[[check.detail.references]]
+title = "Get-ADReplicationSubnet"
+url = "https://learn.microsoft.com/powershell/module/activedirectory/get-adreplicationsubnet"
+
+[[check]]
+id = "AD-REP-008"
+title = "Clients authenticating from unmapped subnets (from Netlogon.log)"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Reads the NO_CLIENT_SITE entries in %SystemRoot%\\debug\\netlogon.log on each domain controller. Each entry is a client that contacted the DC from an IP address that is not in any subnet defined in AD. The result shows the number of sign-ins and the most frequent clients."
+impact = "These clients get no site, so they may sign in at distant DCs. Sign-ins and Group Policy processing are slower, and the entries usually point to network ranges that were added without updating AD Sites and Services."
+remediation = [
+  "Create subnet objects for the listed address ranges and assign them to the correct site.",
+  "Check the log again after a few days to confirm the entries stop.",
+]
+frameworks = [
+  "NIST 800-53 CM-8",
+]
+verify = '''
+Select-String -Path "\\<dc>\admin$\debug\netlogon.log" -Pattern 'NO_CLIENT_SITE' | Select-Object -Last 20'''
+
+[[check.detail.references]]
+title = "Get-ADReplicationSubnet"
+url = "https://learn.microsoft.com/powershell/module/activedirectory/get-adreplicationsubnet"
+
+[[check]]
+id = "AD-REP-009"
+title = "Site links with fewer than two sites or long replication interval"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Lists site links that contain fewer than two sites, or whose replication interval is longer than 180 minutes. The cost, interval and sites of every site link are shown with the result."
+impact = "A site link with one site or none does not connect anything, which can leave a site without an inter-site replication path. A long interval delays changes between sites by hours, so account lockouts, disabled accounts and policy changes take effect late in other sites."
+remediation = [
+  "Add the missing sites to each site link, or delete links that are no longer used.",
+  "Set the replication interval to 180 minutes or less unless a slow link requires otherwise, and document the reason.",
+]
+frameworks = [
+  "NIST 800-53 CM-6",
+]
+verify = '''
+Get-ADReplicationSiteLink -Filter * | Select-Object Name, Cost, ReplicationFrequencyInMinutes, SitesIncluded'''
+
+[[check.detail.references]]
+title = "Get-ADReplicationSiteLink"
+url = "https://learn.microsoft.com/powershell/module/activedirectory/get-adreplicationsitelink"
+
+[[check]]
+id = "AD-REP-010"
+title = "Bridge-all-site-links setting review"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Reads the options of the IP inter-site transport. Bridge all site links is on by default. The setting is flagged when it is turned off, no site link bridge exists, and there are more than two sites."
+impact = "With bridging off and no bridges, replication is not transitive: two sites that have no direct site link do not replicate with each other. Changes can then reach some sites only late or not at all, depending on how the site links are laid out."
+remediation = [
+  "Turn Bridge all site links back on (Inter-Site Transports, IP, Properties) unless the network is not fully routed.",
+  "If bridging is off on purpose, create site link bridges for the sites that need to replicate through others.",
+]
+frameworks = [
+  "NIST 800-53 CM-6",
+]
+verify = '''
+Get-ADObject "CN=IP,CN=Inter-Site Transports,CN=Sites,$((Get-ADRootDSE).configurationNamingContext)" -Properties options |
+  Select-Object Name, options
+Get-ADReplicationSiteLinkBridge -Filter *'''
+
+[[check.detail.references]]
+title = "Get-ADReplicationSiteLink"
+url = "https://learn.microsoft.com/powershell/module/activedirectory/get-adreplicationsitelink"
+
+[[check]]
+id = "AD-REP-011"
+title = "SYSVOL replication: still on FRS instead of DFSR"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "On each domain controller, reads the SYSVOL migration state (Local State under DFSR\\Parameters\\SysVols\\Migrating SysVols) and which of the DFSR and NtFrs services run. The DC is flagged when the migration to DFSR is not finished, when SYSVOL still replicates with FRS, or when neither service runs."
+impact = "FRS is deprecated and no longer supported. Windows Server 2019 and later cannot be promoted as DCs in a domain that still uses FRS for SYSVOL, and FRS is prone to replication failures that leave policies and scripts different between DCs. If neither service runs, SYSVOL does not replicate at all."
+remediation = [
+  "Migrate SYSVOL replication to DFSR with dfsrmig, moving through the Prepared, Redirected and Eliminated states and checking each one with dfsrmig /getmigrationstate.",
+  "If neither service runs, start DFSR and check the DFS Replication event log for the cause.",
+]
+frameworks = [
+  "NIST 800-53 CM-6",
+]
+verify = '''
+dfsrmig /getglobalstate
+Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Services\DFSR\Parameters\SysVols\Migrating SysVols' -Name 'Local State' -ErrorAction SilentlyContinue
+Get-Service DFSR, NtFrs -ErrorAction SilentlyContinue'''
+
+[[check.detail.references]]
+title = "dfsrmig"
+url = "https://learn.microsoft.com/windows-server/administration/windows-commands/dfsrmig"
+
+[[check]]
+id = "AD-REP-012"
+title = "DFSR SYSVOL replicated folder not in Normal state"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "On each domain controller, reads the state of the SYSVOL Share replicated folder from DFSR. The DC is flagged when the state is anything other than Normal (4), such as uninitialized, initial sync, auto recovery or in error."
+impact = "Policy and script changes do not reach the DC or do not leave it. Clients that use that DC apply old or missing Group Policy, so security settings can silently differ between parts of the network."
+remediation = [
+  "Check the DFS Replication event log on the DC for the reason, such as a dirty shutdown (event 2213) or a content freshness stop (event 4012).",
+  "Resume replication or perform a non-authoritative sync of SYSVOL from a healthy DC, as the event describes.",
+  "Confirm that the state returns to Normal on every DC.",
+]
+frameworks = [
+  "NIST 800-53 CM-6",
+]
+verify = '''
+Get-CimInstance -ComputerName <dc> -Namespace root\MicrosoftDFS -ClassName DfsrReplicatedFolderInfo |
+  Select-Object ReplicatedFolderName, State'''
+
+[[check.detail.references]]
+title = "dfsrmig"
+url = "https://learn.microsoft.com/windows-server/administration/windows-commands/dfsrmig"
+
+[[check]]
+id = "AD-REP-013"
+title = "SYSVOL and NETLOGON shares present on every DC"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "The SYSVOL or NETLOGON share is missing on the DC."
+impact = "Clients authenticated by that DC cannot read Group Policy or logon scripts, so security settings may stop applying."
+remediation = [
+  "Check SYSVOL replication state (DFSR) on the DC and repair it.",
+  "Confirm SysvolReady is 1 under Netlogon\\Parameters.",
+]
+verify = "Get-SmbShare -CimSession <dc> -Name SYSVOL, NETLOGON"
+
+[[check.detail.references]]
+title = "Troubleshoot missing SYSVOL and NETLOGON shares"
+url = "https://learn.microsoft.com/troubleshoot/windows-server/group-policy/missing-sysvol-and-netlogon-shares"
+
+[[check]]
+id = "AD-REP-014"
+title = "GPO version mismatch between AD and SYSVOL"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "For every GPO whose GPT.INI was read from SYSVOL, compares the versionNumber attribute of the GPO in AD with the Version in GPT.INI. SYSVOL is read once, through the domain DFS path, so the result reflects the DC that answered that read, not every DC."
+impact = "When the two versions differ, the GPO was changed in AD or in SYSVOL and the other part has not caught up, usually because of a replication problem. Computers may apply old settings, or skip the GPO because they think it has not changed."
+remediation = [
+  "Check AD and SYSVOL replication health (AD-REP-001 and AD-REP-012) and fix any failure first.",
+  "Open the GPO in the Group Policy Management Console and look at the Details tab, which shows the AD and SYSVOL versions.",
+  "If the versions stay different after replication is healthy, make a small edit to the GPO so both parts are written again.",
+]
+frameworks = [
+  "NIST 800-53 CM-6",
+]
+verify = '''
+Get-GPO -All | Where-Object { $_.User.DSVersion -ne $_.User.SysvolVersion -or $_.Computer.DSVersion -ne $_.Computer.SysvolVersion } |
+  Select-Object DisplayName, Id'''
+
+[[check.detail.references]]
+title = "Get-GPO"
+url = "https://learn.microsoft.com/powershell/module/grouppolicy/get-gpo"
+
+[[check]]
+id = "AD-REP-015"
+title = "Orphaned DC metadata (NTDS Settings without a computer)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Lists server objects in the Sites container that hold an NTDS Settings object but have no serverReference to a computer account, or whose referenced computer account in this domain no longer exists. These are left behind when a DC is removed without demotion or without metadata cleanup."
+impact = "Other DCs keep trying to replicate with the removed DC and log errors, the KCC may build connections around it, and it can stay registered as an ISTG or in DNS. This hides real replication problems and can delay changes between sites."
+remediation = [
+  "Confirm the DC is really gone, then remove its metadata with Active Directory Sites and Services (delete the server object) or ntdsutil metadata cleanup.",
+  "Remove its leftover DNS records, including SRV records under _msdcs.",
+]
+frameworks = [
+  "NIST 800-53 CM-8",
+]
+verify = '''
+Get-ADObject -SearchBase "CN=Sites,$((Get-ADRootDSE).configurationNamingContext)" -LDAPFilter '(objectClass=server)' -Properties serverReference |
+  Select-Object Name, serverReference'''
+
+[[check.detail.references]]
+title = "repadmin"
+url = "https://learn.microsoft.com/windows-server/administration/windows-commands/repadmin"
+
+[[check]]
+id = "AD-REP-016"
+title = "Sites with DCs but no global catalog"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "For every site that contains domain controllers, checks whether at least one of them is a global catalog (option 1 on its NTDS Settings object)."
+impact = "Sign-ins in that site need a global catalog to expand universal group memberships, so they query a GC in another site. Sign-ins become slower and fail when the link is down, unless universal group membership caching is on for the site."
+remediation = [
+  "Make at least one DC in each listed site a global catalog (NTDS Settings properties, Global Catalog).",
+  "If that is not possible, turn on universal group membership caching for the site.",
+]
+frameworks = [
+  "NIST 800-53 CM-6",
+]
+verify = '''
+Get-ADDomainController -Filter * | Select-Object Name, Site, IsGlobalCatalog'''
+
+[[check.detail.references]]
+title = "Get-ADReplicationSite"
+url = "https://learn.microsoft.com/powershell/module/activedirectory/get-adreplicationsite"

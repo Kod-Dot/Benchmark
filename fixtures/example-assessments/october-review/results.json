@@ -1,0 +1,1569 @@
+{
+  "checks": [
+    {
+      "id": "AD-ACL-002",
+      "status": "failed",
+      "affected_count": 2,
+      "affected_unit": "principals",
+      "affected": [
+        {
+          "name": "svc-backup",
+          "kind": "user",
+          "location": "CN=svc-backup,OU=Service Accounts,DC=corp,DC=example,DC=com",
+          "reason": "Has Replicating Directory Changes All on the domain root",
+          "object": "u-svc-backup"
+        },
+        {
+          "name": "SYNC01$",
+          "kind": "computer",
+          "location": "CN=SYNC01,OU=Servers,OU=Tier 0,DC=corp,DC=example,DC=com",
+          "reason": "Has Replicating Directory Changes All; Entra Connect uses password hash sync",
+          "object": "c-sync01"
+        }
+      ],
+      "expected": "Only domain controllers, Domain Controllers, Enterprise Domain Controllers and Administrators hold replication rights",
+      "found": "2 other principals hold Replicating Directory Changes and Replicating Directory Changes All",
+      "evidence": [
+        {
+          "label": "Read from",
+          "value": "nTSecurityDescriptor of the domain root via LDAP on DC01"
+        }
+      ],
+      "raw": "ObjectType  1131f6ad-9c07-11d1-f79f-00c04fc2dcd2  (DS-Replication-Get-Changes-All)\nCORP\\svc-backup   Allow\nCORP\\SYNC01$      Allow"
+    },
+    {
+      "id": "AD-PKI-002",
+      "status": "failed",
+      "affected_count": 1,
+      "affected_unit": "template",
+      "affected": [
+        {
+          "name": "UserAuth-Legacy",
+          "kind": "template",
+          "location": "CN=UserAuth-Legacy,CN=Certificate Templates,CN=Public Key Services,CN=Services,CN=Configuration,DC=corp,DC=example,DC=com",
+          "reason": "Enroll: Domain Users; supplies subject; Client Authentication; no manager approval",
+          "object": "t-userauth"
+        },
+        {
+          "name": "CORP-ISSUING-CA",
+          "kind": "ca",
+          "location": "PKI01.corp.example.com",
+          "reason": "Publishes UserAuth-Legacy",
+          "object": "ca-issuing"
+        },
+        {
+          "name": "Domain Users",
+          "kind": "group",
+          "location": "CN=Domain Users,CN=Users,DC=corp,DC=example,DC=com",
+          "reason": "Every member can enroll",
+          "object": "g-domain-users"
+        }
+      ],
+      "expected": "Templates with Client Authentication do not let low-privileged principals supply the subject",
+      "found": "1 template fails: enrollee supplies subject and Domain Users can enroll",
+      "evidence": [
+        {
+          "label": "Read from",
+          "value": "Configuration partition via LDAP on DC01, CA registry on PKI01"
+        }
+      ],
+      "raw": "msPKI-Certificate-Name-Flag : 0x00000001  (ENROLLEE_SUPPLIES_SUBJECT)\npKIExtendedKeyUsage        : 1.3.6.1.5.5.7.3.2  (Client Authentication)\nmsPKI-Enrollment-Flag      : 0x00000000  (no manager approval)\nmsPKI-RA-Signature         : 0\nnTSecurityDescriptor       : CORP\\Domain Users  Allow  Enroll\nPublished by               : CORP-ISSUING-CA"
+    },
+    {
+      "id": "AD-KRB-003",
+      "status": "failed",
+      "affected_count": 2,
+      "affected_unit": "computers",
+      "affected": [
+        {
+          "name": "APP01",
+          "kind": "computer",
+          "location": "CN=APP01,OU=Servers,DC=corp,DC=example,DC=com",
+          "reason": "TrustedForDelegation",
+          "object": "c-app01"
+        },
+        {
+          "name": "FS01",
+          "kind": "computer",
+          "location": "CN=FS01,OU=Servers,DC=corp,DC=example,DC=com",
+          "reason": "TrustedForDelegation",
+          "object": "c-fs01"
+        }
+      ],
+      "expected": "Only domain controllers are trusted for unconstrained delegation",
+      "found": "2 member servers are trusted for unconstrained delegation",
+      "raw": "userAccountControl : 0x81000  (WORKSTATION_TRUST_ACCOUNT, TRUSTED_FOR_DELEGATION)"
+    },
+    {
+      "id": "EN-CA-004",
+      "status": "failed",
+      "affected": [
+        {
+          "name": "example.onmicrosoft.com",
+          "kind": "tenant",
+          "reason": "No enabled policy blocks Exchange ActiveSync and other legacy clients"
+        }
+      ],
+      "expected": "An enabled policy blocks legacy authentication for all users",
+      "found": "Policy \"CA010 Block legacy auth\" exists but is in report-only mode",
+      "evidence": [
+        {
+          "label": "Read from",
+          "value": "Microsoft Graph /identity/conditionalAccess/policies"
+        }
+      ]
+    },
+    {
+      "id": "AD-PRIV-021",
+      "status": "failed",
+      "affected_count": 1,
+      "affected_unit": "account",
+      "affected": [
+        {
+          "name": "krbtgt",
+          "kind": "user",
+          "location": "CN=krbtgt,CN=Users,DC=corp,DC=example,DC=com",
+          "reason": "Password last set 7 Jul 2023, 1,186 days ago",
+          "object": "u-krbtgt"
+        }
+      ],
+      "expected": "krbtgt password changed in the last 180 days",
+      "found": "Last changed 1,186 days ago",
+      "evidence": [
+        {
+          "label": "pwdLastSet",
+          "value": "2023-07-07 09:14:22 UTC"
+        },
+        {
+          "label": "Threshold",
+          "value": "180 days"
+        }
+      ]
+    },
+    {
+      "id": "AD-PRIV-017",
+      "status": "failed",
+      "affected_count": 1,
+      "affected_unit": "account",
+      "affected": [
+        {
+          "name": "adm-jsmith",
+          "kind": "user",
+          "location": "CN=adm-jsmith,OU=Admins,OU=Tier 0,DC=corp,DC=example,DC=com",
+          "reason": "MSSQLSvc/sql-old.corp.example.com:1433",
+          "object": "u-adm-jsmith"
+        }
+      ]
+    },
+    {
+      "id": "AD-PRIV-015",
+      "status": "failed",
+      "affected_count": 3,
+      "affected_unit": "accounts",
+      "affected": [
+        {
+          "name": "adm-jsmith",
+          "kind": "user",
+          "object": "u-adm-jsmith"
+        },
+        {
+          "name": "adm-mlopez",
+          "kind": "user",
+          "object": "u-adm-mlopez"
+        },
+        {
+          "name": "svc-backup",
+          "kind": "user",
+          "object": "u-svc-backup"
+        }
+      ]
+    },
+    {
+      "id": "EN-PRIV-002",
+      "status": "failed",
+      "affected_count": 4,
+      "affected_unit": "assignments",
+      "affected": [
+        {
+          "name": "admin.r.lee@example.onmicrosoft.com",
+          "kind": "user",
+          "reason": "Global Administrator, permanent",
+          "object": "e-admin-rlee"
+        },
+        {
+          "name": "it-ops@example.onmicrosoft.com",
+          "kind": "user",
+          "reason": "Global Administrator, permanent",
+          "object": "e-itops"
+        },
+        {
+          "name": "a.khan@example.com",
+          "kind": "user",
+          "reason": "Exchange Administrator, permanent",
+          "object": "e-akhan"
+        },
+        {
+          "name": "HelpdeskApp",
+          "kind": "app",
+          "reason": "Privileged Authentication Administrator, permanent",
+          "object": "e-app-helpdesk"
+        }
+      ]
+    },
+    {
+      "id": "AD-DC-011",
+      "status": "failed",
+      "affected_count": 3,
+      "affected_unit": "domain controllers",
+      "affected": [
+        {
+          "name": "DC01",
+          "kind": "computer",
+          "object": "c-dc01"
+        },
+        {
+          "name": "DC02",
+          "kind": "computer",
+          "object": "c-dc02"
+        },
+        {
+          "name": "DC03",
+          "kind": "computer",
+          "object": "c-dc03"
+        }
+      ],
+      "expected": "LDAPServerIntegrity = 2 (require signing)",
+      "found": "LDAPServerIntegrity = 1 on all domain controllers"
+    },
+    {
+      "id": "AD-PRIV-003",
+      "status": "failed",
+      "affected_count": 7,
+      "affected_unit": "members",
+      "severity": "medium",
+      "affected": [
+        {
+          "name": "adm-jsmith",
+          "kind": "user",
+          "object": "u-adm-jsmith"
+        },
+        {
+          "name": "adm-mlopez",
+          "kind": "user",
+          "object": "u-adm-mlopez"
+        },
+        {
+          "name": "Administrator",
+          "kind": "user",
+          "object": "u-administrator"
+        }
+      ],
+      "expected": "5 members or fewer",
+      "found": "7 members, 2 of them nested through IT-Admins"
+    },
+    {
+      "id": "AD-CMP-007",
+      "status": "failed",
+      "affected_count": 6,
+      "affected_unit": "computers",
+      "affected": [
+        {
+          "name": "WS-LON-014",
+          "kind": "computer",
+          "object": "c-ws-lon-014"
+        },
+        {
+          "name": "WS-LON-022",
+          "kind": "computer",
+          "object": "c-ws-lon-022"
+        },
+        {
+          "name": "WS-MAD-003",
+          "kind": "computer",
+          "object": "c-ws-mad-003"
+        }
+      ]
+    },
+    {
+      "id": "AD-GPO-004",
+      "status": "failed",
+      "affected_count": 1,
+      "affected_unit": "GPO",
+      "affected": [
+        {
+          "name": "Legacy Local Admin",
+          "kind": "gpo",
+          "location": "\\\\corp.example.com\\SYSVOL\\corp.example.com\\Policies\\{6AC1786C-016F-11D2-945F-00C04FB984F9}\\Machine\\Preferences\\Groups\\Groups.xml",
+          "reason": "cpassword for the local Administrator",
+          "object": "gpo-legacy"
+        }
+      ]
+    },
+    {
+      "id": "AD-ACC-001",
+      "status": "failed",
+      "affected_count": 2,
+      "affected_unit": "users",
+      "affected": [
+        {
+          "name": "m.garcia",
+          "kind": "user",
+          "object": "u-mgarcia"
+        },
+        {
+          "name": "helpdesk01",
+          "kind": "user",
+          "object": "u-helpdesk01"
+        }
+      ]
+    },
+    {
+      "id": "AD-PWD-012",
+      "status": "failed",
+      "affected_count": 3,
+      "affected_unit": "users",
+      "affected": [
+        {
+          "name": "svc-backup",
+          "kind": "user",
+          "object": "u-svc-backup"
+        },
+        {
+          "name": "helpdesk01",
+          "kind": "user",
+          "object": "u-helpdesk01"
+        },
+        {
+          "name": "svc-sql01",
+          "kind": "user",
+          "object": "u-svc-sql01"
+        }
+      ]
+    },
+    {
+      "id": "AD-PRIV-011",
+      "status": "failed",
+      "affected_count": 1,
+      "affected_unit": "account",
+      "affected": [
+        {
+          "name": "t.nguyen",
+          "kind": "user",
+          "reason": "Disabled, still in IT-Admins",
+          "object": "u-tnguyen"
+        }
+      ]
+    },
+    {
+      "id": "EN-AUTH-001",
+      "status": "failed",
+      "affected_count": 2,
+      "affected_unit": "users",
+      "affected": [
+        {
+          "name": "r.lee@example.com",
+          "kind": "user",
+          "object": "e-rlee"
+        },
+        {
+          "name": "m.garcia@example.com",
+          "kind": "user",
+          "object": "e-mgarcia"
+        }
+      ]
+    },
+    {
+      "id": "AD-DC-001",
+      "status": "not_assessed",
+      "note": "DC03 configuration was not readable: Access is denied"
+    },
+    {
+      "id": "AD-DC-002",
+      "status": "not_assessed",
+      "note": "DC03 configuration was not readable: Access is denied"
+    },
+    {
+      "id": "AD-LEG-001",
+      "status": "not_assessed",
+      "note": "Security log of DC03 was not readable"
+    },
+    {
+      "id": "AD-PRIV-002",
+      "status": "accepted",
+      "note": "Accepted until 31 Dec 2026: Schema Admins used for the Exchange upgrade project"
+    },
+    {
+      "id": "EN-APP-001",
+      "status": "passed"
+    },
+    {
+      "id": "EN-APP-003",
+      "status": "passed"
+    },
+    {
+      "id": "EN-APP-005",
+      "status": "passed"
+    },
+    {
+      "id": "EN-APP-007",
+      "status": "passed"
+    },
+    {
+      "id": "EN-APP-009",
+      "status": "passed"
+    },
+    {
+      "id": "EN-APP-011",
+      "status": "passed"
+    },
+    {
+      "id": "EN-APP-013",
+      "status": "passed"
+    },
+    {
+      "id": "EN-APP-015",
+      "status": "passed"
+    },
+    {
+      "id": "EN-APP-017",
+      "status": "passed"
+    },
+    {
+      "id": "EN-APP-019",
+      "status": "passed"
+    },
+    {
+      "id": "EN-APP-021",
+      "status": "passed"
+    },
+    {
+      "id": "EN-APP-023",
+      "status": "passed"
+    },
+    {
+      "id": "EN-AUTH-002",
+      "status": "passed"
+    },
+    {
+      "id": "EN-AUTH-004",
+      "status": "passed"
+    },
+    {
+      "id": "EN-AUTH-006",
+      "status": "passed"
+    },
+    {
+      "id": "EN-AUTH-008",
+      "status": "passed"
+    },
+    {
+      "id": "EN-AUTH-010",
+      "status": "passed"
+    },
+    {
+      "id": "EN-AUTH-012",
+      "status": "passed"
+    },
+    {
+      "id": "EN-AUTH-014",
+      "status": "passed"
+    },
+    {
+      "id": "EN-AUTH-016",
+      "status": "passed"
+    },
+    {
+      "id": "EN-AUTH-018",
+      "status": "passed"
+    },
+    {
+      "id": "EN-AUTH-020",
+      "status": "passed"
+    },
+    {
+      "id": "EN-CA-002",
+      "status": "passed"
+    },
+    {
+      "id": "EN-CA-005",
+      "status": "passed"
+    },
+    {
+      "id": "EN-CA-007",
+      "status": "passed"
+    },
+    {
+      "id": "EN-CA-009",
+      "status": "passed"
+    },
+    {
+      "id": "EN-CA-011",
+      "status": "passed"
+    },
+    {
+      "id": "EN-CA-013",
+      "status": "passed"
+    },
+    {
+      "id": "EN-CA-015",
+      "status": "passed"
+    },
+    {
+      "id": "EN-CA-017",
+      "status": "passed"
+    },
+    {
+      "id": "EN-CA-019",
+      "status": "passed"
+    },
+    {
+      "id": "EN-CA-021",
+      "status": "passed"
+    },
+    {
+      "id": "EN-CA-023",
+      "status": "passed"
+    },
+    {
+      "id": "EN-DEV-001",
+      "status": "passed"
+    },
+    {
+      "id": "EN-DEV-003",
+      "status": "passed"
+    },
+    {
+      "id": "EN-DEV-005",
+      "status": "passed"
+    },
+    {
+      "id": "EN-DEV-007",
+      "status": "passed"
+    },
+    {
+      "id": "EN-DEV-009",
+      "status": "passed"
+    },
+    {
+      "id": "EN-DEV-011",
+      "status": "passed"
+    },
+    {
+      "id": "EN-GRP-001",
+      "status": "passed"
+    },
+    {
+      "id": "EN-GRP-003",
+      "status": "passed"
+    },
+    {
+      "id": "EN-GRP-005",
+      "status": "passed"
+    },
+    {
+      "id": "EN-GRP-007",
+      "status": "passed"
+    },
+    {
+      "id": "EN-GRP-009",
+      "status": "passed"
+    },
+    {
+      "id": "EN-ID-001",
+      "status": "passed"
+    },
+    {
+      "id": "EN-ID-003",
+      "status": "passed"
+    },
+    {
+      "id": "EN-ID-005",
+      "status": "passed"
+    },
+    {
+      "id": "EN-ID-007",
+      "status": "passed"
+    },
+    {
+      "id": "EN-ID-009",
+      "status": "passed"
+    },
+    {
+      "id": "EN-ID-011",
+      "status": "passed"
+    },
+    {
+      "id": "EN-ID-013",
+      "status": "passed"
+    },
+    {
+      "id": "EN-ID-015",
+      "status": "passed"
+    },
+    {
+      "id": "EN-MON-001",
+      "status": "passed"
+    },
+    {
+      "id": "EN-MON-003",
+      "status": "passed"
+    },
+    {
+      "id": "EN-MON-005",
+      "status": "passed"
+    },
+    {
+      "id": "EN-MON-007",
+      "status": "passed"
+    },
+    {
+      "id": "EN-MON-009",
+      "status": "passed"
+    },
+    {
+      "id": "EN-MON-011",
+      "status": "passed"
+    },
+    {
+      "id": "EN-PRIV-001",
+      "status": "passed"
+    },
+    {
+      "id": "EN-PRIV-004",
+      "status": "passed"
+    },
+    {
+      "id": "EN-PRIV-006",
+      "status": "passed"
+    },
+    {
+      "id": "EN-PRIV-008",
+      "status": "passed"
+    },
+    {
+      "id": "EN-PRIV-010",
+      "status": "passed"
+    },
+    {
+      "id": "EN-PRIV-012",
+      "status": "passed"
+    },
+    {
+      "id": "EN-PRIV-014",
+      "status": "passed"
+    },
+    {
+      "id": "EN-PRIV-016",
+      "status": "passed"
+    },
+    {
+      "id": "EN-PRIV-018",
+      "status": "passed"
+    },
+    {
+      "id": "EN-PRIV-020",
+      "status": "passed"
+    },
+    {
+      "id": "EN-PRIV-022",
+      "status": "passed"
+    },
+    {
+      "id": "EN-TEN-002",
+      "status": "passed"
+    },
+    {
+      "id": "EN-TEN-004",
+      "status": "passed"
+    },
+    {
+      "id": "EN-TEN-006",
+      "status": "passed"
+    },
+    {
+      "id": "EN-TEN-008",
+      "status": "passed"
+    },
+    {
+      "id": "EN-TEN-010",
+      "status": "passed"
+    },
+    {
+      "id": "EN-TEN-012",
+      "status": "passed"
+    },
+    {
+      "id": "EN-TEN-014",
+      "status": "passed"
+    },
+    {
+      "id": "EN-TEN-016",
+      "status": "passed"
+    },
+    {
+      "id": "EN-TEN-018",
+      "status": "passed"
+    },
+    {
+      "id": "HY-FED-002",
+      "status": "passed"
+    },
+    {
+      "id": "HY-FED-004",
+      "status": "passed"
+    },
+    {
+      "id": "HY-FED-006",
+      "status": "passed"
+    },
+    {
+      "id": "HY-FED-008",
+      "status": "passed"
+    },
+    {
+      "id": "HY-FED-010",
+      "status": "passed"
+    },
+    {
+      "id": "HY-PATH-002",
+      "status": "passed"
+    },
+    {
+      "id": "HY-PATH-004",
+      "status": "passed"
+    },
+    {
+      "id": "HY-PATH-006",
+      "status": "passed"
+    },
+    {
+      "id": "HY-PATH-008",
+      "status": "passed"
+    },
+    {
+      "id": "HY-SYNC-002",
+      "status": "passed"
+    },
+    {
+      "id": "HY-SYNC-004",
+      "status": "passed"
+    },
+    {
+      "id": "HY-SYNC-006",
+      "status": "passed"
+    },
+    {
+      "id": "HY-SYNC-008",
+      "status": "passed"
+    },
+    {
+      "id": "HY-SYNC-010",
+      "status": "passed"
+    },
+    {
+      "id": "HY-SYNC-012",
+      "status": "passed"
+    },
+    {
+      "id": "HY-SYNC-014",
+      "status": "passed"
+    },
+    {
+      "id": "HY-SYNC-016",
+      "status": "passed"
+    },
+    {
+      "id": "AD-ACC-003",
+      "status": "passed"
+    },
+    {
+      "id": "AD-ACC-005",
+      "status": "passed"
+    },
+    {
+      "id": "AD-ACC-007",
+      "status": "passed"
+    },
+    {
+      "id": "AD-ACC-009",
+      "status": "passed"
+    },
+    {
+      "id": "AD-ACC-011",
+      "status": "passed"
+    },
+    {
+      "id": "AD-ACC-013",
+      "status": "passed"
+    },
+    {
+      "id": "AD-ACC-015",
+      "status": "passed"
+    },
+    {
+      "id": "AD-ACC-017",
+      "status": "passed"
+    },
+    {
+      "id": "AD-ACL-001",
+      "status": "passed"
+    },
+    {
+      "id": "AD-ACL-004",
+      "status": "passed"
+    },
+    {
+      "id": "AD-ACL-006",
+      "status": "passed"
+    },
+    {
+      "id": "AD-ACL-008",
+      "status": "passed"
+    },
+    {
+      "id": "AD-ACL-010",
+      "status": "passed"
+    },
+    {
+      "id": "AD-ACL-012",
+      "status": "passed"
+    },
+    {
+      "id": "AD-ACL-014",
+      "status": "passed"
+    },
+    {
+      "id": "AD-ACL-016",
+      "status": "passed"
+    },
+    {
+      "id": "AD-ACL-018",
+      "status": "passed"
+    },
+    {
+      "id": "AD-ACL-020",
+      "status": "passed"
+    },
+    {
+      "id": "AD-ACL-022",
+      "status": "passed"
+    },
+    {
+      "id": "AD-ACL-024",
+      "status": "passed"
+    },
+    {
+      "id": "AD-ACL-026",
+      "status": "passed"
+    },
+    {
+      "id": "AD-ACL-028",
+      "status": "passed"
+    },
+    {
+      "id": "AD-APP-002",
+      "status": "passed"
+    },
+    {
+      "id": "AD-APP-004",
+      "status": "passed"
+    },
+    {
+      "id": "AD-APP-006",
+      "status": "passed"
+    },
+    {
+      "id": "AD-APP-008",
+      "status": "passed"
+    },
+    {
+      "id": "AD-AUD-002",
+      "status": "passed"
+    },
+    {
+      "id": "AD-AUD-004",
+      "status": "passed"
+    },
+    {
+      "id": "AD-AUD-006",
+      "status": "passed"
+    },
+    {
+      "id": "AD-AUD-008",
+      "status": "passed"
+    },
+    {
+      "id": "AD-AUD-010",
+      "status": "passed"
+    },
+    {
+      "id": "AD-AUD-012",
+      "status": "passed"
+    },
+    {
+      "id": "AD-BKP-002",
+      "status": "passed"
+    },
+    {
+      "id": "AD-BKP-004",
+      "status": "passed"
+    },
+    {
+      "id": "AD-BKP-006",
+      "status": "passed"
+    },
+    {
+      "id": "AD-BKP-008",
+      "status": "passed"
+    },
+    {
+      "id": "AD-CMP-002",
+      "status": "passed"
+    },
+    {
+      "id": "AD-CMP-004",
+      "status": "passed"
+    },
+    {
+      "id": "AD-CMP-006",
+      "status": "passed"
+    },
+    {
+      "id": "AD-CMP-009",
+      "status": "passed"
+    },
+    {
+      "id": "AD-DC-003",
+      "status": "passed"
+    },
+    {
+      "id": "AD-DC-005",
+      "status": "passed"
+    },
+    {
+      "id": "AD-DC-007",
+      "status": "passed"
+    },
+    {
+      "id": "AD-DC-009",
+      "status": "passed"
+    },
+    {
+      "id": "AD-DC-012",
+      "status": "passed"
+    },
+    {
+      "id": "AD-DC-014",
+      "status": "passed"
+    },
+    {
+      "id": "AD-DC-016",
+      "status": "passed"
+    },
+    {
+      "id": "AD-DC-018",
+      "status": "passed"
+    },
+    {
+      "id": "AD-DC-020",
+      "status": "passed"
+    },
+    {
+      "id": "AD-DC-022",
+      "status": "passed"
+    },
+    {
+      "id": "AD-DC-024",
+      "status": "passed"
+    },
+    {
+      "id": "AD-DC-026",
+      "status": "passed"
+    },
+    {
+      "id": "AD-DC-028",
+      "status": "passed"
+    },
+    {
+      "id": "AD-DC-030",
+      "status": "passed"
+    },
+    {
+      "id": "AD-DC-032",
+      "status": "passed"
+    },
+    {
+      "id": "AD-DNS-002",
+      "status": "passed"
+    },
+    {
+      "id": "AD-DNS-004",
+      "status": "passed"
+    },
+    {
+      "id": "AD-DNS-006",
+      "status": "passed"
+    },
+    {
+      "id": "AD-DNS-008",
+      "status": "passed"
+    },
+    {
+      "id": "AD-DNS-010",
+      "status": "passed"
+    },
+    {
+      "id": "AD-DNS-012",
+      "status": "passed"
+    },
+    {
+      "id": "AD-DNS-014",
+      "status": "passed"
+    },
+    {
+      "id": "AD-FND-002",
+      "status": "passed"
+    },
+    {
+      "id": "AD-FND-004",
+      "status": "passed"
+    },
+    {
+      "id": "AD-FND-006",
+      "status": "passed"
+    },
+    {
+      "id": "AD-FND-008",
+      "status": "passed"
+    },
+    {
+      "id": "AD-FND-010",
+      "status": "passed"
+    },
+    {
+      "id": "AD-FND-012",
+      "status": "passed"
+    },
+    {
+      "id": "AD-FND-014",
+      "status": "passed"
+    },
+    {
+      "id": "AD-FND-016",
+      "status": "passed"
+    },
+    {
+      "id": "AD-FND-018",
+      "status": "passed"
+    },
+    {
+      "id": "AD-GPO-002",
+      "status": "passed"
+    },
+    {
+      "id": "AD-GPO-005",
+      "status": "passed"
+    },
+    {
+      "id": "AD-GPO-007",
+      "status": "passed"
+    },
+    {
+      "id": "AD-GPO-009",
+      "status": "passed"
+    },
+    {
+      "id": "AD-GPO-011",
+      "status": "passed"
+    },
+    {
+      "id": "AD-GPO-013",
+      "status": "passed"
+    },
+    {
+      "id": "AD-GPO-015",
+      "status": "passed"
+    },
+    {
+      "id": "AD-GPO-017",
+      "status": "passed"
+    },
+    {
+      "id": "AD-GPO-019",
+      "status": "passed"
+    },
+    {
+      "id": "AD-GPO-021",
+      "status": "passed"
+    },
+    {
+      "id": "AD-GPO-023",
+      "status": "passed"
+    },
+    {
+      "id": "AD-GPO-025",
+      "status": "passed"
+    },
+    {
+      "id": "AD-GPO-027",
+      "status": "passed"
+    },
+    {
+      "id": "AD-GPO-029",
+      "status": "passed"
+    },
+    {
+      "id": "AD-IOC-001",
+      "status": "passed"
+    },
+    {
+      "id": "AD-IOC-003",
+      "status": "passed"
+    },
+    {
+      "id": "AD-IOC-005",
+      "status": "passed"
+    },
+    {
+      "id": "AD-IOC-007",
+      "status": "passed"
+    },
+    {
+      "id": "AD-IOC-009",
+      "status": "passed"
+    },
+    {
+      "id": "AD-IOC-011",
+      "status": "passed"
+    },
+    {
+      "id": "AD-IOC-013",
+      "status": "passed"
+    },
+    {
+      "id": "AD-KRB-001",
+      "status": "passed"
+    },
+    {
+      "id": "AD-KRB-004",
+      "status": "passed"
+    },
+    {
+      "id": "AD-KRB-006",
+      "status": "passed"
+    },
+    {
+      "id": "AD-KRB-008",
+      "status": "passed"
+    },
+    {
+      "id": "AD-KRB-010",
+      "status": "passed"
+    },
+    {
+      "id": "AD-KRB-012",
+      "status": "passed"
+    },
+    {
+      "id": "AD-KRB-014",
+      "status": "passed"
+    },
+    {
+      "id": "AD-KRB-016",
+      "status": "passed"
+    },
+    {
+      "id": "AD-KRB-018",
+      "status": "passed"
+    },
+    {
+      "id": "AD-KRB-020",
+      "status": "passed"
+    },
+    {
+      "id": "AD-LAPS-002",
+      "status": "passed"
+    },
+    {
+      "id": "AD-LAPS-004",
+      "status": "passed"
+    },
+    {
+      "id": "AD-LAPS-006",
+      "status": "passed"
+    },
+    {
+      "id": "AD-LAPS-008",
+      "status": "passed"
+    },
+    {
+      "id": "AD-LEG-003",
+      "status": "passed"
+    },
+    {
+      "id": "AD-LEG-005",
+      "status": "passed"
+    },
+    {
+      "id": "AD-LEG-007",
+      "status": "passed"
+    },
+    {
+      "id": "AD-LEG-009",
+      "status": "passed"
+    },
+    {
+      "id": "AD-LEG-011",
+      "status": "passed"
+    },
+    {
+      "id": "AD-OU-001",
+      "status": "passed"
+    },
+    {
+      "id": "AD-OU-003",
+      "status": "passed"
+    },
+    {
+      "id": "AD-OU-005",
+      "status": "passed"
+    },
+    {
+      "id": "AD-OU-007",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PKI-001",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PKI-004",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PKI-006",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PKI-008",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PKI-010",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PKI-012",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PKI-014",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PKI-016",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PKI-018",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PKI-020",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PKI-022",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PKI-024",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PRIV-004",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PRIV-006",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PRIV-008",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PRIV-010",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PRIV-013",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PRIV-016",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PRIV-019",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PRIV-022",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PRIV-024",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PRIV-026",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PRIV-028",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PRIV-030",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PWD-002",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PWD-004",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PWD-006",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PWD-008",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PWD-010",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PWD-013",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PWD-015",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PWD-019",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PWD-021",
+      "status": "passed"
+    },
+    {
+      "id": "AD-REP-001",
+      "status": "passed"
+    },
+    {
+      "id": "AD-REP-003",
+      "status": "passed"
+    },
+    {
+      "id": "AD-REP-005",
+      "status": "passed"
+    },
+    {
+      "id": "AD-REP-007",
+      "status": "passed"
+    },
+    {
+      "id": "AD-REP-009",
+      "status": "passed"
+    },
+    {
+      "id": "AD-REP-011",
+      "status": "passed"
+    },
+    {
+      "id": "AD-REP-013",
+      "status": "passed"
+    },
+    {
+      "id": "AD-REP-015",
+      "status": "passed"
+    },
+    {
+      "id": "AD-SCH-001",
+      "status": "passed"
+    },
+    {
+      "id": "AD-SCH-003",
+      "status": "passed"
+    },
+    {
+      "id": "AD-SCH-005",
+      "status": "passed"
+    },
+    {
+      "id": "AD-SVC-001",
+      "status": "passed"
+    },
+    {
+      "id": "AD-SVC-003",
+      "status": "passed"
+    },
+    {
+      "id": "AD-SVC-005",
+      "status": "passed"
+    },
+    {
+      "id": "AD-SVC-007",
+      "status": "passed"
+    },
+    {
+      "id": "AD-SVC-009",
+      "status": "passed"
+    },
+    {
+      "id": "AD-TRU-001",
+      "status": "passed"
+    },
+    {
+      "id": "AD-TRU-003",
+      "status": "passed"
+    },
+    {
+      "id": "AD-TRU-005",
+      "status": "passed"
+    },
+    {
+      "id": "AD-TRU-007",
+      "status": "passed"
+    },
+    {
+      "id": "AD-TRU-009",
+      "status": "passed"
+    },
+    {
+      "id": "AD-TRU-011",
+      "status": "passed"
+    }
+  ],
+  "paths": [
+    {
+      "title": "Any domain user can become Domain Admin in 2 steps",
+      "severity": "critical",
+      "checks": [
+        "AD-PKI-002"
+      ],
+      "steps": [
+        {
+          "name": "Domain Users",
+          "kind": "group",
+          "object": "g-domain-users",
+          "via": "Enroll"
+        },
+        {
+          "name": "UserAuth-Legacy",
+          "kind": "template",
+          "object": "t-userauth",
+          "via": "ESC1: any subject"
+        },
+        {
+          "name": "Domain Admins",
+          "kind": "group",
+          "object": "g-domain-admins"
+        }
+      ]
+    },
+    {
+      "title": "Helpdesk can reach Domain Admins in 3 steps",
+      "severity": "critical",
+      "checks": [
+        "AD-KRB-003",
+        "AD-PRIV-016"
+      ],
+      "steps": [
+        {
+          "name": "Helpdesk",
+          "kind": "group",
+          "object": "g-helpdesk",
+          "via": "GenericWrite"
+        },
+        {
+          "name": "APP01",
+          "kind": "computer",
+          "object": "c-app01",
+          "via": "HasSession"
+        },
+        {
+          "name": "adm-jsmith",
+          "kind": "user",
+          "object": "u-adm-jsmith",
+          "via": "MemberOf"
+        },
+        {
+          "name": "Domain Admins",
+          "kind": "group",
+          "object": "g-domain-admins"
+        }
+      ]
+    },
+    {
+      "title": "svc-backup can read every password hash",
+      "severity": "critical",
+      "checks": [
+        "AD-ACL-002"
+      ],
+      "steps": [
+        {
+          "name": "svc-backup",
+          "kind": "user",
+          "object": "u-svc-backup",
+          "via": "DCSync"
+        },
+        {
+          "name": "corp.example.com",
+          "kind": "domain",
+          "object": "d-corp"
+        }
+      ]
+    },
+    {
+      "title": "On-premises account reaches Global Administrator",
+      "severity": "high",
+      "checks": [
+        "EN-PRIV-002"
+      ],
+      "steps": [
+        {
+          "name": "Server Operators",
+          "kind": "group",
+          "object": "g-server-operators",
+          "via": "AdminTo"
+        },
+        {
+          "name": "SYNC01",
+          "kind": "computer",
+          "object": "c-sync01",
+          "via": "Password writeback"
+        },
+        {
+          "name": "admin.r.lee",
+          "kind": "user",
+          "object": "e-admin-rlee",
+          "via": "HasRole"
+        },
+        {
+          "name": "Global Administrator",
+          "kind": "role",
+          "object": "r-global-admin"
+        }
+      ]
+    }
+  ]
+}

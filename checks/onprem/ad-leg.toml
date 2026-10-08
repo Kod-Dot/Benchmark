@@ -1,0 +1,230 @@
+# AD-LEG: Legacy and insecure protocols
+
+area = "AD-LEG"
+
+[[check]]
+id = "AD-LEG-001"
+title = "NTLMv1 usage seen (from 4624 events)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Domain controllers accepted NTLMv1 authentication in the collected Security log (event 4624 with Package Name NTLM V1)."
+impact = "NTLMv1 responses can be cracked or turned into the account's NT hash quickly, which an attacker can then use to sign in as that account."
+remediation = [
+  "Find the clients from the events and upgrade or reconfigure them.",
+  "Set Network security: LAN Manager authentication level to Send NTLMv2 response only. Refuse LM & NTLM on domain controllers.",
+]
+frameworks = [
+  "CIS Windows Server 2.3.11.7",
+]
+cvss = "AV:A/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:N"
+mitre = ["T1557.001"]
+
+[[check.detail.references]]
+title = "Network security: LAN Manager authentication level"
+url = "https://learn.microsoft.com/previous-versions/windows/it-pro/windows-10/security/threat-protection/security-policy-settings/network-security-lan-manager-authentication-level"
+
+[[check]]
+id = "AD-LEG-002"
+title = "LM usage seen"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "Domain controllers logged LM authentication in the collection window."
+impact = "LM is trivially cracked. Any account authenticating with LM should be treated as having a known password."
+remediation = [
+  "Find and retire the listed clients.",
+  "Set LmCompatibilityLevel to 5 on DCs and NoLMHash to 1.",
+]
+mitre = ["T1110"]
+
+[[check.detail.references]]
+title = "Network security: LAN Manager authentication level"
+url = "https://learn.microsoft.com/windows/security/threat-protection/security-policy-settings/network-security-lan-manager-authentication-level"
+
+[[check]]
+id = "AD-LEG-003"
+title = "SMBv1 clients seen on DCs"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Clients connected to domain controllers over SMBv1 (event 3000 in the SMBServer audit log)."
+impact = "Those clients block disabling SMBv1 on the DCs and are themselves exposed to SMBv1 vulnerabilities."
+remediation = [
+  "Update or replace the listed clients.",
+  "Then disable SMBv1 on the DCs (AD-DC-009).",
+]
+verify = "Get-WinEvent -LogName Microsoft-Windows-SMBServer/Audit -MaxEvents 50"
+
+[[check.detail.references]]
+title = "Stop using SMB1"
+url = "https://learn.microsoft.com/windows-server/storage/file-server/troubleshoot/detect-enable-and-disable-smbv1-v2-v3"
+
+[[check]]
+id = "AD-LEG-004"
+title = "Unsigned/simple LDAP binds seen (event 2887/2889)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Domain controllers reported unsigned SASL or clear-text simple LDAP binds (events 2887 and 2889)."
+impact = "Clear-text simple binds expose passwords on the network, and unsigned binds can be relayed or tampered with. These clients will break when LDAP signing is required."
+remediation = [
+  "Turn on LDAP Interface Events diagnostic logging (level 2) to get event 2889 with each client.",
+  "Fix each client to sign, or to use LDAPS, then require signing (AD-DC-011).",
+]
+mitre = ["T1557", "T1040"]
+
+[[check.detail.references]]
+title = "2020, 2023 and 2024 LDAP channel binding and LDAP signing requirements (ADV190023)"
+url = "https://support.microsoft.com/topic/2020-2023-and-2024-ldap-channel-binding-and-ldap-signing-requirements-for-windows-kb4520412-ef185fb8-00f7-167d-744c-f299a66fc00a"
+
+[[check]]
+id = "AD-LEG-005"
+title = "LDAP binds without channel binding (event 3039)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Clients bound to LDAPS without channel binding tokens (event 3039)."
+impact = "These clients will fail when channel binding is enforced, and until then LDAPS relay remains possible."
+remediation = [
+  "Update the listed clients so they support channel binding.",
+  "Then set channel binding to Always (AD-DC-012).",
+]
+mitre = ["T1557"]
+
+[[check.detail.references]]
+title = "2020, 2023 and 2024 LDAP channel binding and LDAP signing requirements (ADV190023)"
+url = "https://support.microsoft.com/topic/2020-2023-and-2024-ldap-channel-binding-and-ldap-signing-requirements-for-windows-kb4520412-ef185fb8-00f7-167d-744c-f299a66fc00a"
+
+[[check]]
+id = "AD-LEG-006"
+title = "RC4 Kerberos tickets issued (event 4769 encryption type)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Domain controllers issued Kerberos service tickets encrypted with RC4 (event 4769, encryption type 0x17)."
+impact = "RC4 tickets are much faster to crack offline than AES tickets, which makes Kerberoasting of those services practical."
+remediation = [
+  "Enable AES on the listed service accounts (msDS-SupportedEncryptionTypes) and reset their passwords.",
+  "Then disable RC4 in \"Network security: Configure encryption types allowed for Kerberos\".",
+]
+verify = "Get-WinEvent -LogName Security -FilterXPath \"*[System[EventID=4769]] and *[EventData[Data[@Name='TicketEncryptionType']='0x17']]\" -MaxEvents 50"
+mitre = ["T1558.003"]
+
+[[check.detail.references]]
+title = "Detect and remediate RC4 usage in Kerberos"
+url = "https://learn.microsoft.com/windows-server/security/kerberos/detect-remediate-rc4-kerberos"
+
+[[check]]
+id = "AD-LEG-007"
+title = "Netlogon vulnerable connections (event 5827/5828/5829)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Domain controllers logged vulnerable Netlogon secure channel connections (events 5827, 5828, 5829)."
+impact = "These devices use the Netlogon behaviour behind ZeroLogon. They were denied, or allowed by an exception that keeps the attack open."
+remediation = [
+  "Update or replace the listed devices.",
+  "Remove any VulnerableChannelAllowList exception (AD-DC-018).",
+]
+mitre = ["T1210"]
+
+[[check.detail.references]]
+title = "How to manage the changes in Netlogon secure channel connections (CVE-2020-1472)"
+url = "https://support.microsoft.com/topic/how-to-manage-the-changes-in-netlogon-secure-channel-connections-associated-with-cve-2020-1472-f7e8cc17-0309-1d6a-304e-5ba73cd1a11e"
+
+[[check]]
+id = "AD-LEG-008"
+title = "Kerberos PAC/certificate mapping warnings (events 39/40/41 KDC)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "The KDC logged certificate mapping warnings or errors (events 39, 40, 41)."
+impact = "These accounts use weak certificate mappings that will fail under full enforcement and can be abused for impersonation until then."
+remediation = [
+  "Reissue the certificates with the SID extension, or add strong altSecurityIdentities mappings, for the listed accounts.",
+]
+mitre = ["T1649"]
+
+[[check.detail.references]]
+title = "KB5014754: Certificate-based authentication changes on Windows domain controllers"
+url = "https://support.microsoft.com/topic/kb5014754-certificate-based-authentication-changes-on-windows-domain-controllers-ad2c23b0-15d8-4340-a468-4d4f3b188f16"
+
+[[check]]
+id = "AD-LEG-009"
+title = "TLS 1.0/1.1 enabled on DCs"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "TLS 1.0 or 1.1 is not disabled for server connections on the DC."
+impact = "Old TLS versions have known weaknesses and allow downgrade attacks on LDAPS, RDP and other TLS services of the DC."
+remediation = [
+  "Confirm that no clients still need TLS 1.0 or 1.1.",
+  "Disable them under SCHANNEL\\Protocols\\TLS 1.0\\Server and TLS 1.1\\Server (Enabled 0).",
+]
+verify = "Get-ChildItem 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\SecurityProviders\\SCHANNEL\\Protocols' -Recurse"
+mitre = ["T1040"]
+
+[[check.detail.references]]
+title = "TLS 1.0 and TLS 1.1 deprecation in Windows"
+url = "https://learn.microsoft.com/windows/win32/secauthn/protocols-in-tls-ssl--schannel-ssp-"
+
+[[check]]
+id = "AD-LEG-010"
+title = "Weak cipher suites on DCs"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Weak SCHANNEL ciphers (RC4, DES, 3DES, NULL) are enabled on domain controllers: explicitly in the registry, in the cipher suite order policy, or by default on Windows Server 2012 R2 and older."
+impact = "Weak ciphers allow TLS connections to the DC (LDAPS, RDP, WinRM over HTTPS) that can be decrypted or downgraded."
+remediation = [
+  "Disable RC4, DES, 3DES and NULL ciphers under SCHANNEL\\Ciphers and remove them from the cipher suite order.",
+  "Upgrade DCs older than Windows Server 2016.",
+]
+verify = "Get-TlsCipherSuite | Where-Object Name -match 'RC4|3DES|DES|NULL'"
+mitre = ["T1557"]
+
+[[check]]
+id = "AD-LEG-011"
+title = "LLMNR / NBT-NS / mDNS not disabled by policy"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "LLMNR is not turned off by policy, or NetBIOS over TCP/IP is enabled on an interface, on the DC."
+impact = "Machines answer name lookups broadcast on the local network, so an attacker can impersonate names and capture or relay credentials."
+remediation = [
+  "Enable \"Turn off multicast name resolution\" by GPO for all computers.",
+  "Disable NetBIOS over TCP/IP on every interface (DHCP option or adapter settings).",
+]
+verify = "Get-ItemProperty 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows NT\\DNSClient' -Name EnableMulticast"
+mitre = ["T1557.001"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1557.001"
+url = "https://attack.mitre.org/techniques/T1557/001/"
+
+[[check]]
+id = "AD-LEG-012"
+title = "WebClient / WebDAV relay surface (inventory)"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "The WebClient (WebDAV) service is running on the DC."
+impact = "A running WebClient lets an attacker coerce HTTP authentication from the DC, which can be relayed to LDAP or AD CS where SMB relay would be blocked."
+remediation = [
+  "Stop and disable the WebClient service on DCs.",
+]
+verify = "Get-Service -ComputerName <dc> -Name WebClient"
+mitre = ["T1187"]

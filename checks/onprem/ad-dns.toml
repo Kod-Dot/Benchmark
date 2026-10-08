@@ -1,0 +1,368 @@
+# AD-DNS: DNS
+
+area = "AD-DNS"
+
+[[check]]
+id = "AD-DNS-001"
+title = "Zones accepting nonsecure dynamic updates"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "A zone hosted by the DNS server on a domain controller has dynamic updates set to Nonsecure and secure. The DNS server then accepts record registrations and changes from any computer on the network, with no sign-in and no check of who owns the record."
+impact = "Anyone who can reach the DNS server can add new names or overwrite existing records, including records of servers and domain controllers. Clients that look up those names are sent to the attacker, who can capture credentials or relay authentication."
+attack = [
+  "From any computer on the network, sends an unauthenticated DNS update for an existing server name, or for a new name such as wpad.",
+  "Points the record at a host they control.",
+  "Receives the connections of clients that resolve the name and captures or relays their authentication.",
+]
+remediation = [
+  "In DNS Manager, open the properties of each listed zone and set Dynamic updates to Secure only.",
+  "If a zone is file-backed and must accept updates, convert it to an AD-integrated zone first, since only AD-integrated zones support secure updates.",
+  "Check the zone for records that were added or changed by unknown hosts while nonsecure updates were allowed.",
+]
+frameworks = [
+  "NIST 800-53 CM-6",
+  "NIST 800-53 AC-3",
+]
+verify = '''
+Get-DnsServerZone -ComputerName <dc> |
+  Where-Object { $_.DynamicUpdate -eq 'NonsecureAndSecure' } | Select-Object ZoneName, DynamicUpdate'''
+cvss = "AV:A/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N"
+mitre = ["T1557"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1557: Adversary-in-the-Middle"
+url = "https://attack.mitre.org/techniques/T1557/"
+
+[[check.detail.references]]
+title = "Get-DnsServerZone"
+url = "https://learn.microsoft.com/powershell/module/dnsserver/get-dnsserverzone"
+
+[[check]]
+id = "AD-DNS-002"
+title = "Zone transfers allowed to any server"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "A zone hosted by the DNS server on a domain controller allows zone transfers to any server. Any host that can reach the DNS server can request a full copy of the zone."
+impact = "Anyone on the network can download every record in the zone in one request: the names and addresses of all domain controllers, servers and workstations. This gives an attacker a complete map of the network without scanning."
+attack = [
+  "From any computer that can reach the DNS server, requests a full zone transfer (AXFR) of the AD domain zone.",
+  "Reads the list of every host name and address to pick targets such as domain controllers, database servers and admin workstations.",
+]
+remediation = [
+  "In DNS Manager, open the properties of each listed zone, Zone Transfers tab, and either turn off zone transfers or allow them only to the servers listed on the Name Servers tab or to specific IP addresses.",
+  "AD-integrated zones replicate through AD and normally need no zone transfers at all.",
+]
+frameworks = [
+  "NIST 800-53 CM-6",
+  "NIST 800-53 CM-7",
+]
+verify = '''
+Get-DnsServerZone -ComputerName <dc> |
+  Where-Object { $_.SecureSecondaries -eq 'TransferAnyServer' } | Select-Object ZoneName, SecureSecondaries'''
+cvss = "AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N"
+
+[[check.detail.references]]
+title = "Get-DnsServerZone"
+url = "https://learn.microsoft.com/powershell/module/dnsserver/get-dnsserverzone"
+
+[[check]]
+id = "AD-DNS-003"
+title = "Wildcard records, or wpad and isatap not blocked"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "The DNS server on a domain controller has a wildcard (*) record in a zone, or its global query block list is off or does not contain wpad and isatap. The block list is on by default and makes the DNS server refuse to answer for those two names, even when a record exists."
+impact = "Without the block list, whoever registers wpad can serve a proxy configuration to every browser and Windows client that looks for one, and whoever registers isatap can route IPv6 traffic. Since any domain user can create new records by default, this lets any user intercept web traffic and capture credentials. A wildcard record makes every unknown or mistyped name resolve, which can send clients to an unexpected host."
+attack = [
+  "Signs in as any domain user and creates a wpad record in the AD-integrated zone, pointing at a host they control.",
+  "Serves a proxy configuration file from that host.",
+  "Clients that use automatic proxy detection send their web traffic through the attacker, who captures or relays their authentication.",
+]
+remediation = [
+  "Turn the global query block list back on and make sure it contains wpad and isatap, for example with dnscmd /config /enableglobalqueryblocklist 1.",
+  "If a wpad record is needed on purpose, remove wpad from the block list only after the record exists and is protected, and document it.",
+  "Remove wildcard records that are not needed.",
+]
+frameworks = [
+  "NIST 800-53 CM-6",
+]
+verify = '''
+Get-DnsServerGlobalQueryBlockList -ComputerName <dc>
+Get-DnsServerZone -ComputerName <dc> | ForEach-Object {
+  Get-DnsServerResourceRecord -ComputerName <dc> -ZoneName $_.ZoneName -Name '*' -ErrorAction SilentlyContinue }'''
+cvss = "AV:A/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:N"
+mitre = ["T1557", "T1187"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1557: Adversary-in-the-Middle"
+url = "https://attack.mitre.org/techniques/T1557/"
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1187: Forced Authentication"
+url = "https://attack.mitre.org/techniques/T1187/"
+
+[[check.detail.references]]
+title = "Get-DnsServerGlobalQueryBlockList"
+url = "https://learn.microsoft.com/powershell/module/dnsserver/get-dnsserverglobalqueryblocklist"
+
+[[check]]
+id = "AD-DNS-004"
+title = "ADIDNS: any user can create DNS records"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "The permissions of an AD-integrated DNS zone (in DomainDnsZones or ForestDnsZones) let a broad group create child objects, which are DNS records. The groups checked are Everyone, Authenticated Users, Anonymous Logon, Users, Domain Users and Domain Computers. Authenticated Users has this right by default."
+impact = "Any user or computer account can register a name that does not exist yet in the zone, such as wpad, a decommissioned server, or a common typo of a server name. Clients that look up that name are sent to the attacker, who can capture or relay their authentication. The user who creates the record also becomes its owner."
+attack = [
+  "Signs in as any domain user and adds a dnsNode object for an unused name in the zone over LDAP.",
+  "Points the record at a host they control.",
+  "Captures or relays the authentication of clients that resolve the name, for example to a file share or web proxy.",
+]
+remediation = [
+  "On each listed zone, remove Create all child objects from Authenticated Users and other broad groups, and grant it only to the DHCP server account and the groups that must register records.",
+  "Before removing the right, make sure computers still register through secure dynamic updates under their own accounts, or that DHCP registers on their behalf.",
+  "Create static records for sensitive names such as wpad so they cannot be claimed by a user.",
+]
+frameworks = [
+  "NIST 800-53 AC-3",
+  "NIST 800-53 AC-6",
+]
+verify = '''
+$d = Get-ADDomain
+(Get-Acl "AD:DC=$($d.DNSRoot),CN=MicrosoftDNS,DC=DomainDnsZones,$($d.DistinguishedName)").Access |
+  Where-Object { $_.IdentityReference -match 'Authenticated Users|Everyone|Domain Users|Domain Computers' -and
+                 $_.ActiveDirectoryRights -match 'CreateChild|GenericAll' } |
+  Select-Object IdentityReference, ActiveDirectoryRights, ObjectType'''
+cvss = "AV:A/AC:H/PR:L/UI:N/S:U/C:H/I:H/A:N"
+mitre = ["T1557", "T1187"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1557: Adversary-in-the-Middle"
+url = "https://attack.mitre.org/techniques/T1557/"
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1187: Forced Authentication"
+url = "https://attack.mitre.org/techniques/T1187/"
+
+[[check]]
+id = "AD-DNS-005"
+title = "Scavenging off or zone aging disabled"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "No DNS server on a domain controller has scavenging turned on, or an AD-integrated forward primary zone (other than _msdcs) has aging turned off. Scavenging removes dynamic records that have not been refreshed, but only in zones where aging is on."
+impact = "Records of retired computers and old addresses stay in DNS. Clients can be sent to the wrong host when an address is reused, troubleshooting gets harder, and the record of a removed server can be taken over by whoever gets its old address."
+remediation = [
+  "Turn on scavenging on one or two DNS servers (Server properties, Advanced, Enable automatic scavenging of stale records), with a period of about 7 days.",
+  "Turn on aging for each listed zone (Zone properties, General, Aging, Scavenge stale resource records), with refresh and no-refresh intervals that together exceed the DHCP lease time.",
+  "Review static records separately, since scavenging does not remove them.",
+]
+frameworks = [
+  "NIST 800-53 CM-8",
+]
+verify = '''
+Get-DnsServerScavenging -ComputerName <dc>
+Get-DnsServerZone -ComputerName <dc> | Where-Object { $_.IsDsIntegrated -and -not $_.IsReverseLookupZone } |
+  ForEach-Object { Get-DnsServerZoneAging -ComputerName <dc> -Name $_.ZoneName }'''
+
+[[check.detail.references]]
+title = "Get-DnsServerScavenging"
+url = "https://learn.microsoft.com/powershell/module/dnsserver/get-dnsserverscavenging"
+
+[[check.detail.references]]
+title = "Get-DnsServerZoneAging"
+url = "https://learn.microsoft.com/powershell/module/dnsserver/get-dnsserverzoneaging"
+
+[[check]]
+id = "AD-DNS-006"
+title = "Forwarders differ between DNS server DCs"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Compares the forwarder list of every domain controller that runs the DNS server and lists the DCs whose forwarders differ from the most common set. A DC with no forwarders uses root hints. The full forwarder inventory per DC is shown with the result."
+impact = "Clients get different answers for external names depending on which DC they ask, and a DC that forwards to an old or unexpected resolver can bypass DNS filtering, send queries to an outside provider, or fail when that resolver is retired."
+remediation = [
+  "Decide which resolvers the DCs should forward to and set the same list on every DC that runs DNS.",
+  "Remove forwarders that point at retired or unknown addresses.",
+  "If a DC differs on purpose, for example in a separate network zone, document the reason.",
+]
+frameworks = [
+  "NIST 800-53 CM-6",
+]
+verify = '''
+Get-ADDomainController -Filter * | ForEach-Object {
+  [pscustomobject]@{ DC = $_.HostName; Forwarders = (Get-DnsServerForwarder -ComputerName $_.HostName).IPAddress -join ', ' } }'''
+
+[[check.detail.references]]
+title = "Get-DnsServerForwarder"
+url = "https://learn.microsoft.com/powershell/module/dnsserver/get-dnsserverforwarder"
+
+[[check]]
+id = "AD-DNS-007"
+title = "DNS recursion open to the internet"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "A domain controller's DNS server answers recursive queries and the DC has a public IPv4 address."
+impact = "An open resolver on a DC can be used for DNS amplification attacks and to probe the internal namespace from the internet."
+remediation = [
+  "Remove public addresses from DCs or block DNS from the internet.",
+  "Turn off recursion on DCs that do not resolve names for clients.",
+]
+verify = "Get-DnsServerRecursion; Get-NetIPAddress -AddressFamily IPv4"
+mitre = ["T1557"]
+
+[[check]]
+id = "AD-DNS-008"
+title = "DNSSEC status (informational)"
+status = "implemented"
+severity = "info"
+
+[check.detail]
+description = "Inventory of DNSSEC-signed zones on each domain controller."
+impact = "DNSSEC lets clients that validate detect forged answers for signed zones."
+remediation = [
+  "Consider signing AD-integrated zones once clients are configured to validate.",
+]
+verify = "Get-DnsServerZone | Select-Object ZoneName, IsSigned"
+mitre = ["T1557"]
+
+[[check]]
+id = "AD-DNS-009"
+title = "DNS server audit log disabled"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "The Microsoft-Windows-DNSServer/Audit event log channel is disabled on a domain controller that runs the DNS server. This channel records zone and record changes, such as records added, deleted or changed, and zone settings changes."
+impact = "Changes to DNS leave no trace on the server. If someone adds a wpad record, redirects a server name or changes zone settings, there is no event to detect it or to investigate it afterwards."
+remediation = [
+  "Enable the channel in Event Viewer (Applications and Services Logs, Microsoft, Windows, DNS-Server, Audit) or with wevtutil sl Microsoft-Windows-DNSServer/Audit /e:true.",
+  "Increase the log size so events are kept long enough, and forward them to your log collection.",
+]
+frameworks = [
+  "NIST 800-53 AU-2",
+  "NIST 800-53 AU-12",
+]
+verify = '''
+Get-WinEvent -ComputerName <dc> -ListLog 'Microsoft-Windows-DNSServer/Audit' | Select-Object LogName, IsEnabled, MaximumSizeInBytes'''
+mitre = ["T1562.002"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1562.002: Impair Defenses: Disable Windows Event Logging"
+url = "https://attack.mitre.org/techniques/T1562/002/"
+
+[[check]]
+id = "AD-DNS-010"
+title = "Missing or stale SRV records for DCs"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Compares the targets of the _ldap._tcp.dc._msdcs SRV records returned by the DNS servers on the DCs with the dNSHostName of every domain controller account. It lists DCs that no SRV record points at, and SRV records that point at a host that is not a DC."
+impact = "Clients cannot find a DC that has no SRV record, so it takes no sign-ins and its site may fall back to DCs elsewhere. An SRV record for a host that is no longer a DC makes clients try it and wait, and if someone else gets that name or address they receive sign-in attempts."
+remediation = [
+  "On a DC with missing records, restart the Netlogon service or run nltest /dsregdns so it registers its records again, and check that it points at a working DNS server.",
+  "Remove SRV records of former DCs, and clean up their metadata if the DC was removed without demotion.",
+  "Run dcdiag /test:dns on each DC to find registration problems.",
+]
+frameworks = [
+  "NIST 800-53 CM-6",
+]
+verify = '''
+Resolve-DnsName -Type SRV "_ldap._tcp.dc._msdcs.$env:USERDNSDOMAIN" | Select-Object NameTarget
+dcdiag /test:dns /s:<dc>'''
+
+[[check.detail.references]]
+title = "dcdiag"
+url = "https://learn.microsoft.com/windows-server/administration/windows-commands/dcdiag"
+
+[[check.detail.references]]
+title = "Resolve-DnsName"
+url = "https://learn.microsoft.com/powershell/module/dnsclient/resolve-dnsname"
+
+[[check]]
+id = "AD-DNS-011"
+title = "DnsAdmins ServerLevelPluginDll configured"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "ServerLevelPluginDll is set for the DNS service on the DC, so the DNS service loads that DLL."
+impact = "The DLL runs as SYSTEM on a domain controller. Setting it is a known way for DnsAdmins members to take over the domain, and is rarely legitimate."
+remediation = [
+  "Confirm what the DLL is and who set it.",
+  "Remove the value (dnscmd /config /serverlevelplugindll with an empty value) and restart DNS.",
+  "Treat it as a possible compromise if nobody can explain it.",
+]
+verify = "Get-ItemProperty HKLM:\\SYSTEM\\CurrentControlSet\\Services\\DNS\\Parameters -Name ServerLevelPluginDll"
+mitre = ["T1068"]
+
+[[check.detail.references]]
+title = "DnsAdmins to SYSTEM: ServerLevelPluginDll"
+url = "https://learn.microsoft.com/windows-server/identity/ad-ds/plan/security-best-practices/appendix-b--privileged-accounts-and-groups-in-active-directory"
+
+[[check]]
+id = "AD-DNS-012"
+title = "File-backed or legacy-partition zones on DCs"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "A primary zone on a domain controller is either file-backed (not AD-integrated) or AD-integrated but stored in the domain partition, the Windows 2000 compatible scope. The expected places are the DomainDnsZones or ForestDnsZones application partitions."
+impact = "A file-backed zone is not replicated by AD, does not support secure dynamic updates and is not protected by AD permissions, so it can drift between DCs and is changed by whoever can edit the file. A zone in the domain partition is replicated to every DC in the domain, including those that do not run DNS, and cannot be shared with other domains in the forest."
+remediation = [
+  "Convert file-backed primary zones to AD-integrated zones (Zone properties, General, Change type, Store the zone in Active Directory).",
+  "Change the replication scope of zones in the domain partition to All DNS servers in this domain or All DNS servers in this forest.",
+  "After the change, set dynamic updates to Secure only.",
+]
+frameworks = [
+  "NIST 800-53 CM-6",
+]
+verify = '''
+Get-DnsServerZone -ComputerName <dc> | Where-Object { $_.ZoneType -eq 'Primary' } |
+  Select-Object ZoneName, IsDsIntegrated, ReplicationScope'''
+
+[[check.detail.references]]
+title = "Get-DnsServerZone"
+url = "https://learn.microsoft.com/powershell/module/dnsserver/get-dnsserverzone"
+
+[[check]]
+id = "AD-DNS-013"
+title = "Duplicate A records for DCs"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "A domain controller has A records for its own name that point to addresses it does not have."
+impact = "Stale A records send clients to an address that no longer answers, or to another host, causing failed or redirected authentication."
+remediation = [
+  "Delete the stale A records and enable scavenging.",
+  "Check that DCs register only the addresses of their DC network adapters.",
+]
+verify = "Resolve-DnsName $env:COMPUTERNAME -Type A; Get-NetIPAddress -AddressFamily IPv4"
+mitre = ["T1557"]
+
+[[check]]
+id = "AD-DNS-014"
+title = "Root hints and forwarder security (inventory)"
+status = "implemented"
+severity = "info"
+
+[check.detail]
+description = "Inventory of DNS forwarders and root hints on each domain controller."
+impact = "Forwarders decide who sees and answers the domain's outbound queries. Unexpected forwarders can leak internal names or return forged answers."
+remediation = [
+  "Confirm each forwarder is a resolver the organisation controls or trusts.",
+]
+verify = "Get-DnsServerForwarder; Get-DnsServerRootHint"
+mitre = ["T1557"]

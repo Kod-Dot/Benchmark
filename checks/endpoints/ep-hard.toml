@@ -1,0 +1,1468 @@
+# EP-HARD: Windows endpoint and server hardening
+
+area = "EP-HARD"
+
+[[check]]
+id = "EP-HARD-001"
+title = "Local Administrators group membership (Domain Users, Everyone, unexpected groups)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "The local Administrators group (SID S-1-5-32-544) on the machine contains a broad group: Everyone, Authenticated Users, Users, Domain Users or Domain Computers."
+impact = "Every member of that group is a local administrator on the machine. Any ordinary domain account, or any domain-joined computer, can take full control of it, read credentials cached in memory and use it to move to other machines."
+attack = [
+  "Signs in with any ordinary domain account.",
+  "Connects to the machine over SMB, WinRM or RDP as a local administrator through the broad group.",
+  "Dumps credentials of other users signed in to the machine and reuses them elsewhere.",
+]
+remediation = [
+  "Remove the broad group from the local Administrators group on the machine.",
+  "Manage local Administrators membership centrally with Group Policy (Computer Configuration > Preferences > Control Panel Settings > Local Users and Groups) or the Intune Account protection policy, adding only named admin groups.",
+  "Find out which application or support process needed the broad group and grant it narrower rights instead.",
+]
+frameworks = [
+  "CIS Microsoft Windows 11 Enterprise Benchmark",
+  "CIS Microsoft Windows Server Benchmark",
+  "NIST 800-53 AC-6",
+]
+verify = '''
+Get-LocalGroupMember -SID S-1-5-32-544 | Select-Object Name, ObjectClass, PrincipalSource'''
+cvss = "AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H"
+mitre = ["T1078.002", "T1003"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1078.002: Valid Accounts: Domain Accounts"
+url = "https://attack.mitre.org/techniques/T1078/002/"
+
+[[check]]
+id = "EP-HARD-002"
+title = "Local accounts enabled (built-in Administrator, Guest)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "The local Guest account is enabled, or the built-in local Administrator account (RID 500) is enabled while no LAPS policy manages its password."
+impact = "An enabled Guest account allows access without a known password. An unmanaged built-in Administrator usually has the same password on many machines, is exempt from account lockout and is a common target for password guessing and pass-the-hash."
+attack = [
+  "Recovers the built-in Administrator password or hash from one machine.",
+  "Signs in with the same local credentials to other machines that share the password.",
+  "Uses the Guest account, where enabled, to reach shares and services without credentials.",
+]
+remediation = [
+  "Disable the Guest account: Computer Configuration > Windows Settings > Security Settings > Local Policies > Security Options > Accounts: Guest account status = Disabled.",
+  "Either disable the built-in Administrator (Accounts: Administrator account status = Disabled) or put its password under Windows LAPS management.",
+]
+frameworks = [
+  "CIS Microsoft Windows 11 Enterprise Benchmark",
+  "CIS Microsoft Windows Server Benchmark",
+  "Microsoft security baseline",
+  "NIST 800-53 AC-2",
+]
+verify = '''
+Get-LocalUser | Where-Object { $_.SID -like '*-500' -or $_.SID -like '*-501' } | Select-Object Name, SID, Enabled'''
+cvss = "AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:L/A:N"
+mitre = ["T1078.003", "T1110"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1078.003: Valid Accounts: Local Accounts"
+url = "https://attack.mitre.org/techniques/T1078/003/"
+
+[[check]]
+id = "EP-HARD-003"
+title = "LAPS-managed local admin present and password fresh"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "The machine has no Windows LAPS policy (BackupDirectory set to 1 for Microsoft Entra ID or 2 for Active Directory under HKLM\\SOFTWARE\\Microsoft\\Policies\\LAPS) and legacy Microsoft LAPS is not enabled (AdmPwdEnabled 1)."
+impact = "The local administrator password is not rotated or unique. It is often set once in the image and shared by many machines, so the password or hash taken from one machine opens all of them."
+attack = [
+  "Gains local administrator rights on one machine and extracts the local administrator hash from the SAM.",
+  "Authenticates with that hash to other machines over SMB or WinRM.",
+  "Repeats on each machine to collect credentials of signed-in domain users.",
+]
+remediation = [
+  "Enable Windows LAPS with Group Policy (Computer Configuration > Administrative Templates > System > LAPS > Configure password backup directory) or with an Intune LAPS policy under Endpoint security > Account protection.",
+  "In Active Directory, run Update-LapsADSchema once and Set-LapsADComputerSelfPermission on the computer OUs before applying the policy.",
+  "Restrict who can read the stored passwords to the support groups that need them.",
+]
+frameworks = [
+  "CIS Microsoft Windows 11 Enterprise Benchmark",
+  "CIS Microsoft Windows Server Benchmark",
+  "Microsoft security baseline",
+  "NIST 800-53 IA-5",
+]
+verify = '''
+Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Policies\LAPS', 'HKLM:\SOFTWARE\Policies\Microsoft Services\AdmPwd' -ErrorAction SilentlyContinue |
+  Select-Object PSPath, BackupDirectory, AdmPwdEnabled'''
+cvss = "AV:N/AC:L/PR:L/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1078.003", "T1550"]
+
+[[check.detail.references]]
+title = "Windows LAPS overview"
+url = "https://learn.microsoft.com/windows-server/identity/laps/laps-overview"
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1550: Use Alternate Authentication Material"
+url = "https://attack.mitre.org/techniques/T1550/"
+
+[[check]]
+id = "EP-HARD-004"
+title = "Credential Guard running"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Credential Guard is not running on the machine: SecurityServicesRunning in Win32_DeviceGuard does not contain 1."
+impact = "NTLM hashes and Kerberos ticket-granting tickets of signed-in users stay in LSASS memory, where anyone with local administrator rights can read and reuse them."
+attack = [
+  "Gains local administrator rights on the machine.",
+  "Reads LSASS memory to extract NTLM hashes and Kerberos tickets of signed-in users.",
+  "Reuses them to authenticate as those users on other machines.",
+]
+remediation = [
+  "Enable Credential Guard with Group Policy: Computer Configuration > Administrative Templates > System > Device Guard > Turn On Virtualization Based Security, Credential Guard Configuration = Enabled with UEFI lock.",
+  "Or deploy it with Intune under Endpoint security > Account protection.",
+  "Make sure the hardware supports virtualization-based security (UEFI, Secure Boot, TPM 2.0, virtualization extensions) and restart the machine.",
+]
+frameworks = [
+  "CIS Microsoft Windows 11 Enterprise Benchmark",
+  "Microsoft security baseline",
+  "NIST 800-53 SC-39",
+]
+verify = '''
+Get-CimInstance -Namespace root\Microsoft\Windows\DeviceGuard -ClassName Win32_DeviceGuard |
+  Select-Object SecurityServicesConfigured, SecurityServicesRunning'''
+cvss = "AV:L/AC:L/PR:H/UI:N/S:C/C:H/I:H/A:N"
+mitre = ["T1003.001", "T1550"]
+
+[[check.detail.references]]
+title = "Credential Guard overview"
+url = "https://learn.microsoft.com/windows/security/identity-protection/credential-guard/"
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1003.001: OS Credential Dumping: LSASS Memory"
+url = "https://attack.mitre.org/techniques/T1003/001/"
+
+[[check]]
+id = "EP-HARD-005"
+title = "LSA protection (RunAsPPL)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "LSA protection is not enabled: RunAsPPL under HKLM\\SYSTEM\\CurrentControlSet\\Control\\Lsa is not 1 or 2, so LSASS does not run as a protected process."
+impact = "Any process with local administrator rights can open LSASS and read the credentials it holds, and can load unsigned code into it."
+attack = [
+  "Gains local administrator rights on the machine.",
+  "Opens the LSASS process and dumps its memory.",
+  "Extracts hashes and tickets of signed-in users and reuses them on other machines.",
+]
+remediation = [
+  "Enable LSA protection with Group Policy: Computer Configuration > Administrative Templates > System > Local Security Authority > Configure LSASS to run as a protected process = Enabled with UEFI Lock.",
+  "Or set it with the Intune Settings catalog (Local Security Authority > Configure Lsa Protected Process).",
+  "Test first with audit mode for LSA plug-ins and drivers that are not signed, then restart the machine.",
+]
+frameworks = [
+  "CIS Microsoft Windows 11 Enterprise Benchmark",
+  "CIS Microsoft Windows Server Benchmark",
+  "Microsoft security baseline",
+]
+verify = '''
+reg query HKLM\SYSTEM\CurrentControlSet\Control\Lsa /v RunAsPPL'''
+cvss = "AV:L/AC:L/PR:H/UI:N/S:C/C:H/I:H/A:N"
+mitre = ["T1003.001"]
+
+[[check.detail.references]]
+title = "Configure added LSA protection"
+url = "https://learn.microsoft.com/windows-server/security/credentials-protection-and-management/configuring-additional-lsa-protection"
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1003.001: OS Credential Dumping: LSASS Memory"
+url = "https://attack.mitre.org/techniques/T1003/001/"
+
+[[check]]
+id = "EP-HARD-006"
+title = "WDigest disabled"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "WDigest keeps plaintext passwords in memory: UseLogonCredential under HKLM\\SYSTEM\\CurrentControlSet\\Control\\SecurityProviders\\WDigest is 1, or it is unset on a Windows build older than Windows 8.1 / Server 2012 R2, where the default is to store them."
+impact = "The cleartext password of every user who signs in to the machine sits in LSASS memory. Anyone with local administrator rights can read it and use it anywhere the user can sign in, including services that do not accept hashes."
+attack = [
+  "Gains local administrator rights on the machine.",
+  "Waits for an administrator or other user to sign in, or sets UseLogonCredential to 1 and waits for the next sign-in.",
+  "Dumps LSASS and reads the plaintext passwords.",
+]
+remediation = [
+  "Set UseLogonCredential to 0 with Group Policy: Computer Configuration > Administrative Templates > MS Security Guide > WDigest Authentication = Disabled (from the Microsoft security baseline templates), or a registry preference.",
+  "Upgrade machines on builds older than Windows 8.1 / Server 2012 R2.",
+  "Have users who signed in while the setting was on change their passwords.",
+]
+frameworks = [
+  "CIS Microsoft Windows 11 Enterprise Benchmark",
+  "CIS Microsoft Windows Server Benchmark",
+  "Microsoft security baseline",
+]
+verify = '''
+reg query HKLM\SYSTEM\CurrentControlSet\Control\SecurityProviders\WDigest /v UseLogonCredential'''
+cvss = "AV:L/AC:L/PR:H/UI:N/S:C/C:H/I:H/A:N"
+mitre = ["T1003.001"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1003.001: OS Credential Dumping: LSASS Memory"
+url = "https://attack.mitre.org/techniques/T1003/001/"
+
+[[check]]
+id = "EP-HARD-007"
+title = "Cached domain logons count"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "The machine caches more than 4 domain logons: CachedLogonsCount under HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon is above 4, or unset, which means the default of 10."
+impact = "Password verifiers of recent domain users, possibly including administrators, stay in the registry. Someone with local administrator rights can extract them and crack them offline."
+attack = [
+  "Gains local administrator rights on the machine.",
+  "Extracts the cached domain credentials from the SECURITY hive.",
+  "Cracks them offline and signs in with the recovered passwords.",
+]
+remediation = [
+  "Set Computer Configuration > Windows Settings > Security Settings > Local Policies > Security Options > Interactive logon: Number of previous logons to cache = 4 or less on workstations, and 0 or 1 on servers.",
+  "Keep at least one cached logon on laptops that sign in away from a domain controller.",
+]
+frameworks = [
+  "CIS Microsoft Windows 11 Enterprise Benchmark",
+  "CIS Microsoft Windows Server Benchmark",
+]
+verify = '''
+reg query "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v CachedLogonsCount'''
+cvss = "AV:L/AC:H/PR:H/UI:N/S:U/C:H/I:N/A:N"
+mitre = ["T1003"]
+
+[[check.detail.references]]
+title = "Interactive logon: Number of previous logons to cache"
+url = "https://learn.microsoft.com/previous-versions/windows/it-pro/windows-10/security/threat-protection/security-policy-settings/interactive-logon-number-of-previous-logons-to-cache-in-case-domain-controller-is-not-available"
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1003: OS Credential Dumping"
+url = "https://attack.mitre.org/techniques/T1003/"
+
+[[check]]
+id = "EP-HARD-008"
+title = "SMBv1 enabled"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "The SMB server on the machine accepts SMB version 1: EnableSMB1Protocol in Get-SmbServerConfiguration is True."
+impact = "SMBv1 lacks signing protections and encryption of later versions and has had wormable remote code execution flaws, such as the one used by WannaCry and NotPetya (MS17-010)."
+attack = [
+  "Finds machines that accept SMBv1 on port 445.",
+  "Exploits an unpatched SMBv1 vulnerability for remote code execution, or relays and downgrades sessions.",
+  "Spreads to other SMBv1 machines on the network.",
+]
+remediation = [
+  "Disable the SMBv1 server with Set-SmbServerConfiguration -EnableSMB1Protocol $false, or remove the feature with Disable-WindowsOptionalFeature -Online -FeatureName SMB1Protocol.",
+  "Deploy it centrally with the MS Security Guide > Configure SMB v1 server setting from the Microsoft security baseline templates, or the Intune Settings catalog.",
+  "Find and replace any device that still needs SMBv1 before disabling it everywhere.",
+]
+frameworks = [
+  "CIS Microsoft Windows 11 Enterprise Benchmark",
+  "CIS Microsoft Windows Server Benchmark",
+  "Microsoft security baseline",
+  "NIST 800-53 CM-7",
+]
+verify = '''
+Get-SmbServerConfiguration | Select-Object EnableSMB1Protocol'''
+cvss = "AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:H"
+mitre = ["T1210"]
+
+[[check.detail.references]]
+title = "How to detect, enable and disable SMBv1, SMBv2, and SMBv3 in Windows"
+url = "https://learn.microsoft.com/windows-server/storage/file-server/troubleshoot/detect-enable-and-disable-smbv1-v2-v3"
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1210: Exploitation of Remote Services"
+url = "https://attack.mitre.org/techniques/T1210/"
+
+[[check]]
+id = "EP-HARD-009"
+title = "SMB signing required (client and server)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "SMB signing is not required on the machine: RequireSecuritySignature is False in Get-SmbServerConfiguration, Get-SmbClientConfiguration, or both."
+impact = "Without required signing, an attacker who can capture an authentication attempt can relay it to the machine's SMB server, or tamper with SMB traffic the machine sends, and act as the victim."
+attack = [
+  "Gets a position on the network or triggers authentication from a victim, for example by name poisoning or coercion.",
+  "Relays the victim's NTLM authentication to the machine's SMB server, which does not require signing.",
+  "Runs commands or reads files on the machine as the victim.",
+]
+remediation = [
+  "Set Computer Configuration > Windows Settings > Security Settings > Local Policies > Security Options > Microsoft network server: Digitally sign communications (always) = Enabled.",
+  "Set Microsoft network client: Digitally sign communications (always) = Enabled in the same place.",
+  "Or set both with Set-SmbServerConfiguration -RequireSecuritySignature $true and Set-SmbClientConfiguration -RequireSecuritySignature $true.",
+]
+frameworks = [
+  "CIS Microsoft Windows 11 Enterprise Benchmark",
+  "CIS Microsoft Windows Server Benchmark",
+  "Microsoft security baseline",
+  "NIST 800-53 SC-8",
+]
+verify = '''
+Get-SmbServerConfiguration | Select-Object RequireSecuritySignature
+Get-SmbClientConfiguration | Select-Object RequireSecuritySignature'''
+cvss = "AV:A/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:N"
+mitre = ["T1557", "T1557.001"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1557.001: LLMNR/NBT-NS Poisoning and SMB Relay"
+url = "https://attack.mitre.org/techniques/T1557/001/"
+
+[[check]]
+id = "EP-HARD-010"
+title = "LLMNR and NBT-NS disabled"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "LLMNR is not disabled by policy (EnableMulticast is not 0 under HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows NT\\DNSClient), or NetBIOS over TCP/IP is not disabled (NetbiosOptions is not 2) on at least one network interface."
+impact = "When a name does not resolve in DNS, the machine asks the local network by broadcast. Anyone on the same network segment can answer, receive the machine's or user's authentication and crack or relay it."
+attack = [
+  "Listens on the local network for LLMNR and NBT-NS name queries.",
+  "Answers queries for names that do not exist in DNS, pointing them at its own host.",
+  "Captures the NTLM authentication that follows and cracks it offline or relays it to another service.",
+]
+remediation = [
+  "Set Computer Configuration > Administrative Templates > Network > DNS Client > Turn off multicast name resolution = Enabled.",
+  "Disable NetBIOS over TCP/IP on every interface: through DHCP option 001 (Microsoft Disable Netbios Option), the adapter's WINS tab, or by setting NetbiosOptions to 2 under HKLM\\SYSTEM\\CurrentControlSet\\Services\\NetBT\\Parameters\\Interfaces with a startup script or Intune remediation.",
+]
+frameworks = [
+  "CIS Microsoft Windows 11 Enterprise Benchmark",
+  "CIS Microsoft Windows Server Benchmark",
+  "Microsoft security baseline",
+]
+verify = '''
+reg query "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient" /v EnableMulticast
+Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Services\NetBT\Parameters\Interfaces\Tcpip_*' | Select-Object PSChildName, NetbiosOptions'''
+cvss = "AV:A/AC:L/PR:N/UI:N/S:U/C:H/I:L/A:N"
+mitre = ["T1557.001"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1557.001: LLMNR/NBT-NS Poisoning and SMB Relay"
+url = "https://attack.mitre.org/techniques/T1557/001/"
+
+[[check]]
+id = "EP-HARD-011"
+title = "WPAD / proxy auto-detect"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "The WinHTTP Web Proxy Auto-Discovery service (WinHttpAutoProxySvc) is active and DisableWpad is not set under HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\WinHttp, so the machine looks for a proxy configuration file through WPAD."
+impact = "An attacker who can answer the WPAD lookup, through DNS, LLMNR or NBT-NS, becomes the machine's web proxy. It can read and change web traffic and ask the machine to authenticate to it."
+attack = [
+  "Answers the machine's WPAD name lookup with its own host.",
+  "Serves a proxy auto-configuration file that sends web traffic through itself.",
+  "Requests authentication from the machine and captures or relays the user's credentials.",
+]
+remediation = [
+  "Set the DWORD DisableWpad = 1 under HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\WinHttp with a Group Policy registry preference or Intune.",
+  "Configure the proxy explicitly where one is needed, instead of relying on auto-detection.",
+  "Add a wpad entry to the DNS global query block list (it is there by default) and disable LLMNR and NBT-NS (see EP-HARD-010).",
+]
+frameworks = [
+  "NIST 800-53 CM-7",
+]
+verify = '''
+Get-Service -Name WinHttpAutoProxySvc | Select-Object Name, Status, StartType
+reg query "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Internet Settings\WinHttp" /v DisableWpad'''
+cvss = "AV:A/AC:H/PR:N/UI:N/S:U/C:H/I:L/A:N"
+mitre = ["T1557", "T1187"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1557: Adversary-in-the-Middle"
+url = "https://attack.mitre.org/techniques/T1557/"
+
+[[check]]
+id = "EP-HARD-012"
+title = "WebClient service running (relay surface)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "The WebClient service, which provides WebDAV access, is running or set to start automatically on the machine."
+impact = "With WebClient running, an attacker can coerce the machine to authenticate over HTTP instead of SMB. HTTP authentication from the machine account can be relayed to LDAP or AD CS, which can lead to takeover of the machine."
+attack = [
+  "Finds machines where the WebClient service is running.",
+  "Coerces the machine to connect to a WebDAV path on an attacker host, for example through the print or file-share coercion RPC calls.",
+  "Relays the machine account's HTTP authentication to LDAP or AD CS to gain control of the machine.",
+]
+remediation = [
+  "Set the WebClient service startup type to Disabled with Group Policy: Computer Configuration > Windows Settings > Security Settings > System Services > WebClient = Disabled.",
+  "Keep it only on machines where users need WebDAV, and require LDAP signing and channel binding plus Extended Protection on AD CS web enrollment.",
+]
+frameworks = [
+  "NIST 800-53 CM-7",
+]
+verify = '''
+Get-Service -Name WebClient | Select-Object Name, Status, StartType'''
+cvss = "AV:N/AC:H/PR:L/UI:N/S:U/C:H/I:H/A:N"
+mitre = ["T1187", "T1557"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1187: Forced Authentication"
+url = "https://attack.mitre.org/techniques/T1187/"
+
+[[check]]
+id = "EP-HARD-013"
+title = "Print Spooler running on servers that are not print servers"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "The Print Spooler service is running or set to start automatically on a member server."
+impact = "Any authenticated user can ask the spooler to connect back to a host of their choice, which makes the server authenticate to that host. The spooler also has a history of remote code execution and privilege escalation flaws (PrintNightmare)."
+attack = [
+  "Signs in with any domain account.",
+  "Calls the spooler RPC interface to make the server authenticate to an attacker host.",
+  "Relays the server's machine account authentication, or captures it on a host with unconstrained delegation, to take over the server.",
+]
+remediation = [
+  "On servers that are not print servers, stop the Print Spooler service and set its startup type to Disabled with Group Policy: Computer Configuration > Windows Settings > Security Settings > System Services > Print Spooler = Disabled.",
+  "On real print servers, keep them patched and set Computer Configuration > Administrative Templates > Printers > Allow Print Spooler to accept client connections as needed.",
+]
+frameworks = [
+  "CIS Microsoft Windows Server Benchmark",
+  "NIST 800-53 CM-7",
+]
+verify = '''
+Get-Service -Name Spooler | Select-Object Name, Status, StartType'''
+cvss = "AV:N/AC:H/PR:L/UI:N/S:U/C:H/I:H/A:H"
+mitre = ["T1187"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1187: Forced Authentication"
+url = "https://attack.mitre.org/techniques/T1187/"
+
+[[check]]
+id = "EP-HARD-014"
+title = "RDP enabled, NLA required, restricted admin / remote credential guard"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Remote Desktop is enabled on the machine without Network Level Authentication (UserAuthentication is not 1 on the RDP-Tcp listener). The Restricted Admin and Remote Credential Guard policy is shown as evidence."
+impact = "Without NLA, anyone who can reach the RDP port gets a sign-in screen before authenticating, which exposes the machine to pre-authentication vulnerabilities and password guessing. Without Restricted Admin or Remote Credential Guard, administrators who connect leave reusable credentials on the machine."
+attack = [
+  "Finds machines with RDP open and NLA off.",
+  "Guesses passwords at the sign-in screen or exploits a pre-authentication RDP flaw.",
+  "On a compromised machine, collects the credentials of administrators who connect over RDP.",
+]
+remediation = [
+  "Set Computer Configuration > Administrative Templates > Windows Components > Remote Desktop Services > Remote Desktop Session Host > Security > Require user authentication for remote connections by using Network Level Authentication = Enabled.",
+  "Set Computer Configuration > Administrative Templates > System > Credentials Delegation > Restrict delegation of credentials to remote servers = Require Remote Credential Guard or Require Restricted Admin on admin workstations.",
+  "Disable RDP where it is not needed and limit the port to admin networks with the firewall.",
+]
+frameworks = [
+  "CIS Microsoft Windows 11 Enterprise Benchmark",
+  "CIS Microsoft Windows Server Benchmark",
+  "Microsoft security baseline",
+]
+verify = '''
+Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server' | Select-Object fDenyTSConnections
+Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' | Select-Object UserAuthentication
+reg query HKLM\SOFTWARE\Policies\Microsoft\Windows\CredentialsDelegation /v RestrictedRemoteAdministration'''
+cvss = "AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:N"
+mitre = ["T1021.001", "T1110"]
+
+[[check.detail.references]]
+title = "Remote Credential Guard"
+url = "https://learn.microsoft.com/windows/security/identity-protection/remote-credential-guard"
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1021.001: Remote Services: Remote Desktop Protocol"
+url = "https://attack.mitre.org/techniques/T1021/001/"
+
+[[check]]
+id = "EP-HARD-015"
+title = "WinRM listeners over HTTP and allowed hosts"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "The WinRM service policy allows Basic authentication (AllowBasic 1) or unencrypted traffic (AllowUnencryptedTraffic 1) under HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\WinRM\\Service. The configured listeners are shown as evidence."
+impact = "Basic authentication sends the password with every request, and unencrypted traffic exposes commands, output and credentials to anyone who can capture traffic on the path to the machine."
+attack = [
+  "Captures WinRM traffic to the machine from a position on the network.",
+  "Reads the Basic authentication credentials or the unencrypted session content.",
+  "Signs in to the machine over WinRM with the captured credentials.",
+]
+remediation = [
+  "Set Computer Configuration > Administrative Templates > Windows Components > Windows Remote Management (WinRM) > WinRM Service > Allow Basic authentication = Disabled.",
+  "Set Allow unencrypted traffic = Disabled in the same place, and the same two settings under WinRM Client.",
+  "Use Kerberos over the default HTTP listener (which encrypts the payload) or an HTTPS listener with a valid certificate.",
+]
+frameworks = [
+  "CIS Microsoft Windows 11 Enterprise Benchmark",
+  "CIS Microsoft Windows Server Benchmark",
+  "Microsoft security baseline",
+  "NIST 800-53 SC-8",
+]
+verify = '''
+reg query HKLM\SOFTWARE\Policies\Microsoft\Windows\WinRM\Service
+Get-WSManInstance -ResourceURI winrm/config/listener -Enumerate | Select-Object Transport, Address, Port, Enabled'''
+cvss = "AV:A/AC:H/PR:N/UI:N/S:U/C:H/I:L/A:N"
+mitre = ["T1040", "T1557"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1040: Network Sniffing"
+url = "https://attack.mitre.org/techniques/T1040/"
+
+[[check]]
+id = "EP-HARD-016"
+title = "PowerShell v2 engine installed"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "The Windows PowerShell 2.0 engine is installed on the machine (optional feature MicrosoftWindowsPowerShellV2Root or MicrosoftWindowsPowerShellV2 enabled)."
+impact = "PowerShell 2.0 has no script block logging, no AMSI scanning and no constrained language mode. Anyone can start it with powershell.exe -Version 2 to run scripts that the logging and antimalware controls of newer versions would catch."
+attack = [
+  "Runs code on the machine through any means.",
+  "Starts PowerShell with -Version 2 to bypass script block logging and AMSI.",
+  "Runs offensive scripts without leaving PowerShell logs.",
+]
+remediation = [
+  "Remove the feature with Disable-WindowsOptionalFeature -Online -FeatureName MicrosoftWindowsPowerShellV2Root on workstations, or Uninstall-WindowsFeature PowerShell-V2 on servers.",
+  "Deploy the removal with Configuration Manager, an Intune remediation script, or by excluding it from the image.",
+]
+frameworks = [
+  "CIS Microsoft Windows 11 Enterprise Benchmark",
+  "NIST 800-53 CM-7",
+]
+verify = '''
+Get-WindowsOptionalFeature -Online -FeatureName MicrosoftWindowsPowerShellV2Root, MicrosoftWindowsPowerShellV2 | Select-Object FeatureName, State'''
+cvss = "AV:L/AC:L/PR:L/UI:N/S:U/C:L/I:L/A:N"
+
+[[check]]
+id = "EP-HARD-017"
+title = "PowerShell logging (script block, transcription)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "PowerShell script block logging is not turned on by policy: EnableScriptBlockLogging is not 1 under HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\PowerShell\\ScriptBlockLogging. The transcription policy is shown as evidence."
+impact = "PowerShell activity on the machine leaves no record of the code that ran, so malicious scripts cannot be detected or investigated afterwards."
+attack = [
+  "Runs PowerShell commands or scripts on the machine.",
+  "Relies on the missing logs to stay unnoticed and to make investigation harder.",
+]
+remediation = [
+  "Set Computer Configuration > Administrative Templates > Windows Components > Windows PowerShell > Turn on PowerShell Script Block Logging = Enabled.",
+  "Optionally set Turn on PowerShell Transcription = Enabled with an output directory that users cannot read.",
+  "Forward the Microsoft-Windows-PowerShell/Operational log (event 4104) to the SIEM.",
+]
+frameworks = [
+  "CIS Microsoft Windows 11 Enterprise Benchmark",
+  "CIS Microsoft Windows Server Benchmark",
+  "NIST 800-53 AU-12",
+]
+verify = '''
+reg query HKLM\SOFTWARE\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging
+reg query HKLM\SOFTWARE\Policies\Microsoft\Windows\PowerShell\Transcription'''
+
+[[check.detail.references]]
+title = "about_Logging_Windows"
+url = "https://learn.microsoft.com/powershell/module/microsoft.powershell.core/about/about_logging_windows"
+
+[[check]]
+id = "EP-HARD-018"
+title = "Constrained language mode / AppLocker / WDAC enforcement"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Neither App Control for Business (WDAC) enforces a user mode code integrity policy nor AppLocker enforces executable (Exe) rules on the machine."
+impact = "Users and malware can run any program, script or installer they can write to disk. PowerShell also stays in full language mode, so script-based attack tools run without restriction."
+attack = [
+  "Gets a user to run a downloaded file, or drops a tool on the machine after initial access.",
+  "Runs the program from a user-writable folder such as Downloads or Temp, which nothing blocks.",
+]
+remediation = [
+  "Deploy an App Control for Business policy in audit mode with Intune (Endpoint security > App Control for Business) or Group Policy (Computer Configuration > Administrative Templates > System > Device Guard > Deploy App Control for Business), review the audit events, then switch it to enforced.",
+  "Or configure AppLocker under Computer Configuration > Windows Settings > Security Settings > Application Control Policies > AppLocker, set Executable rules to Enforce rules and start the Application Identity service.",
+]
+frameworks = [
+  "CIS Microsoft Windows 11 Enterprise Benchmark",
+  "NIST 800-53 CM-7",
+]
+verify = '''
+Get-CimInstance -Namespace root\Microsoft\Windows\DeviceGuard -ClassName Win32_DeviceGuard |
+  Select-Object CodeIntegrityPolicyEnforcementStatus, UsermodeCodeIntegrityPolicyEnforcementStatus
+Get-AppLockerPolicy -Effective -Xml'''
+cvss = "AV:L/AC:L/PR:L/UI:R/S:U/C:L/I:L/A:L"
+
+[[check]]
+id = "EP-HARD-019"
+title = "Windows Firewall enabled with inbound default block"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "At least one Windows Firewall profile (Domain, Private or Public) is turned off or has its default inbound action set to Allow."
+impact = "Every listening service on the machine is reachable from the network under that profile, including services that should only be used locally. This widens the attack surface for remote exploitation and lateral movement."
+attack = [
+  "Scans the machine and finds services exposed because the firewall does not filter inbound traffic.",
+  "Connects to or exploits those services to move onto the machine.",
+]
+remediation = [
+  "Under Computer Configuration > Windows Settings > Security Settings > Windows Defender Firewall with Advanced Security, set Firewall state = On and Inbound connections = Block (default) for the Domain, Private and Public profiles.",
+  "Or use an Intune firewall policy under Endpoint security > Firewall.",
+  "Add explicit inbound allow rules only for the services the machine needs.",
+]
+frameworks = [
+  "CIS Microsoft Windows 11 Enterprise Benchmark",
+  "CIS Microsoft Windows Server Benchmark",
+  "Microsoft security baseline",
+  "NIST 800-53 SC-7",
+]
+verify = '''
+Get-NetFirewallProfile | Select-Object Name, Enabled, DefaultInboundAction'''
+cvss = "AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:L/A:L"
+mitre = ["T1562.004"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1562.004: Impair Defenses: Disable or Modify System Firewall"
+url = "https://attack.mitre.org/techniques/T1562/004/"
+
+[[check]]
+id = "EP-HARD-020"
+title = "BitLocker enabled on OS drive, recovery key escrowed"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "On a workstation, BitLocker is not protecting the operating system drive (ProtectionStatus is not On)."
+impact = "If the device is lost or stolen, anyone can read the disk, including documents, cached credentials and saved browser data, or change system files to gain access once the device is back on the network."
+attack = [
+  "Gets physical access to a lost, stolen or unattended device.",
+  "Boots another operating system or removes the disk and reads it directly.",
+  "Extracts cached credentials and data, or plants a backdoor in system files.",
+]
+remediation = [
+  "Enable BitLocker on the OS drive with TPM protection through Intune (Endpoint security > Disk encryption) or Group Policy (Computer Configuration > Administrative Templates > Windows Components > BitLocker Drive Encryption > Operating System Drives).",
+  "Require the recovery key to be backed up to Active Directory or Microsoft Entra ID before encryption starts.",
+]
+frameworks = [
+  "CIS Microsoft Windows 11 Enterprise Benchmark",
+  "Microsoft security baseline",
+  "NIST 800-53 SC-28",
+]
+verify = '''
+Get-BitLockerVolume -MountPoint $env:SystemDrive | Select-Object MountPoint, VolumeStatus, ProtectionStatus, EncryptionMethod'''
+cvss = "AV:P/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N"
+
+[[check.detail.references]]
+title = "BitLocker overview"
+url = "https://learn.microsoft.com/windows/security/operating-system-security/data-protection/bitlocker/"
+
+[[check]]
+id = "EP-HARD-021"
+title = "Secure Boot and TPM status"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Secure Boot is off or not supported on the machine, or the machine has no usable TPM."
+impact = "Without Secure Boot, bootkits and modified boot loaders can load before Windows and its defenses. Without a TPM, BitLocker, Credential Guard and Windows Hello cannot protect their keys in hardware."
+attack = [
+  "Gains administrator rights or physical access to the machine.",
+  "Installs a modified boot loader or bootkit that runs before Windows starts.",
+  "Keeps persistent, hidden control that survives reinstall of user-mode tools.",
+]
+remediation = [
+  "Turn on Secure Boot in the UEFI firmware settings; convert legacy BIOS disks to GPT with MBR2GPT first if needed.",
+  "Enable the TPM in the firmware, or plan the replacement of hardware without TPM 2.0.",
+  "Require both with an Intune compliance policy (Device Health).",
+]
+frameworks = [
+  "Microsoft security baseline",
+  "NIST 800-53 SI-7",
+]
+verify = '''
+Confirm-SecureBootUEFI
+Get-Tpm | Select-Object TpmPresent, TpmReady, TpmEnabled'''
+cvss = "AV:P/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:N"
+
+[[check]]
+id = "EP-HARD-022"
+title = "Virtualization-based security and HVCI"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Virtualization-based security is not running (VirtualizationBasedSecurityStatus is not 2), or memory integrity (hypervisor-protected code integrity, HVCI) is not running (SecurityServicesRunning lacks 2)."
+impact = "Without memory integrity, vulnerable or malicious kernel drivers can load and kernel memory can be changed. Attackers with administrator rights use such drivers to turn off security tools and read protected memory such as LSASS."
+attack = [
+  "Gains local administrator rights on the machine.",
+  "Loads a signed but vulnerable driver to get kernel access.",
+  "Turns off the EDR or LSA protection and dumps credentials.",
+]
+remediation = [
+  "Set Computer Configuration > Administrative Templates > System > Device Guard > Turn On Virtualization Based Security = Enabled, with Virtualization Based Protection of Code Integrity = Enabled with UEFI lock.",
+  "Or enable Memory integrity through Intune (Settings catalog > Device Guard) or Windows Security > Device security > Core isolation.",
+  "Check for incompatible drivers before enforcing it widely.",
+]
+frameworks = [
+  "CIS Microsoft Windows 11 Enterprise Benchmark",
+  "Microsoft security baseline",
+  "NIST 800-53 SI-7",
+]
+verify = '''
+Get-CimInstance -Namespace root\Microsoft\Windows\DeviceGuard -ClassName Win32_DeviceGuard |
+  Select-Object VirtualizationBasedSecurityStatus, SecurityServicesRunning'''
+cvss = "AV:L/AC:H/PR:H/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1003.001", "T1068"]
+
+[[check.detail.references]]
+title = "Enable memory integrity"
+url = "https://learn.microsoft.com/windows/security/hardware-security/enable-virtualization-based-protection-of-code-integrity"
+
+[[check]]
+id = "EP-HARD-023"
+title = "Defender AV real-time protection and signature age"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Microsoft Defender Antivirus is not protecting the machine: its service is off, real-time protection is off, or its security intelligence (signatures) is older than 7 days."
+impact = "Known malware and attack tools run on the machine without being blocked. If no other antivirus is in place, the machine has no malware protection at all."
+attack = [
+  "Copies a known malware sample or attack tool onto the machine.",
+  "Runs it without detection because real-time scanning is off or the signatures are out of date.",
+]
+remediation = [
+  "Turn real-time protection back on: Computer Configuration > Administrative Templates > Windows Components > Microsoft Defender Antivirus > Real-time Protection > Turn off real-time protection = Disabled, or an Intune Antivirus policy.",
+  "Make sure the machine can reach its update source (Windows Update, WSUS or a file share) and fix the cause of stale signatures.",
+  "Turn on tamper protection so local administrators cannot turn protection off.",
+  "If a third-party antivirus is the intended product, confirm it is installed and running.",
+]
+frameworks = [
+  "CIS Microsoft Windows 11 Enterprise Benchmark",
+  "CIS Microsoft Windows Server Benchmark",
+  "Microsoft security baseline",
+  "NIST 800-53 SI-3",
+]
+verify = '''
+Get-MpComputerStatus | Select-Object AMServiceEnabled, AntivirusEnabled, RealTimeProtectionEnabled, AntivirusSignatureLastUpdated, AntivirusSignatureAge'''
+cvss = "AV:L/AC:L/PR:N/UI:R/S:U/C:H/I:H/A:H"
+
+[[check.detail.references]]
+title = "Microsoft Defender Antivirus in Windows overview"
+url = "https://learn.microsoft.com/defender-endpoint/microsoft-defender-antivirus-windows"
+
+[[check]]
+id = "EP-HARD-024"
+title = "Defender exclusions on the machine"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Microsoft Defender Antivirus on the machine has exclusions configured: paths, processes or file extensions that it does not scan."
+impact = "Anything placed in an excluded folder, run by an excluded process or named with an excluded extension is never scanned. Attackers look for these exclusions and drop their tools there."
+attack = [
+  "Reads the Defender exclusions on the machine, from the registry, Group Policy files or event logs.",
+  "Copies malware into an excluded folder, or gives it an excluded name or extension.",
+  "Runs it without antivirus detection.",
+]
+remediation = [
+  "Review each exclusion with its owner and remove those that are not needed, in the Intune Antivirus policy or under Computer Configuration > Administrative Templates > Windows Components > Microsoft Defender Antivirus > Exclusions.",
+  "Replace broad folder and process exclusions with narrow file paths, and never exclude user-writable folders such as Temp or Downloads.",
+  "Set Computer Configuration > Administrative Templates > Windows Components > Microsoft Defender Antivirus > Configure local administrator merge behavior for lists = Disabled so local exclusions are ignored.",
+]
+frameworks = [
+  "Microsoft security baseline",
+  "NIST 800-53 SI-3",
+]
+verify = '''
+Get-MpPreference | Select-Object ExclusionPath, ExclusionProcess, ExclusionExtension'''
+cvss = "AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:N"
+
+[[check.detail.references]]
+title = "Configure custom exclusions for Microsoft Defender Antivirus"
+url = "https://learn.microsoft.com/defender-endpoint/configure-exclusions-microsoft-defender-antivirus"
+
+[[check]]
+id = "EP-HARD-025"
+title = "ASR rules effective state"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "At least one of these attack surface reduction (ASR) rules is not in Block or Warn mode on the machine: Block credential stealing from the Windows local security authority subsystem (lsass.exe), Block executable content from email client and webmail, Block all Office applications from creating child processes, Block Office applications from creating executable content, Block execution of potentially obfuscated scripts."
+impact = "Common initial access and credential theft techniques, such as macros that start processes, executable email attachments and LSASS memory reads, are not blocked on the machine."
+attack = [
+  "Sends a user an Office document with a macro or an executable attachment.",
+  "The macro starts a child process or writes an executable, which no ASR rule blocks.",
+  "Later reads LSASS memory, which the LSASS ASR rule would have blocked.",
+]
+remediation = [
+  "Set the five rules to Block (or Warn where users need an override) in an Intune policy under Endpoint security > Attack surface reduction.",
+  "Or use Computer Configuration > Administrative Templates > Windows Components > Microsoft Defender Antivirus > Microsoft Defender Exploit Guard > Attack Surface Reduction > Configure Attack Surface Reduction rules, with values 1 (Block) or 6 (Warn).",
+  "Run each rule in Audit mode first and review the events to add needed exclusions.",
+]
+frameworks = [
+  "CIS Microsoft Windows 11 Enterprise Benchmark",
+  "Microsoft security baseline",
+  "NIST 800-53 SI-3",
+]
+verify = '''
+$p = Get-MpPreference
+0..($p.AttackSurfaceReductionRules_Ids.Count - 1) | ForEach-Object {
+  [pscustomobject]@{ Id = $p.AttackSurfaceReductionRules_Ids[$_]; Action = $p.AttackSurfaceReductionRules_Actions[$_] } }'''
+cvss = "AV:N/AC:L/PR:N/UI:R/S:U/C:H/I:H/A:N"
+mitre = ["T1003.001", "T1566.002"]
+
+[[check.detail.references]]
+title = "Attack surface reduction rules reference"
+url = "https://learn.microsoft.com/defender-endpoint/attack-surface-reduction-rules-reference"
+
+[[check]]
+id = "EP-HARD-026"
+title = "OS build and patch age, missing critical updates"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "The newest installed update on the machine, by the install date of its most recent hotfix, is older than 45 days."
+impact = "The machine is missing at least one monthly cumulative update and stays exposed to published, often actively exploited, vulnerabilities in Windows."
+attack = [
+  "Identifies the machine's build and missing updates.",
+  "Uses a public exploit for a vulnerability fixed in a missing update to run code or elevate privileges.",
+]
+remediation = [
+  "Install the latest cumulative update on the machine and restart it.",
+  "Check why the machine fell behind: Windows Update for Business or WSUS assignment, update rings in Intune, disk space or failed installs.",
+  "Set deadlines in the update policy so updates install and restart within a fixed time.",
+]
+frameworks = [
+  "NIST 800-53 SI-2",
+  "CIS Controls v8",
+]
+verify = '''
+Get-HotFix | Sort-Object InstalledOn -Descending | Select-Object -First 5 HotFixID, Description, InstalledOn'''
+cvss = "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"
+mitre = ["T1210", "T1068"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1210: Exploitation of Remote Services"
+url = "https://attack.mitre.org/techniques/T1210/"
+
+[[check]]
+id = "EP-HARD-027"
+title = "Unsupported OS versions"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "The machine runs a Windows version or build that is past its end of support date."
+impact = "Microsoft no longer releases security updates for it, so every new vulnerability stays open on the machine for good."
+attack = [
+  "Identifies the machine's Windows version.",
+  "Uses an exploit for a vulnerability that was fixed only in supported versions.",
+]
+remediation = [
+  "Upgrade the machine to a supported Windows version or feature update, or replace it.",
+  "Where an upgrade is not possible yet, isolate the machine on its own network segment and consider Extended Security Updates.",
+]
+frameworks = [
+  "NIST 800-53 SA-22",
+  "NIST 800-53 SI-2",
+]
+verify = '''
+Get-CimInstance Win32_OperatingSystem | Select-Object Caption, Version, BuildNumber'''
+cvss = "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"
+mitre = ["T1210", "T1068"]
+
+[[check.detail.references]]
+title = "Windows Server release information"
+url = "https://learn.microsoft.com/windows/release-health/windows-server-release-info"
+
+[[check.detail.references]]
+title = "Windows 11 release information"
+url = "https://learn.microsoft.com/windows/release-health/windows11-release-information"
+
+[[check]]
+id = "EP-HARD-028"
+title = "Installed software with known critical vulnerabilities (version inventory matched against a local CVE list)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Installed software is older than the fix for a known exploited vulnerability, from a short list of widely deployed tools (7-Zip, WinRAR, PuTTY, Notepad++, FileZilla, WinSCP, OpenSSH, VLC). This is not a full vulnerability scan."
+impact = "Exploits for these versions are public. A user opening a crafted file, or connecting to a malicious server, runs the attacker's code."
+remediation = [
+  "Update or remove the listed software.",
+  "Use a vulnerability scanner for complete coverage.",
+]
+verify = "Get-ItemProperty HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\* | Select-Object DisplayName, DisplayVersion"
+mitre = ["T1210"]
+
+[[check]]
+id = "EP-HARD-029"
+title = "Services running as domain accounts (credential exposure on the box)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Services on the machine run as domain user accounts rather than built-in accounts (LocalSystem, LocalService, NetworkService, virtual service accounts) or group managed service accounts. Services that run as members of privileged AD groups are called out."
+impact = "Windows stores the service account's password as an LSA secret on the machine and keeps its credentials in memory while the service runs. Anyone with local administrator rights can read the password and use the account everywhere it has access."
+attack = [
+  "Gains local administrator rights on the machine.",
+  "Reads the service account's password from the LSA secrets, or its credentials from LSASS memory.",
+  "Signs in as the service account on other machines, which is a domain takeover if the account is privileged.",
+]
+remediation = [
+  "Move each service to a group managed service account (New-ADServiceAccount, then Install-ADServiceAccount on the machine) or to a built-in account where it does not need domain access.",
+  "Remove service accounts from privileged groups such as Domain Admins and grant only the rights the service needs.",
+  "Change the password of any privileged service account that was found on the machine.",
+]
+frameworks = [
+  "NIST 800-53 AC-6",
+  "NIST 800-53 IA-5",
+]
+verify = '''
+Get-CimInstance Win32_Service |
+  Where-Object { $_.StartName -and $_.StartName -notmatch '^(LocalSystem|NT AUTHORITY\\|NT SERVICE\\)' } |
+  Select-Object Name, StartName, State, StartMode'''
+cvss = "AV:L/AC:L/PR:H/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1003", "T1078.002"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1003: OS Credential Dumping"
+url = "https://attack.mitre.org/techniques/T1003/"
+
+[[check]]
+id = "EP-HARD-030"
+title = "Services with unquoted paths or writable binaries"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "A service on the machine has an unquoted executable path that contains spaces, or its program file can be written by Everyone, Users, Authenticated Users or Domain Users."
+impact = "An ordinary user can place or replace a program that the service starts, usually as LocalSystem, and so gain full control of the machine."
+attack = [
+  "Signs in to the machine as an ordinary user.",
+  "Writes a program to a folder earlier in the unquoted path (for example C:\\Program.exe), or overwrites the writable service binary.",
+  "Waits for the service or machine to restart, and the program runs as the service account.",
+]
+remediation = [
+  "Quote the service path in HKLM\\SYSTEM\\CurrentControlSet\\Services\\<name>\\ImagePath, or reinstall the software with a fixed installer.",
+  "Remove write permissions for Everyone, Users, Authenticated Users and Domain Users from the service program and its folder.",
+  "Ask the software vendor to fix the installer.",
+]
+frameworks = [
+  "NIST 800-53 AC-6",
+  "NIST 800-53 CM-6",
+]
+verify = '''
+Get-CimInstance Win32_Service |
+  Where-Object { $_.PathName -notlike '"*' -and ($_.PathName -split '\.exe')[0] -like '* *' } |
+  Select-Object Name, PathName, StartName'''
+cvss = "AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H"
+mitre = ["T1543.003", "T1068"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1543.003: Create or Modify System Process: Windows Service"
+url = "https://attack.mitre.org/techniques/T1543/003/"
+
+[[check]]
+id = "EP-HARD-031"
+title = "Scheduled tasks running as privileged domain accounts"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "A scheduled task on the machine runs as a domain account that is a member of a privileged AD group, such as Domain Admins, Enterprise Admins or Administrators."
+impact = "A task that runs with a stored password keeps it as an LSA secret on the machine, and the account's credentials are in memory while the task runs. Anyone with local administrator rights can recover them and take over the domain."
+attack = [
+  "Gains local administrator rights on the machine.",
+  "Reads the stored task credentials from the LSA secrets, or waits for the task to run and dumps LSASS.",
+  "Uses the privileged account to take over the domain.",
+]
+remediation = [
+  "Change each listed task to run as SYSTEM, a group managed service account or a dedicated account with only the rights the task needs.",
+  "Run tasks that need domain admin rights only on Tier 0 servers.",
+  "Change the password of each privileged account found in a task.",
+]
+frameworks = [
+  "NIST 800-53 AC-6",
+  "Microsoft enterprise access model",
+]
+verify = '''
+Get-ScheduledTask |
+  Select-Object TaskPath, TaskName, @{ n = 'RunAs'; e = { $_.Principal.UserId } }, @{ n = 'LogonType'; e = { $_.Principal.LogonType } } |
+  Where-Object { $_.RunAs -and $_.RunAs -notmatch '^(SYSTEM|LOCAL SERVICE|NETWORK SERVICE|S-1-5-)' }'''
+cvss = "AV:L/AC:L/PR:H/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1053.005", "T1078.002", "T1003"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1053.005: Scheduled Task/Job: Scheduled Task"
+url = "https://attack.mitre.org/techniques/T1053/005/"
+
+[[check.detail.references]]
+title = "Enterprise access model"
+url = "https://learn.microsoft.com/security/privileged-access-workstations/privileged-access-access-model"
+
+[[check]]
+id = "EP-HARD-032"
+title = "Autoruns in user-writable locations"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "An entry under HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run or RunOnce points at a file that ordinary users (Everyone, Users, Authenticated Users or Domain Users) can write."
+impact = "The program starts for every user who signs in to the machine. An ordinary user can replace it and have their code run in the session of the next administrator who signs in."
+attack = [
+  "Signs in to the machine as an ordinary user.",
+  "Replaces the writable autorun program with its own.",
+  "Waits for an administrator to sign in, and its program runs with that administrator's rights.",
+]
+remediation = [
+  "Remove write permissions for ordinary users from the autorun program and its folder.",
+  "Move the program to a protected location such as Program Files and update the Run entry.",
+  "Remove autorun entries that are no longer needed.",
+]
+frameworks = [
+  "NIST 800-53 AC-6",
+  "NIST 800-53 CM-6",
+]
+verify = '''
+reg query HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run
+reg query HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce'''
+cvss = "AV:L/AC:L/PR:L/UI:R/S:U/C:H/I:H/A:H"
+mitre = ["T1068"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1068: Exploitation for Privilege Escalation"
+url = "https://attack.mitre.org/techniques/T1068/"
+
+[[check]]
+id = "EP-HARD-033"
+title = "Writable directories in the system PATH"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "A folder in the machine-wide PATH environment variable can be written by ordinary users (Everyone, Users, Authenticated Users or Domain Users)."
+impact = "Programs and services running as SYSTEM search the PATH for programs and DLLs. An ordinary user can place a file there with the name of a missing DLL or program and have it loaded with SYSTEM rights."
+attack = [
+  "Signs in to the machine as an ordinary user.",
+  "Writes a DLL or program into the writable PATH folder, named after one a privileged process looks for.",
+  "Waits for the service or task to load it, and gains SYSTEM rights.",
+]
+remediation = [
+  "Remove write permissions for ordinary users from the listed folders, keeping Modify only for Administrators and SYSTEM.",
+  "Remove folders from the system PATH that do not need to be there, for example leftovers from uninstalled software.",
+]
+frameworks = [
+  "NIST 800-53 AC-6",
+  "NIST 800-53 CM-6",
+]
+verify = '''
+[Environment]::GetEnvironmentVariable('Path', 'Machine') -split ';' | Where-Object { $_ } | ForEach-Object {
+  [pscustomobject]@{ Folder = $_; Access = (Get-Acl -Path $_ -ErrorAction SilentlyContinue).AccessToString } }'''
+cvss = "AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H"
+mitre = ["T1068"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1068: Exploitation for Privilege Escalation"
+url = "https://attack.mitre.org/techniques/T1068/"
+
+[[check]]
+id = "EP-HARD-034"
+title = "AlwaysInstallElevated enabled"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "AlwaysInstallElevated is set to 1 for the machine under HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\Installer."
+impact = "When the same value is also set for the user (by policy or by the user under HKCU), Windows Installer runs any MSI package the user starts with SYSTEM rights. Any user can then gain full control of the machine."
+attack = [
+  "Signs in to the machine as an ordinary user.",
+  "Sets or finds AlwaysInstallElevated under HKCU\\SOFTWARE\\Policies\\Microsoft\\Windows\\Installer.",
+  "Runs a crafted MSI package that adds the user to the local Administrators group.",
+]
+remediation = [
+  "Set Computer Configuration > Administrative Templates > Windows Components > Windows Installer > Always install with elevated privileges = Disabled.",
+  "Set User Configuration > Administrative Templates > Windows Components > Windows Installer > Always install with elevated privileges = Disabled.",
+  "Deploy software with Intune, Configuration Manager or Group Policy software installation instead.",
+]
+frameworks = [
+  "CIS Microsoft Windows 11 Enterprise Benchmark",
+  "CIS Microsoft Windows Server Benchmark",
+  "Microsoft security baseline",
+]
+verify = '''
+reg query HKLM\SOFTWARE\Policies\Microsoft\Windows\Installer /v AlwaysInstallElevated'''
+cvss = "AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H"
+mitre = ["T1068"]
+
+[[check.detail.references]]
+title = "AlwaysInstallElevated"
+url = "https://learn.microsoft.com/windows/win32/msi/alwaysinstallelevated"
+
+[[check]]
+id = "EP-HARD-035"
+title = "UAC settings (admin approval mode, remote UAC token filtering LocalAccountTokenFilterPolicy)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "User Account Control is weakened on the machine: UAC is off (EnableLUA 0), administrators are elevated without a prompt (ConsentPromptBehaviorAdmin 0), or remote UAC token filtering is off for local accounts (LocalAccountTokenFilterPolicy 1)."
+impact = "Code that a local administrator runs gets full rights without any prompt. With LocalAccountTokenFilterPolicy 1, any local administrator account, such as a shared built-in Administrator, can be used remotely with full rights, which allows pass-the-hash with local accounts."
+attack = [
+  "Gets the password or hash of a local administrator account from one machine.",
+  "Authenticates remotely to this machine with that local account, which gets a full administrator token.",
+  "Runs commands with full rights over SMB or WinRM.",
+]
+remediation = [
+  "Under Computer Configuration > Windows Settings > Security Settings > Local Policies > Security Options, set User Account Control: Run all administrators in Admin Approval Mode = Enabled.",
+  "Set User Account Control: Behavior of the elevation prompt for administrators in Admin Approval Mode = Prompt for consent on the secure desktop.",
+  "Set Computer Configuration > Administrative Templates > MS Security Guide > Apply UAC restrictions to local accounts on network logons = Enabled (LocalAccountTokenFilterPolicy 0).",
+]
+frameworks = [
+  "CIS Microsoft Windows 11 Enterprise Benchmark",
+  "CIS Microsoft Windows Server Benchmark",
+  "Microsoft security baseline",
+]
+verify = '''
+Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' |
+  Select-Object EnableLUA, ConsentPromptBehaviorAdmin, LocalAccountTokenFilterPolicy, FilterAdministratorToken'''
+cvss = "AV:N/AC:L/PR:H/UI:N/S:U/C:H/I:H/A:H"
+mitre = ["T1078.003", "T1550"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1550: Use Alternate Authentication Material"
+url = "https://attack.mitre.org/techniques/T1550/"
+
+[[check]]
+id = "EP-HARD-036"
+title = "Stored credentials (Credential Manager entries for domain accounts, count only)"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Member servers hold saved Credential Manager entries (the number of credential files in user profiles; their content is never read)."
+impact = "Saved credentials can be decrypted by anyone with admin rights on the server, giving the passwords of other accounts and systems."
+remediation = [
+  "Remove saved credentials from servers and turn on \"Network access: Do not allow storage of passwords and credentials for network authentication\".",
+]
+verify = "cmdkey /list  # per user"
+mitre = ["T1552"]
+
+[[check]]
+id = "EP-HARD-037"
+title = "Privileged domain accounts with sessions on the machine (Tier violation, feeds attack graph)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "A privileged domain account, a member of an AD admin group, has an interactive or Remote Desktop session on a member server or workstation."
+impact = "The account's credentials are in memory on a machine with a lower security level than the domain. Anyone who gains local administrator rights on the machine can take them and take over the domain."
+attack = [
+  "Gains local administrator rights on a member machine.",
+  "Finds a signed-in domain admin session on it.",
+  "Dumps LSASS or impersonates the session's token and acts as the domain admin.",
+]
+remediation = [
+  "Sign out the listed sessions and change the passwords of the accounts if the machine may be compromised.",
+  "Deny Tier 0 accounts sign-in on member machines with Group Policy: Computer Configuration > Windows Settings > Security Settings > Local Policies > User Rights Assignment > Deny log on locally and Deny log on through Remote Desktop Services.",
+  "Add privileged accounts to the Protected Users group and give admins separate accounts and privileged access workstations for each tier.",
+]
+frameworks = [
+  "Microsoft enterprise access model",
+  "NIST 800-53 AC-6",
+]
+verify = '''
+quser'''
+cvss = "AV:L/AC:L/PR:H/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1003.001", "T1078.002", "T1550"]
+
+[[check.detail.references]]
+title = "Enterprise access model"
+url = "https://learn.microsoft.com/security/privileged-access-workstations/privileged-access-access-model"
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1003.001: OS Credential Dumping: LSASS Memory"
+url = "https://attack.mitre.org/techniques/T1003/001/"
+
+[[check]]
+id = "EP-HARD-038"
+title = "Shares with Everyone/Authenticated Users write access"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "An SMB share on the machine grants Change or Full share permission to Everyone, Authenticated Users, Users or Domain Users."
+impact = "Unless NTFS permissions restrict it, any domain user can change or delete files on the share. Attackers use such shares to plant malicious programs, shortcuts or scripts that other users or services run, and to stage ransomware."
+attack = [
+  "Lists shares across the network with any domain account.",
+  "Finds a share where it can write and plants a malicious file, script or shortcut.",
+  "Waits for users or scheduled jobs that use the share to run it.",
+]
+remediation = [
+  "Replace the broad group with the groups that need write access, in the share permissions and in the NTFS permissions of the folder.",
+  "Use Get-SmbShareAccess to review, and Revoke-SmbShareAccess or the share's Properties dialog to remove the access.",
+  "Remove shares that are no longer used.",
+]
+frameworks = [
+  "NIST 800-53 AC-3",
+  "NIST 800-53 AC-6",
+]
+verify = '''
+Get-SmbShare | Get-SmbShareAccess | Where-Object { $_.AccessControlType -eq 'Allow' -and $_.AccessRight -in 'Change', 'Full' } |
+  Select-Object Name, AccountName, AccessRight'''
+cvss = "AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:L"
+
+[[check]]
+id = "EP-HARD-039"
+title = "NTLM settings (LmCompatibilityLevel, outgoing NTLM restrictions)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "LmCompatibilityLevel under HKLM\\SYSTEM\\CurrentControlSet\\Control\\Lsa is not 5 (send NTLMv2 response only, refuse LM and NTLM). The outgoing NTLM restriction (RestrictSendingNTLMTraffic) is shown as evidence."
+impact = "The machine may send or accept LM and NTLMv1 responses. These can be captured and cracked quickly, or turned into the account's NTLM hash, which can then be used to authenticate."
+attack = [
+  "Makes the machine or a user authenticate to an attacker host, by poisoning or coercion.",
+  "Requests a downgraded LM or NTLMv1 response.",
+  "Cracks the response or recovers the NTLM hash and uses it to authenticate as the account.",
+]
+remediation = [
+  "Set Computer Configuration > Windows Settings > Security Settings > Local Policies > Security Options > Network security: LAN Manager authentication level = Send NTLMv2 response only. Refuse LM & NTLM.",
+  "Audit NTLM use first with Network security: Restrict NTLM: Audit Incoming NTLM Traffic and fix applications that still need NTLMv1.",
+  "Consider Network security: Restrict NTLM: Outgoing NTLM traffic to remote servers once NTLM use is known.",
+]
+frameworks = [
+  "CIS Microsoft Windows 11 Enterprise Benchmark",
+  "CIS Microsoft Windows Server Benchmark",
+  "Microsoft security baseline",
+]
+verify = '''
+reg query HKLM\SYSTEM\CurrentControlSet\Control\Lsa /v LmCompatibilityLevel
+reg query HKLM\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0 /v RestrictSendingNTLMTraffic'''
+cvss = "AV:A/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:N"
+mitre = ["T1557.001", "T1550"]
+
+[[check.detail.references]]
+title = "Network security: LAN Manager authentication level"
+url = "https://learn.microsoft.com/previous-versions/windows/it-pro/windows-10/security/threat-protection/security-policy-settings/network-security-lan-manager-authentication-level"
+
+[[check]]
+id = "EP-HARD-040"
+title = "TLS 1.0/1.1 and weak ciphers enabled"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "TLS 1.0 or TLS 1.1 is not explicitly disabled for the server side in Schannel: Enabled is not 0 under HKLM\\SYSTEM\\CurrentControlSet\\Control\\SecurityProviders\\SCHANNEL\\Protocols\\TLS 1.0\\Server or TLS 1.1\\Server."
+impact = "Services on the machine that use Schannel, such as IIS, RDP or LDAPS, may accept connections over old TLS versions with known weaknesses, which makes interception and downgrade attacks easier."
+attack = [
+  "Gets a position on the network path to the machine.",
+  "Forces or waits for a client to connect over TLS 1.0 or 1.1.",
+  "Uses known protocol weaknesses to attack the session.",
+]
+remediation = [
+  "Create the keys HKLM\\SYSTEM\\CurrentControlSet\\Control\\SecurityProviders\\SCHANNEL\\Protocols\\TLS 1.0\\Server and TLS 1.1\\Server with Enabled = 0 and DisabledByDefault = 1, using a Group Policy registry preference or Intune, then restart.",
+  "Test applications that may still need old TLS versions first.",
+]
+frameworks = [
+  "CIS Microsoft Windows Server Benchmark",
+  "NIST 800-53 SC-8",
+  "NIST 800-52",
+]
+verify = '''
+Get-ChildItem 'HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols' -Recurse |
+  Get-ItemProperty | Select-Object PSPath, Enabled, DisabledByDefault'''
+cvss = "AV:N/AC:H/PR:N/UI:N/S:U/C:L/I:L/A:N"
+mitre = ["T1040", "T1557"]
+
+[[check.detail.references]]
+title = "Transport Layer Security (TLS) registry settings"
+url = "https://learn.microsoft.com/windows-server/security/tls/tls-registry-settings"
+
+[[check]]
+id = "EP-HARD-041"
+title = "Audit policy and event log sizes"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "The machine does not audit at least one of these subcategories: Logon, Special Logon, Process Creation, User Account Management, Security Group Management, Credential Validation; or its Security event log is smaller than 192 MB."
+impact = "Sign-ins, privileged logons, new processes and account changes on the machine are not recorded or are overwritten quickly, so attacks cannot be detected or investigated afterwards."
+remediation = [
+  "Enable the subcategories under Computer Configuration > Windows Settings > Security Settings > Advanced Audit Policy Configuration > Audit Policies (Logon/Logoff, Detailed Tracking, Account Management, Account Logon).",
+  "Set Computer Configuration > Windows Settings > Security Settings > Local Policies > Security Options > Audit: Force audit policy subcategory settings to override audit policy category settings = Enabled.",
+  "Set Computer Configuration > Administrative Templates > Windows Components > Event Log Service > Security > Specify the maximum log file size (KB) to 196608 or more.",
+  "Forward the Security log to a SIEM.",
+]
+frameworks = [
+  "CIS Microsoft Windows 11 Enterprise Benchmark",
+  "CIS Microsoft Windows Server Benchmark",
+  "Microsoft security baseline",
+  "NIST 800-53 AU-2",
+]
+verify = '''
+auditpol /get /category:*
+Get-WinEvent -ListLog Security | Select-Object LogName, MaximumSizeInBytes'''
+
+[[check.detail.references]]
+title = "Audit Policy Recommendations"
+url = "https://learn.microsoft.com/windows-server/identity/ad-ds/plan/security-best-practices/audit-policy-recommendations"
+
+[[check]]
+id = "EP-HARD-042"
+title = "Sysmon / EDR agent present and healthy"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "No known EDR agent service (such as Microsoft Defender for Endpoint, CrowdStrike Falcon or SentinelOne) and no Sysmon service is running on the machine."
+impact = "Activity on the machine, such as process starts, network connections and credential access, is not recorded in enough detail to detect or investigate an attack."
+remediation = [
+  "Onboard the machine to the organization's EDR product, for example Microsoft Defender for Endpoint through Intune or the Group Policy onboarding package.",
+  "Where no EDR is available, install Sysmon with a maintained configuration and forward its events to a SIEM.",
+  "Check that the agent reports in from the EDR console after onboarding.",
+]
+frameworks = [
+  "NIST 800-53 SI-4",
+  "CIS Controls v8",
+]
+verify = '''
+Get-Service | Where-Object { $_.Name -match '^(Sense|Sysmon|Sysmon64|CSFalconService|SentinelAgent|CylanceSvc|xagt|CbDefense|cyserver|elastic-endpoint)$' } |
+  Select-Object Name, Status, StartType'''
+
+[[check.detail.references]]
+title = "Sysmon"
+url = "https://learn.microsoft.com/sysinternals/downloads/sysmon"
+
+[[check]]
+id = "EP-HARD-043"
+title = "Remote Registry service running"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "On a workstation, the Remote Registry service is running or set to start automatically."
+impact = "Other machines can read and, with enough rights, change the workstation's registry over the network. Attackers use it to find signed-in users and read configuration, and administrators rarely need it on workstations."
+attack = [
+  "Connects to the workstation's registry over the network with a domain account.",
+  "Reads which users are signed in and other configuration.",
+  "With administrator rights, changes registry values remotely to weaken settings or add persistence.",
+]
+remediation = [
+  "Set the Remote Registry service startup type to Disabled on workstations with Group Policy: Computer Configuration > Windows Settings > Security Settings > System Services > Remote Registry = Disabled.",
+]
+frameworks = [
+  "CIS Microsoft Windows 11 Enterprise Benchmark",
+  "NIST 800-53 CM-7",
+]
+verify = '''
+Get-Service -Name RemoteRegistry | Select-Object Name, Status, StartType'''
+cvss = "AV:N/AC:L/PR:L/UI:N/S:U/C:L/I:N/A:N"
+mitre = ["T1112", "T1087.002"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1112: Modify Registry"
+url = "https://attack.mitre.org/techniques/T1112/"
+
+[[check]]
+id = "EP-HARD-044"
+title = "Anonymous enumeration settings"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Anonymous access is not restricted on the machine: RestrictAnonymous is 0, RestrictAnonymousSAM is 0, or EveryoneIncludesAnonymous is 1 under HKLM\\SYSTEM\\CurrentControlSet\\Control\\Lsa."
+impact = "Unauthenticated users can list local accounts, groups or shares on the machine, and may get access to anything granted to Everyone. This gives attackers account names for password guessing without any credentials."
+attack = [
+  "Connects to the machine with a null session, without credentials.",
+  "Lists local accounts, groups and shares.",
+  "Uses the account names for password spraying or the shares for data access.",
+]
+remediation = [
+  "Under Computer Configuration > Windows Settings > Security Settings > Local Policies > Security Options, set Network access: Do not allow anonymous enumeration of SAM accounts = Enabled.",
+  "Set Network access: Do not allow anonymous enumeration of SAM accounts and shares = Enabled.",
+  "Set Network access: Let Everyone permissions apply to anonymous users = Disabled.",
+]
+frameworks = [
+  "CIS Microsoft Windows 11 Enterprise Benchmark",
+  "CIS Microsoft Windows Server Benchmark",
+  "Microsoft security baseline",
+]
+verify = '''
+Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' | Select-Object RestrictAnonymous, RestrictAnonymousSAM, EveryoneIncludesAnonymous'''
+cvss = "AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N"
+mitre = ["T1087.002", "T1069.002"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1087.002: Account Discovery: Domain Account"
+url = "https://attack.mitre.org/techniques/T1087/002/"
+
+[[check]]
+id = "EP-HARD-045"
+title = "Windows Hello for Business and smart card policies (workstations)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Workstations neither use Windows Hello for Business nor require smart card sign-in."
+impact = "Password-only sign-in can be phished, guessed or replayed; WHfB and smart cards bind sign-in to the device or card."
+remediation = [
+  "Deploy Windows Hello for Business, or require smart card sign-in for privileged users.",
+]
+verify = "Get-ItemProperty HKLM:\\SOFTWARE\\Policies\\Microsoft\\PassportForWork"
+mitre = ["T1110"]
+
+[[check]]
+id = "EP-HARD-046"
+title = "Kiosk/shared machine autologon with stored password (Winlogon DefaultPassword)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Automatic sign-in is configured (AutoAdminLogon 1 under HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon) and a DefaultPassword value exists in the same key. The assessment only checks that the value exists and never reads the password."
+impact = "The sign-in account's password is stored in clear text in the registry, where local users and administrators can read it. If the account is a domain account, the password can be used on any other machine where the account can sign in."
+attack = [
+  "Signs in to the machine, or reaches its registry remotely.",
+  "Reads DefaultUserName, DefaultDomainName and DefaultPassword from the Winlogon key.",
+  "Signs in with the recovered account elsewhere in the domain.",
+]
+remediation = [
+  "Delete the DefaultPassword value and set AutoAdminLogon to 0, unless the machine is a kiosk that needs automatic sign-in.",
+  "For kiosks, use Assigned Access with a local or auto-generated account, or Sysinternals Autologon, which stores the password as an LSA secret instead of in the registry.",
+  "Change the password of the account that was stored, and make sure it has no rights beyond the kiosk.",
+]
+frameworks = [
+  "CIS Microsoft Windows 11 Enterprise Benchmark",
+  "NIST 800-53 IA-5",
+]
+verify = '''
+$k = Get-Item 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon'
+[pscustomobject]@{ AutoAdminLogon = $k.GetValue('AutoAdminLogon'); DefaultUserName = $k.GetValue('DefaultUserName'); DefaultPasswordStored = $k.GetValueNames() -contains 'DefaultPassword' }'''
+cvss = "AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:N"
+mitre = ["T1552", "T1078.002"]
+
+[[check.detail.references]]
+title = "Turn on automatic logon in Windows"
+url = "https://learn.microsoft.com/troubleshoot/windows-server/user-profiles-and-logon/turn-on-automatic-logon"
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1552: Unsecured Credentials"
+url = "https://attack.mitre.org/techniques/T1552/"

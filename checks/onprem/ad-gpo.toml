@@ -1,0 +1,709 @@
+# AD-GPO: Group Policy
+
+area = "AD-GPO"
+
+[[check]]
+id = "AD-GPO-001"
+title = "GPO inventory: unlinked, empty or disabled GPOs"
+status = "implemented"
+severity = "info"
+
+[check.detail]
+description = "Lists GPOs that are not linked to any site, domain or OU, that have never been edited (version 0), or whose user and computer settings are both disabled."
+impact = "Such GPOs apply nowhere but still hold settings, scripts and permissions. They clutter the policy set, make reviews harder and can be relinked by anyone who can edit links."
+remediation = [
+  "Confirm with the owner that each listed GPO is no longer needed.",
+  "Back up the GPO, then delete it.",
+  "If a GPO is kept on purpose, record why in its description.",
+]
+frameworks = [
+  "NIST 800-53 CM-8",
+]
+verify = '''
+Get-GPO -All | ForEach-Object {
+  [xml]$r = Get-GPOReport -Guid $_.Id -ReportType Xml
+  [pscustomobject]@{ Name = $_.DisplayName; Status = $_.GpoStatus; Linked = [bool]$r.GPO.LinksTo; Version = $_.Computer.DSVersion + $_.User.DSVersion }
+}'''
+
+[[check]]
+id = "AD-GPO-002"
+title = "GPOs with broken links (link to non-existent GPO)"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Containers link to GPOs that no longer exist."
+impact = "Broken links slow down Group Policy processing and make the effective policy hard to read. If a GPO with that GUID is ever created, it applies immediately."
+remediation = [
+  "Remove the broken links from the listed containers.",
+]
+verify = "Get-ADOrganizationalUnit -Filter * -Properties gPLink | Select-Object Name, gPLink"
+
+[[check]]
+id = "AD-GPO-003"
+title = "GPOs present in AD but missing in SYSVOL, and vice versa"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "GPOs exist in AD without their SYSVOL folder, or SYSVOL holds policy folders with no GPO in AD."
+impact = "Half-deleted GPOs do not apply as expected; orphaned folders can keep scripts or old settings, sometimes including credentials."
+remediation = [
+  "Restore or delete GPOs missing their SYSVOL folder.",
+  "Review orphaned SYSVOL folders and remove them once nothing references them.",
+]
+verify = "Get-GPO -All | Select-Object DisplayName, Id"
+
+[[check]]
+id = "AD-GPO-004"
+title = "Group Policy Preferences with cpassword (GPP passwords, MS14-025)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Group Policy Preferences files in SYSVOL contain a cpassword attribute. The key that encrypts it was published by Microsoft, so anyone who can read SYSVOL can decrypt it."
+impact = "Every authenticated user can read SYSVOL and recover the stored password, often a local administrator or service account."
+remediation = [
+  "Delete the preference item that stores the password, and the file in SYSVOL if it remains.",
+  "Change the password of the account it contained.",
+  "Use Windows LAPS for local administrator passwords.",
+]
+frameworks = [
+  "MS14-025",
+  "ANSSI vuln1_gpp_password",
+]
+cvss = "AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N"
+mitre = ["T1552.006"]
+
+[[check.detail.references]]
+title = "MS14-025: Vulnerability in Group Policy Preferences"
+url = "https://support.microsoft.com/help/2962486"
+
+[[check]]
+id = "AD-GPO-005"
+title = "Scripts in SYSVOL / NETLOGON containing credentials (keyword scan)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Scripts in the NETLOGON share or in the Scripts folders of GPOs match patterns that usually mean a password is written in the file, such as a password parameter, ConvertTo-SecureString with plain text, or net use with /user. Only the file, line number and pattern are recorded, never the line itself."
+impact = "Every authenticated user can read SYSVOL and NETLOGON, so any password stored there is readable by every account in the domain. These are often service or local administrator accounts."
+attack = [
+  "Signs in as any domain user and searches NETLOGON and SYSVOL for words such as password.",
+  "Reads the matching script and takes the stored password.",
+  "Signs in with that account on the computers or services it reaches.",
+]
+remediation = [
+  "Open each listed file and remove the stored password.",
+  "Change the password of every account that was written in a script.",
+  "Use a group managed service account, a scheduled task without stored password, or Windows LAPS instead of a password in a script.",
+]
+frameworks = [
+  "NIST 800-53 IA-5",
+]
+verify = '''
+Get-ChildItem "\\$env:USERDNSDOMAIN\NETLOGON", "\\$env:USERDNSDOMAIN\SYSVOL\$env:USERDNSDOMAIN\Policies" -Recurse -File -Include *.bat,*.cmd,*.ps1,*.vbs,*.kix |
+  Select-String -Pattern 'password|passwd|ConvertTo-SecureString|/user:' -List | Select-Object Path, LineNumber'''
+cvss = "AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N"
+mitre = ["T1552"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1552: Unsecured Credentials"
+url = "https://attack.mitre.org/techniques/T1552/"
+
+[[check.detail.references]]
+title = "Windows LAPS overview"
+url = "https://learn.microsoft.com/windows-server/identity/laps/laps-overview"
+
+[[check]]
+id = "AD-GPO-006"
+title = "Write permissions on GPO folders in SYSVOL for non-admins"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "The NTFS permissions of a GPO folder in SYSVOL let a principal other than admins, Tier 0, SYSTEM or Creator Owner write to it, or the folder is owned by such a principal. Computers read the GPO's settings and scripts from this folder."
+impact = "Whoever can write to the folder can change the settings, scripts and preferences of the GPO without touching it in AD. Computers then apply them as SYSTEM wherever the GPO is linked; on a GPO that applies to DCs this means control of the domain."
+attack = [
+  "Signs in as a principal that has write access to the GPO folder.",
+  "Adds a startup script or a scheduled task preference to the folder.",
+  "Waits for the next Group Policy refresh, when every computer in scope runs the code as SYSTEM.",
+]
+remediation = [
+  "Remove the write permissions of the listed principals from the GPO folder.",
+  "Set the folder owner back to Domain Admins or SYSTEM.",
+  "Rebuild the folder permissions from the GPO's AD permissions in the Group Policy Management Console if they drifted.",
+]
+frameworks = [
+  "NIST 800-53 AC-6",
+  "NIST 800-53 CM-5",
+]
+verify = '''
+Get-ChildItem "\\$env:USERDNSDOMAIN\SYSVOL\$env:USERDNSDOMAIN\Policies" -Directory |
+  Get-Acl | Select-Object PSChildName, Owner, AccessToString'''
+cvss = "AV:N/AC:L/PR:L/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1484.001"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1484.001: Group Policy Modification"
+url = "https://attack.mitre.org/techniques/T1484/001/"
+
+[[check]]
+id = "AD-GPO-007"
+title = "Write permissions on GPOs for non-admins"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "The AD permissions of a GPO give a principal other than the default admins or Tier 0 full control, the right to change permissions, the right to take ownership, or the right to edit its settings."
+impact = "Whoever can edit a GPO can make every computer and user in its scope run code or change security settings. If the GPO applies to DCs or admin accounts, this is control of the domain."
+attack = [
+  "Signs in as a principal that can edit the GPO.",
+  "Adds an immediate scheduled task or a startup script to the GPO.",
+  "Every computer in scope runs it as SYSTEM at the next Group Policy refresh.",
+]
+remediation = [
+  "In the Group Policy Management Console, Delegation tab, remove edit rights from the listed principals.",
+  "Grant GPO editing only to a dedicated admin group, and only on the GPOs it manages.",
+]
+frameworks = [
+  "NIST 800-53 AC-6",
+  "NIST 800-53 CM-5",
+]
+verify = '''
+Get-GPO -All | ForEach-Object { $g = $_
+  Get-GPPermission -Guid $g.Id -All | Where-Object { $_.Permission -in 'GpoEdit', 'GpoEditDeleteModifySecurity' } |
+    Select-Object @{n = 'GPO'; e = { $g.DisplayName } }, @{n = 'Trustee'; e = { $_.Trustee.Name } }, Permission }'''
+cvss = "AV:N/AC:L/PR:L/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1484.001"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1484.001: Group Policy Modification"
+url = "https://attack.mitre.org/techniques/T1484/001/"
+
+[[check]]
+id = "AD-GPO-008"
+title = "Sensitive user rights on DCs granted to non-admins"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "A GPO linked to the Domain Controllers OU or the domain head grants one of these user rights to a principal other than admins, Tier 0, the built-in operator groups or service identities: Debug programs, Back up files and directories, Restore files and directories, Act as part of the operating system, Impersonate a client after authentication, Load and unload device drivers, Enable accounts to be trusted for delegation, Take ownership of files or other objects."
+impact = "Each of these rights is enough to take control of a DC: reading LSASS memory, copying the AD database, loading a driver, impersonating SYSTEM or configuring delegation. The holder is effectively a domain admin."
+attack = [
+  "Signs in on a DC as a principal that holds the right, for example Back up files and directories.",
+  "Uses the right to copy ntds.dit and the SYSTEM hive, or to read LSASS memory.",
+  "Extracts the password hashes of all accounts, including krbtgt.",
+]
+remediation = [
+  "Edit the listed GPO, Computer Configuration, Windows Settings, Security Settings, Local Policies, User Rights Assignment, and remove the principal from the right.",
+  "Keep these rights on DCs at their defaults (Administrators and built-in service identities).",
+]
+frameworks = [
+  "CIS Microsoft Windows Server Benchmark",
+  "NIST 800-53 AC-6",
+]
+verify = '''
+(Get-GPInheritance -Target (Get-ADDomain).DomainControllersContainer).InheritedGpoLinks | ForEach-Object {
+  Select-String -Path "\\$env:USERDNSDOMAIN\SYSVOL\$env:USERDNSDOMAIN\Policies\{$($_.GpoId)}\Machine\Microsoft\Windows NT\SecEdit\GptTmpl.inf" -ErrorAction SilentlyContinue `
+    -Pattern '^Se(Debug|Backup|Restore|Tcb|Impersonate|LoadDriver|EnableDelegation|TakeOwnership)Privilege' }'''
+mitre = ["T1003", "T1003.001"]
+
+[[check.detail.references]]
+title = "User Rights Assignment"
+url = "https://learn.microsoft.com/previous-versions/windows/it-pro/windows-10/security/threat-protection/security-policy-settings/user-rights-assignment"
+
+[[check.detail.references]]
+title = "Securing Domain Controllers Against Attack"
+url = "https://learn.microsoft.com/windows-server/identity/ad-ds/plan/security-best-practices/securing-domain-controllers-against-attack"
+
+[[check]]
+id = "AD-GPO-009"
+title = "\"Logon locally\" / \"Logon through RDS\" rights on DCs"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "A GPO linked to the Domain Controllers OU or the domain head grants Allow log on locally or Allow log on through Remote Desktop Services to a principal other than admins, Tier 0 and the built-in operator groups."
+impact = "Accounts that can sign in to a DC interactively get a session on the most sensitive server in the domain, where local flaws or stored credentials can lead to full control. Their own credentials are also exposed if a DC is compromised."
+remediation = [
+  "Edit the listed GPO, User Rights Assignment, and remove the principal from the logon right.",
+  "Give support staff tools that work remotely without signing in to a DC.",
+]
+frameworks = [
+  "CIS Microsoft Windows Server Benchmark",
+  "NIST 800-53 AC-6",
+]
+verify = '''
+(Get-GPInheritance -Target (Get-ADDomain).DomainControllersContainer).InheritedGpoLinks | ForEach-Object {
+  Select-String -Path "\\$env:USERDNSDOMAIN\SYSVOL\$env:USERDNSDOMAIN\Policies\{$($_.GpoId)}\Machine\Microsoft\Windows NT\SecEdit\GptTmpl.inf" -ErrorAction SilentlyContinue `
+    -Pattern '^Se(Remote)?InteractiveLogonRight' }'''
+mitre = ["T1021.001", "T1078.002"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1021.001: Remote Desktop Protocol"
+url = "https://attack.mitre.org/techniques/T1021/001/"
+
+[[check.detail.references]]
+title = "Securing Domain Controllers Against Attack"
+url = "https://learn.microsoft.com/windows-server/identity/ad-ds/plan/security-best-practices/securing-domain-controllers-against-attack"
+
+[[check]]
+id = "AD-GPO-010"
+title = "\"Access this computer from the network\" on DCs"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "GPOs that apply to domain controllers grant \"Access this computer from the network\" (SeNetworkLogonRight) to principals beyond Administrators, Authenticated Users and Enterprise Domain Controllers, such as Everyone or Pre-Windows 2000 Compatible Access."
+impact = "Network access lets those principals connect to the DC's SMB, RPC and LDAP services. Everyone and Pre-Windows 2000 Compatible Access include anonymous or legacy access paths."
+remediation = [
+  "Set the right to Administrators, Authenticated Users and ENTERPRISE DOMAIN CONTROLLERS in the Default Domain Controllers Policy.",
+]
+frameworks = [
+  "CIS Windows Server 2.2.3",
+]
+verify = "secedit /export /cfg C:\\Temp\\dc.inf /areas USER_RIGHTS; Select-String SeNetworkLogonRight C:\\Temp\\dc.inf"
+mitre = ["T1078.002"]
+
+[[check]]
+id = "AD-GPO-011"
+title = "Deny logon rights for privileged accounts on Tier 1/2 (tiering enforcement)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "No GPO linked outside the Domain Controllers OU puts Domain Admins or Enterprise Admins in Deny log on locally or Deny log on through Remote Desktop Services. Each of the two rights is reported when it is missing."
+impact = "Nothing stops domain admins from signing in to servers and workstations. Their credentials then stay in memory on those computers, where anyone who controls the computer can take them."
+attack = [
+  "Takes control of a member server or workstation where a domain admin has signed in.",
+  "Reads the admin's credentials from LSASS memory.",
+  "Uses them to sign in to a DC.",
+]
+remediation = [
+  "Create a GPO linked to the OUs of member servers and workstations that adds Domain Admins and Enterprise Admins to Deny log on locally and Deny log on through Remote Desktop Services.",
+  "Give admins separate accounts for server and workstation administration.",
+]
+frameworks = [
+  "NIST 800-53 AC-6",
+]
+verify = '''
+Get-ChildItem "\\$env:USERDNSDOMAIN\SYSVOL\$env:USERDNSDOMAIN\Policies" -Recurse -Filter GptTmpl.inf |
+  Select-String -Pattern '^SeDeny(Remote)?InteractiveLogonRight' '''
+mitre = ["T1003.001", "T1078.002"]
+
+[[check.detail.references]]
+title = "Privileged access: accounts"
+url = "https://learn.microsoft.com/security/privileged-access-workstations/privileged-access-accounts"
+
+[[check.detail.references]]
+title = "Implementing Least-Privilege Administrative Models"
+url = "https://learn.microsoft.com/windows-server/identity/ad-ds/plan/security-best-practices/implementing-least-privilege-administrative-models"
+
+[[check]]
+id = "AD-GPO-012"
+title = "Audit policy (advanced audit policy) on DCs versus Microsoft/CIS recommendations"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "The advanced audit policy set by GPOs that apply to domain controllers misses recommended subcategories (credential validation, Kerberos, account and group management, directory service access and changes, logon, process creation, policy change, sensitive privilege use). Settings from all DC GPOs are combined."
+impact = "Without these events, attacks such as Kerberoasting, DCSync, group changes and password spraying leave no trace in the DC's security log."
+remediation = [
+  "Configure the subcategories in Computer Configuration > Policies > Windows Settings > Security Settings > Advanced Audit Policy Configuration of a GPO linked to the Domain Controllers OU.",
+  "Turn on \"Force audit policy subcategory settings\".",
+]
+frameworks = [
+  "CIS Windows Server 17",
+  "NIST 800-53 AU-2",
+]
+verify = "auditpol /get /category:*"
+mitre = ["T1562.002"]
+
+[[check]]
+id = "AD-GPO-013"
+title = "Security event log size and retention on DCs"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "The maximum size of the Security event log on domain controllers is below 192 MB, or is not set by Group Policy."
+impact = "A small log is overwritten within hours on a busy DC, so the events of an attack are gone before anyone looks."
+remediation = [
+  "Set the Security log maximum size to at least 196,608 KB in a GPO linked to the Domain Controllers OU, and forward events to a SIEM.",
+]
+frameworks = [
+  "CIS Windows Server 18.9.27",
+]
+verify = "Get-WinEvent -ListLog Security | Select-Object MaximumSizeInBytes"
+mitre = ["T1070.001"]
+
+[[check]]
+id = "AD-GPO-014"
+title = "PowerShell logging (script block, module, transcription)"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "No GPO linked to the Domain Controllers OU or the domain head turns on PowerShell script block logging. Module logging and transcription are reported as evidence when a GPO turns them on."
+impact = "Without script block logging, PowerShell commands run on DCs leave no record of their content, so attacks that use PowerShell are hard to detect and investigate."
+remediation = [
+  "In a GPO that applies to DCs, turn on Administrative Templates, Windows Components, Windows PowerShell, Turn on PowerShell Script Block Logging.",
+  "Consider module logging and transcription as well, and forward the logs to a central system.",
+]
+frameworks = [
+  "CIS Microsoft Windows Server Benchmark",
+  "NIST 800-53 AU-12",
+]
+verify = "Get-ItemProperty 'HKLM:\\Software\\Policies\\Microsoft\\Windows\\PowerShell\\ScriptBlockLogging' -ErrorAction SilentlyContinue"
+
+[[check.detail.references]]
+title = "about_Logging_Windows"
+url = "https://learn.microsoft.com/powershell/module/microsoft.powershell.core/about/about_logging_windows"
+
+[[check]]
+id = "AD-GPO-015"
+title = "Restricted Groups / Group Policy Preferences local group membership"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "A GPO uses Group Policy Preferences (Groups.xml) or Restricted Groups to add a broad group (Everyone, Authenticated Users, Anonymous Logon, Interactive, Users, Domain Users or Domain Computers) to the local Administrators or Remote Desktop Users group."
+impact = "Every account in the broad group becomes a local admin, or can sign in over Remote Desktop, on every computer the GPO applies to. One compromised user account then reaches all of those computers and the credentials cached on them."
+attack = [
+  "Signs in as any domain user.",
+  "Uses the local admin rights the GPO gives on the computers in scope.",
+  "Reads credentials of other users and admins from those computers.",
+]
+remediation = [
+  "Remove the broad group from the preference item or Restricted Groups entry.",
+  "Add only a dedicated group per computer or per role to local Administrators.",
+  "Use Windows LAPS for the local administrator account.",
+]
+frameworks = [
+  "NIST 800-53 AC-6",
+]
+verify = '''
+Get-ChildItem "\\$env:USERDNSDOMAIN\SYSVOL\$env:USERDNSDOMAIN\Policies" -Recurse -Include Groups.xml, GptTmpl.inf |
+  Select-String -Pattern 'S-1-1-0|S-1-5-11|S-1-5-32-545|-513|-515|Domain Users|Authenticated Users|Everyone' '''
+mitre = ["T1078.002", "T1021.001"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1078.002: Domain Accounts"
+url = "https://attack.mitre.org/techniques/T1078/002/"
+
+[[check.detail.references]]
+title = "Windows LAPS overview"
+url = "https://learn.microsoft.com/windows-server/identity/laps/laps-overview"
+
+[[check]]
+id = "AD-GPO-016"
+title = "Firewall policy via GPO"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Windows Firewall is not turned on by Group Policy for every profile on domain controllers, or a GPO turns it off."
+impact = "Without an enforced firewall, a local change can expose management ports, and lateral movement to DCs is easier."
+remediation = [
+  "Set Windows Defender Firewall to On for the Domain, Private and Public profiles in a GPO linked to the Domain Controllers OU, with rules for the ports DCs need.",
+]
+verify = "Get-NetFirewallProfile -PolicyStore ActiveStore | Select-Object Name, Enabled"
+mitre = ["T1562.004"]
+
+[[check]]
+id = "AD-GPO-017"
+title = "SMB, LDAP, NTLM hardening delivered by GPO versus local registry"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "SMB signing, LDAP signing, LDAP channel binding or NTLMv2-only authentication are not enforced on domain controllers by Group Policy (they may be set only in the local registry, or not at all)."
+impact = "Settings made only in the local registry are lost when a DC is rebuilt or added, and nothing stops a local change. Without them, NTLM relay to LDAP and SMB is possible."
+remediation = [
+  "Configure the settings in the Default Domain Controllers Policy or a GPO linked to the Domain Controllers OU.",
+]
+verify = "Get-ItemProperty HKLM:\\System\\CurrentControlSet\\Services\\NTDS\\Parameters | Select-Object LDAPServerIntegrity, LdapEnforceChannelBinding"
+mitre = ["T1557.001"]
+
+[[check]]
+id = "AD-GPO-018"
+title = "Credential delegation (CredSSP, AllowDefaultCredentials) settings"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "A GPO turns on Allow delegating default credentials, Allow delegating saved credentials, or their NTLM-only variants. These settings let computers send the user's password to the listed servers through CredSSP."
+impact = "The user's reusable credentials are stored on every server the delegation targets. Anyone who controls one of those servers, or a server matching a wide target such as *, can take them."
+remediation = [
+  "Turn off the credential delegation settings in the listed GPO unless a documented need exists.",
+  "If they are needed, list only the exact servers, never wildcards.",
+  "Prefer Remote Credential Guard or Kerberos delegation, which do not send the password.",
+]
+frameworks = [
+  "CIS Microsoft Windows Server Benchmark",
+  "NIST 800-53 IA-5",
+]
+verify = '''
+Get-GPO -All | ForEach-Object { $g = $_
+  Get-GPRegistryValue -Guid $g.Id -Key 'HKLM\Software\Policies\Microsoft\Windows\CredentialsDelegation' -ErrorAction SilentlyContinue |
+    Select-Object @{n = 'GPO'; e = { $g.DisplayName } }, KeyPath, ValueName, Value }'''
+mitre = ["T1003.001"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1003.001: LSASS Memory"
+url = "https://attack.mitre.org/techniques/T1003/001/"
+
+[[check]]
+id = "AD-GPO-019"
+title = "WSUS settings (HTTP WSUS server exposes to MITM)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "A GPO points Windows Update clients to a WSUS server (WUServer or WUStatusServer) with an http:// address instead of https://."
+impact = "Update traffic is not protected. Someone on the network path can answer in place of the WSUS server and make clients install a signed Microsoft binary with chosen arguments, which runs as SYSTEM."
+attack = [
+  "Gets a position on the network path between clients and the WSUS server, for example through ARP or name resolution spoofing.",
+  "Answers the clients' update requests with a fake update.",
+  "The clients install it and run the attacker's command as SYSTEM.",
+]
+remediation = [
+  "Configure the WSUS server with a TLS certificate.",
+  "Change WUServer and WUStatusServer in the GPO to the https:// address and port.",
+]
+frameworks = [
+  "NIST 800-53 SC-8",
+  "NIST 800-53 SI-2",
+]
+verify = '''
+Get-GPO -All | ForEach-Object { $g = $_
+  Get-GPRegistryValue -Guid $g.Id -Key 'HKLM\Software\Policies\Microsoft\Windows\WindowsUpdate' -ValueName WUServer -ErrorAction SilentlyContinue |
+    Select-Object @{n = 'GPO'; e = { $g.DisplayName } }, Value }'''
+mitre = ["T1557"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1557: Adversary-in-the-Middle"
+url = "https://attack.mitre.org/techniques/T1557/"
+
+[[check]]
+id = "AD-GPO-020"
+title = "AppLocker / WDAC policies inventory"
+status = "implemented"
+severity = "info"
+
+[check.detail]
+description = "Inventory of AppLocker and WDAC (App Control for Business) policies delivered by Group Policy."
+impact = "Application control stops unapproved programs and scripts from running, which blocks most attack tools on servers and admin workstations."
+remediation = [
+  "Deploy application control in audit mode first on Tier 0 servers, then enforce it.",
+]
+verify = "Get-AppLockerPolicy -Effective -Xml"
+mitre = ["T1543.003"]
+
+[[check]]
+id = "AD-GPO-021"
+title = "Software installation via GPO from writable shares"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Software installation packages in GPOs install from a path outside SYSVOL and NETLOGON. The share permissions cannot be read from the directory, so each one needs a manual check."
+impact = "If anyone besides admins can write to the share, they can replace the MSI and run code as SYSTEM on every computer the GPO applies to."
+remediation = [
+  "Confirm that only admins can write to each share and the MSI file.",
+  "Move packages to a share with restricted write access, or deploy software another way.",
+]
+verify = "Get-ADObject -SearchBase \"CN=Policies,CN=System,$((Get-ADDomain).DistinguishedName)\" -LDAPFilter '(objectClass=packageRegistration)' -Properties msiFileList"
+mitre = ["T1484.001"]
+
+[[check]]
+id = "AD-GPO-022"
+title = "Scheduled tasks deployed by GPO running as privileged accounts"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "A Group Policy Preferences scheduled task (ScheduledTasks.xml) runs as an account that is a member of a privileged group or is Tier 0."
+impact = "To run a task as a named account, Windows stores that account's credentials on every computer the GPO applies to. Anyone with admin rights on one of those computers can recover them and act as the privileged account."
+attack = [
+  "Gets local admin rights on any computer in the GPO's scope.",
+  "Reads the stored task credentials from the LSA secrets.",
+  "Signs in with the privileged account.",
+]
+remediation = [
+  "Change the task to run as SYSTEM or as a group managed service account with only the rights it needs.",
+  "Change the password of the privileged account that was used.",
+]
+frameworks = [
+  "NIST 800-53 AC-6",
+]
+verify = '''
+Get-ChildItem "\\$env:USERDNSDOMAIN\SYSVOL\$env:USERDNSDOMAIN\Policies" -Recurse -Filter ScheduledTasks.xml |
+  Select-String -Pattern 'runAs="[^"]+"' '''
+mitre = ["T1053.005", "T1078.002", "T1003"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1053.005: Scheduled Task"
+url = "https://attack.mitre.org/techniques/T1053/005/"
+
+[[check]]
+id = "AD-GPO-023"
+title = "Startup/logon scripts running from outside SYSVOL"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "A GPO startup, shutdown, logon or logoff script (scripts.ini or psscripts.ini) runs from a network path that is not SYSVOL or NETLOGON."
+impact = "The script runs from a share whose permissions are not managed with the GPO. Whoever can write to that share, or take over its server name, runs code on every computer the GPO applies to, as SYSTEM for startup scripts."
+attack = [
+  "Finds a write permission on the share that holds the script, or a server name that no longer exists.",
+  "Replaces the script, or registers the missing name and serves a new one.",
+  "Waits for computers to start or users to sign in.",
+]
+remediation = [
+  "Move the script into the GPO's Scripts folder in SYSVOL or into NETLOGON.",
+  "If it must stay on another share, allow only admins to write there.",
+]
+frameworks = [
+  "NIST 800-53 CM-5",
+]
+verify = '''
+Get-ChildItem "\\$env:USERDNSDOMAIN\SYSVOL\$env:USERDNSDOMAIN\Policies" -Recurse -Force -Include scripts.ini, psscripts.ini |
+  Select-String -Pattern 'CmdLine=\\\\' '''
+
+[[check]]
+id = "AD-GPO-024"
+title = "GPO WMI filters inventory and broken filters"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Inventory of WMI filters with their queries, failing where a GPO references a WMI filter that no longer exists."
+impact = "A GPO whose WMI filter is missing does not apply anywhere, so the settings it was meant to enforce are silently off."
+remediation = [
+  "Recreate the filter or remove the reference from the GPO.",
+  "Delete WMI filters that no GPO uses.",
+]
+verify = "Get-ADObject -SearchBase \"CN=SOM,CN=WMIPolicy,CN=System,$((Get-ADDomain).DistinguishedName)\" -Filter * -Properties msWMI-Name, msWMI-Parm2"
+mitre = ["T1484.001"]
+
+[[check]]
+id = "AD-GPO-025"
+title = "Loopback processing usage"
+status = "implemented"
+severity = "info"
+
+[check.detail]
+description = "Inventory of GPOs that turn on user Group Policy loopback processing (merge or replace)."
+impact = "Loopback changes which user settings apply on a computer. It is common on terminal servers and kiosks but makes the effective policy harder to predict."
+remediation = [
+  "Confirm each use is intended and documented.",
+]
+verify = "Get-GPRegistryValue -Name <GPO> -Key 'HKLM\\Software\\Policies\\Microsoft\\Windows\\System' -ValueName UserPolicyMode"
+mitre = ["T1484.001"]
+
+[[check]]
+id = "AD-GPO-026"
+title = "OUs blocking GPO inheritance"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Lists OUs that block inheritance (gPOptions set to 1). Links marked Enforced are reported as evidence."
+impact = "GPOs linked higher up, including domain-wide security baselines, do not apply to objects in these OUs unless their links are enforced. Computers there may run without the expected hardening."
+remediation = [
+  "Remove Block Inheritance from the listed OUs unless there is a documented need.",
+  "If it is kept, make sure security baseline GPOs are linked as Enforced or linked directly to the OU.",
+]
+frameworks = [
+  "NIST 800-53 CM-6",
+]
+verify = "Get-ADOrganizationalUnit -LDAPFilter '(gPOptions=1)' | Select-Object DistinguishedName"
+
+[[check]]
+id = "AD-GPO-027"
+title = "Default Domain Policy and Default Domain Controllers Policy modified beyond password/Kerberos settings"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "The Default Domain Policy or the Default Domain Controllers Policy sets more than its intended content: security template sections other than account, Kerberos, audit and security options (plus user rights for the DC policy), Administrative Templates, scripts or Preferences."
+impact = "Extra settings in the default GPOs are hard to track, are lost or reset when the default GPOs are restored with dcgpofix, and make the policy that applies to DCs harder to review."
+remediation = [
+  "Move the extra settings into separate GPOs linked at the same level.",
+  "Keep the Default Domain Policy for account policies and the Default Domain Controllers Policy for DC user rights and security options.",
+]
+frameworks = [
+  "NIST 800-53 CM-6",
+]
+verify = '''
+'{31B2F340-016D-11D2-945F-00C04FB984F9}', '{6AC1786C-016F-11D2-945F-00C04FB984F9}' | ForEach-Object {
+  Get-ChildItem "\\$env:USERDNSDOMAIN\SYSVOL\$env:USERDNSDOMAIN\Policies\$_" -Recurse -File | Select-Object FullName }'''
+
+[[check]]
+id = "AD-GPO-028"
+title = "GPO owners not Domain Admins"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "The owner of a GPO object in AD is not one of the default admins (such as Domain Admins, Enterprise Admins or SYSTEM) or a Tier 0 principal."
+impact = "The owner of an object can always change its permissions. The owning account can give itself edit rights at any time and change the GPO, which runs code on every computer the GPO applies to."
+attack = [
+  "Signs in as the owning account.",
+  "Grants itself edit rights on the GPO.",
+  "Adds a scheduled task or script that runs as SYSTEM on the computers in scope.",
+]
+remediation = [
+  "Set the owner of the listed GPOs to Domain Admins.",
+  "Create GPOs with admin accounts only; delegate GPO creation to a dedicated admin group if needed.",
+]
+frameworks = [
+  "NIST 800-53 AC-6",
+]
+verify = "Get-GPO -All | Select-Object DisplayName, Owner"
+mitre = ["T1484.001"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1484.001: Group Policy Modification"
+url = "https://attack.mitre.org/techniques/T1484/001/"
+
+[[check]]
+id = "AD-GPO-029"
+title = "Security filtering removing Authenticated Users read (MS16-072 breakage)"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Neither Authenticated Users, Everyone, Enterprise Domain Controllers, Domain Computers nor Domain Controllers can read a GPO. Since MS16-072, computers read user GPOs with their own account."
+impact = "Computers cannot read the GPO, so its settings silently do not apply. Security settings delivered by that GPO are missing on the targets."
+remediation = [
+  "On the GPO's Delegation tab, give Authenticated Users or Domain Computers Read (without Apply group policy if security filtering is used).",
+]
+frameworks = [
+  "NIST 800-53 CM-6",
+]
+verify = '''
+Get-GPO -All | Where-Object { $g = $_
+  -not (Get-GPPermission -Guid $g.Id -All | Where-Object { $_.Trustee.Name -in 'Authenticated Users', 'Domain Computers' -and $_.Permission -ne 'None' }) } |
+  Select-Object DisplayName'''
+
+[[check.detail.references]]
+title = "MS16-072: Security Update for Group Policy"
+url = "https://learn.microsoft.com/security-updates/securitybulletins/2016/ms16-072"
+
+[[check]]
+id = "AD-GPO-030"
+title = "Settings drift: GPO RSoP vs. Microsoft Security Baseline comparison (per setting)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Security settings set by GPOs that apply to domain controllers differ from the Microsoft security baseline, or are not set: LAN Manager authentication level, LM hash storage, anonymous enumeration, SMB signing, LDAP signing and User Account Control."
+impact = "Each deviation reopens an attack the baseline closes, such as NTLM downgrade, anonymous enumeration or relay."
+remediation = [
+  "Import the Microsoft Security Baseline for domain controllers and link it to the Domain Controllers OU, then document any intended deviation.",
+]
+verify = "gpresult /h C:\\Temp\\dc.html  # on a DC"
+mitre = ["T1557.001"]

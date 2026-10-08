@@ -1,0 +1,655 @@
+# AZ-RBAC: Azure control plane and RBAC
+
+area = "AZ-RBAC"
+
+[[check]]
+id = "AZ-RBAC-001"
+title = "Management group hierarchy and root management group access"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "One or more Azure role assignments exist at the root scope \"/\" or on the tenant root management group. An assignment at either scope is inherited by every management group, subscription and resource in the tenant. Assignments at \"/\" are usually left behind after a Global Administrator used Elevate access, which grants User Access Administrator at root."
+impact = "The assigned principal controls, or can grant itself control over, every subscription in the tenant, including subscriptions that host domain controllers, Key Vaults and identity infrastructure. A single compromised account at this scope compromises all of Azure."
+attack = [
+  "Compromises an account or service principal that holds a role at root scope or on the tenant root management group.",
+  "Uses User Access Administrator or Owner at that scope to assign itself Owner on any subscription.",
+  "Takes over the resources in those subscriptions, such as virtual machines, Key Vaults and storage.",
+]
+remediation = [
+  "Remove role assignments at \"/\" that are no longer needed: Remove-AzRoleAssignment -Scope \"/\" -ObjectId <id> -RoleDefinitionName <role>.",
+  "If a Global Administrator used Elevate access, turn it off in the Microsoft Entra admin center under Identity, Properties, Access management for Azure resources, set to No.",
+  "Move needed assignments on the tenant root management group down to the narrowest management group or subscription that covers the work.",
+  "Grant any role that must stay at this scope only through PIM eligible assignments.",
+]
+frameworks = [
+  "Microsoft cloud security benchmark",
+  "CIS Microsoft Azure Foundations Benchmark",
+  "NIST 800-53 AC-6",
+]
+verify = '''
+Get-AzRoleAssignment -Scope "/" | Where-Object Scope -eq "/" | Select-Object DisplayName, SignInName, RoleDefinitionName, ObjectType
+$root = (Get-AzTenant).Id
+Get-AzRoleAssignment -Scope "/providers/Microsoft.Management/managementGroups/$root" |
+  Where-Object Scope -eq "/providers/Microsoft.Management/managementGroups/$root" | Select-Object DisplayName, RoleDefinitionName, ObjectType'''
+cvss = "AV:N/AC:L/PR:H/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1078.004", "T1098.003"]
+
+[[check.detail.references]]
+title = "Elevate access to manage all Azure subscriptions and management groups"
+url = "https://learn.microsoft.com/azure/role-based-access-control/elevate-access-global-admin"
+
+[[check.detail.references]]
+title = "What are Azure management groups?"
+url = "https://learn.microsoft.com/azure/governance/management-groups/overview"
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1098.003: Account Manipulation: Additional Cloud Roles"
+url = "https://attack.mitre.org/techniques/T1098/003/"
+
+[[check]]
+id = "AZ-RBAC-002"
+title = "Owner, Contributor and User Access Administrator assignments at root/MG/subscription scope"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "One or more principals hold Owner, Contributor, User Access Administrator or Role Based Access Control Administrator on a management group or at root scope. These assignments are inherited by every subscription below that scope. The count of these privileged assignments per subscription is shown as evidence."
+impact = "A single principal at management group scope has write access to, or can grant access to, every subscription under it. Owner, User Access Administrator and Role Based Access Control Administrator can assign roles, so the holder can give itself or an attacker full control of all those subscriptions."
+attack = [
+  "Compromises an account, group member or service principal assigned a privileged role on a management group.",
+  "Assigns itself Owner on a subscription below that management group, or uses Contributor directly.",
+  "Changes or reads resources across every inherited subscription.",
+]
+remediation = [
+  "Review each assignment in the Azure portal under Management groups, the group, Access control (IAM), Role assignments.",
+  "Remove assignments that are not needed, or move them to the specific subscription or resource group where the work happens.",
+  "Replace Owner and Contributor with narrower built-in roles where possible, and add conditions to Role Based Access Control Administrator assignments to limit which roles it can grant.",
+  "Make remaining assignments PIM eligible instead of active.",
+]
+frameworks = [
+  "Microsoft cloud security benchmark",
+  "CIS Microsoft Azure Foundations Benchmark",
+  "NIST 800-53 AC-6",
+]
+verify = '''
+Get-AzManagementGroup | ForEach-Object {
+  Get-AzRoleAssignment -Scope $_.Id | Where-Object { $_.RoleDefinitionName -in 'Owner','Contributor','User Access Administrator','Role Based Access Control Administrator' }
+} | Select-Object DisplayName, RoleDefinitionName, Scope, ObjectType'''
+cvss = "AV:N/AC:L/PR:H/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1078.004", "T1098.003"]
+
+[[check.detail.references]]
+title = "Best practices for Azure RBAC"
+url = "https://learn.microsoft.com/azure/role-based-access-control/best-practices"
+
+[[check.detail.references]]
+title = "Azure built-in roles"
+url = "https://learn.microsoft.com/azure/role-based-access-control/built-in-roles"
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1098.003: Account Manipulation: Additional Cloud Roles"
+url = "https://attack.mitre.org/techniques/T1098/003/"
+
+[[check]]
+id = "AZ-RBAC-003"
+title = "Permanent vs PIM-eligible Azure role assignments"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "One or more users hold Owner, Contributor, User Access Administrator or Role Based Access Control Administrator at subscription scope or above as a permanent active assignment: not PIM eligible, with no end date, and with assignment type Assigned rather than Activated. The number of PIM eligible assignments for these roles is shown for comparison."
+impact = "A permanent assignment gives the user standing privileged access at all times. If the account is phished or its session token is stolen, the attacker has that access immediately, without the approval, MFA and justification that PIM activation would require."
+attack = [
+  "Phishes or steals a session for a user with a permanent privileged Azure role.",
+  "Uses the role right away, with no activation step to trigger approval or an alert.",
+  "Assigns roles to other accounts or changes resources across the subscription.",
+]
+remediation = [
+  "In Microsoft Entra Privileged Identity Management, open Azure resources, select the subscription or management group, and convert permanent active assignments to eligible assignments.",
+  "Set role settings to require MFA, justification and, for Owner and User Access Administrator, approval on activation.",
+  "Keep at most a small number of break-glass permanent assignments and monitor their use.",
+]
+frameworks = [
+  "Microsoft cloud security benchmark",
+  "CIS Microsoft Azure Foundations Benchmark",
+  "NIST 800-53 AC-2",
+  "NIST 800-53 AC-6",
+]
+verify = '''
+$sub = (Get-AzContext).Subscription.Id
+Get-AzRoleAssignmentSchedule -Scope "/subscriptions/$sub" | Where-Object { $_.AssignmentType -eq 'Assigned' -and -not $_.EndDateTime } |
+  Select-Object PrincipalId, PrincipalType, RoleDefinitionDisplayName, Scope
+Get-AzRoleEligibilitySchedule -Scope "/subscriptions/$sub" | Select-Object PrincipalId, RoleDefinitionDisplayName, EndDateTime'''
+cvss = "AV:N/AC:H/PR:N/UI:R/S:U/C:H/I:H/A:H"
+mitre = ["T1078.004"]
+
+[[check.detail.references]]
+title = "Assign Azure resource roles in Privileged Identity Management"
+url = "https://learn.microsoft.com/entra/id-governance/privileged-identity-management/pim-resource-roles-assign-roles"
+
+[[check.detail.references]]
+title = "What is Microsoft Entra Privileged Identity Management?"
+url = "https://learn.microsoft.com/entra/id-governance/privileged-identity-management/pim-configure"
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1078.004: Valid Accounts: Cloud Accounts"
+url = "https://attack.mitre.org/techniques/T1078/004/"
+
+[[check]]
+id = "AZ-RBAC-004"
+title = "Guests with Azure roles"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "One or more guest (B2B) users have an active or PIM eligible Azure role assignment on a management group, subscription, resource group or resource. Guest accounts sign in with credentials managed by another organization."
+impact = "Your control over the account depends on the home tenant's security: its password policy, MFA and offboarding. If the guest's home account is compromised or the person leaves that organization without their guest account being removed, the access to your Azure resources stays in place."
+attack = [
+  "Compromises the guest's account in its home tenant, where your organization has no visibility.",
+  "Signs in to your tenant as the guest and uses the Azure role assignment.",
+  "Reads or changes resources within the scope of the role.",
+]
+remediation = [
+  "Review each guest assignment in Access control (IAM) on the scope shown and remove assignments that are not needed.",
+  "Require MFA for guests with a Conditional Access policy, and set cross-tenant access settings to trust MFA only from known partners.",
+  "Make remaining guest assignments PIM eligible with an end date, and include them in Microsoft Entra access reviews.",
+]
+frameworks = [
+  "Microsoft cloud security benchmark",
+  "CIS Microsoft Azure Foundations Benchmark",
+  "NIST 800-53 AC-2",
+  "NIST 800-53 AC-6",
+]
+verify = '''
+$guests = Get-AzADUser -Filter "userType eq 'Guest'" | Select-Object -ExpandProperty Id
+Get-AzRoleAssignment | Where-Object { $_.ObjectId -in $guests } | Select-Object DisplayName, SignInName, RoleDefinitionName, Scope'''
+cvss = "AV:N/AC:H/PR:L/UI:N/S:U/C:H/I:H/A:H"
+mitre = ["T1078.004", "T1199"]
+
+[[check.detail.references]]
+title = "Best practices for Azure RBAC"
+url = "https://learn.microsoft.com/azure/role-based-access-control/best-practices"
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1199: Trusted Relationship"
+url = "https://attack.mitre.org/techniques/T1199/"
+
+[[check]]
+id = "AZ-RBAC-005"
+title = "Service principals and managed identities with Owner/UAA"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "One or more service principals or managed identities hold Owner, User Access Administrator or Role Based Access Control Administrator at subscription scope or above. These roles can assign Azure roles to any principal."
+impact = "Anyone who obtains the application's secret or certificate, or who can run code on the resource that owns the managed identity, can grant themselves full control of the subscription. Service principal sign-ins are not covered by user MFA and are often monitored less closely than user sign-ins."
+attack = [
+  "Finds a client secret or certificate for the service principal, adds its own credential to the application, or runs code on a resource with the managed identity.",
+  "Requests a token for Azure Resource Manager as that identity.",
+  "Assigns Owner on the subscription to an account it controls.",
+]
+remediation = [
+  "Review each assignment and replace Owner with the narrowest built-in role the automation needs, such as Contributor on a resource group.",
+  "Remove User Access Administrator and Role Based Access Control Administrator from identities that do not deploy role assignments; where they must, add a condition limiting which roles can be assigned.",
+  "Restrict who can manage the application's credentials and who can run code on resources with the managed identity.",
+]
+frameworks = [
+  "Microsoft cloud security benchmark",
+  "NIST 800-53 AC-6",
+]
+verify = '''
+Get-AzRoleAssignment | Where-Object { $_.ObjectType -eq 'ServicePrincipal' -and $_.RoleDefinitionName -in 'Owner','User Access Administrator','Role Based Access Control Administrator' } |
+  Select-Object DisplayName, RoleDefinitionName, Scope'''
+cvss = "AV:N/AC:L/PR:H/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1078.004", "T1098.001", "T1528"]
+
+[[check.detail.references]]
+title = "Best practices for Azure RBAC"
+url = "https://learn.microsoft.com/azure/role-based-access-control/best-practices"
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1098.001: Account Manipulation: Additional Cloud Credentials"
+url = "https://attack.mitre.org/techniques/T1098/001/"
+
+[[check]]
+id = "AZ-RBAC-006"
+title = "Custom Azure roles with `*` actions or `Microsoft.Authorization/*/write`"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "One or more custom Azure roles allow \"*\", \"*/write\", Microsoft.Authorization/*, Microsoft.Authorization/roleAssignments/write or Microsoft.Authorization/roleDefinitions/write in their actions, and the permission is not removed by the role's notActions. Such a role grants full control or the right to change role assignments and role definitions."
+impact = "A role that can write role assignments or role definitions is equivalent to Owner: the holder can grant itself any role or widen the custom role. Because the role has a custom name, it is easy to miss in reviews that only look for Owner and User Access Administrator."
+attack = [
+  "Compromises a principal assigned the custom role.",
+  "Writes a new role assignment giving itself Owner, or edits the custom role to add the actions it needs.",
+  "Uses the new permissions on every resource in the role's assignable scopes.",
+]
+remediation = [
+  "Review the role in the Azure portal under Access control (IAM), Roles, filtered to Custom roles.",
+  "Replace wildcard actions with the specific resource provider actions the role needs, and remove Microsoft.Authorization write actions unless the role is meant to manage access.",
+  "Update the role with Set-AzRoleDefinition or az role definition update after editing its JSON.",
+]
+frameworks = [
+  "Microsoft cloud security benchmark",
+  "CIS Microsoft Azure Foundations Benchmark",
+  "NIST 800-53 AC-6",
+]
+verify = '''
+Get-AzRoleDefinition -Custom | Select-Object Name, Actions, NotActions, AssignableScopes'''
+cvss = "AV:N/AC:L/PR:H/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1098.003"]
+
+[[check.detail.references]]
+title = "Azure custom roles"
+url = "https://learn.microsoft.com/azure/role-based-access-control/custom-roles"
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1098.003: Account Manipulation: Additional Cloud Roles"
+url = "https://attack.mitre.org/techniques/T1098/003/"
+
+[[check]]
+id = "AZ-RBAC-007"
+title = "Classic administrators (co-admins) still present"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "A subscription still has classic administrators (co-administrators or a service administrator)."
+impact = "Classic administrators have Owner rights that bypass Azure RBAC, PIM and Conditional Access reporting by role."
+remediation = [
+  "Remove co-administrators and assign Azure RBAC roles through PIM instead.",
+]
+verify = "Get-AzRoleAssignment -IncludeClassicAdministrators | Where-Object Scope -eq '/subscriptions/<id>'"
+
+[[check.detail.references]]
+title = "Classic subscription administrator roles"
+url = "https://learn.microsoft.com/azure/role-based-access-control/classic-administrators"
+
+[[check]]
+id = "AZ-RBAC-008"
+title = "Orphaned role assignments (deleted principals)"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "One or more Azure role assignments point to a principal object id that no longer exists in Microsoft Entra ID. The portal shows these as Identity not found, with object type Unknown."
+impact = "An orphaned assignment grants nothing today, but it clutters access reviews and hides which access is real. Leftover assignments also show that offboarding does not remove Azure access, so other assignments for departed users or deleted apps may still be active."
+attack = [
+  "Uses the confusion from stale entries during access reviews to keep its own unneeded assignment in place.",
+]
+remediation = [
+  "Remove each orphaned assignment in Access control (IAM), Role assignments, or with Remove-AzRoleAssignment -ObjectId <id> -RoleDefinitionName <role> -Scope <scope>.",
+  "Add removal of Azure role assignments to the offboarding process for users, groups and applications.",
+]
+frameworks = [
+  "Microsoft cloud security benchmark",
+  "NIST 800-53 AC-2",
+]
+verify = '''
+Get-AzRoleAssignment | Where-Object ObjectType -eq 'Unknown' | Select-Object ObjectId, RoleDefinitionName, Scope'''
+cvss = "AV:N/AC:H/PR:H/UI:N/S:U/C:L/I:N/A:N"
+mitre = ["T1078.004"]
+
+[[check.detail.references]]
+title = "Troubleshoot Azure RBAC"
+url = "https://learn.microsoft.com/azure/role-based-access-control/troubleshooting"
+
+[[check]]
+id = "AZ-RBAC-009"
+title = "Subscriptions without owners or security contacts"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "One or more subscriptions have no Owner, either directly assigned or inherited from a management group, or have no security contact email configured in Microsoft Defender for Cloud."
+impact = "Without an Owner, nobody is accountable for the subscription and access changes need a tenant-level administrator. Without a security contact, Defender for Cloud alerts about active attacks on the subscription's resources are not emailed to anyone and can go unnoticed."
+attack = [
+  "Targets resources in a subscription where nobody receives Defender for Cloud alert emails.",
+  "Operates in that subscription while the alerts it triggers are not acted on.",
+]
+remediation = [
+  "Assign Owner on each subscription to a named group responsible for it, preferably as a PIM eligible assignment.",
+  "In Defender for Cloud, Environment settings, the subscription, Email notifications, add one or more security contact addresses and turn on notifications for high severity alerts.",
+]
+frameworks = [
+  "Microsoft cloud security benchmark",
+  "CIS Microsoft Azure Foundations Benchmark",
+  "NIST 800-53 IR-6",
+]
+verify = '''
+Get-AzRoleAssignment -RoleDefinitionName Owner | Select-Object DisplayName, Scope
+Get-AzSecurityContact | Select-Object Name, Email, AlertNotifications'''
+cvss = "AV:N/AC:H/PR:L/UI:N/S:U/C:L/I:L/A:N"
+mitre = ["T1078.004"]
+
+[[check.detail.references]]
+title = "Configure email notifications for security alerts"
+url = "https://learn.microsoft.com/azure/defender-for-cloud/configure-email-notifications"
+
+[[check]]
+id = "AZ-RBAC-010"
+title = "Resource locks on critical resources (identity infrastructure)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "A domain controller VM, Tier 0 VM or Key Vault holding Tier 0 material has no delete or read-only lock on itself, its resource group or its subscription."
+impact = "A mistaken or malicious delete takes identity infrastructure down with no warning."
+remediation = [
+  "Add a CanNotDelete lock to the resource groups that hold identity infrastructure.",
+]
+verify = "Get-AzResourceLock -ResourceGroupName <rg>"
+
+[[check.detail.references]]
+title = "Lock resources"
+url = "https://learn.microsoft.com/azure/azure-resource-manager/management/lock-resources"
+
+[[check]]
+id = "AZ-RBAC-011"
+title = "Azure Policy assignments for security baseline (informational coverage)"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "One or more subscriptions do not have the Microsoft cloud security benchmark initiative assigned, either directly or from a management group. Defender for Cloud uses this initiative to assess resources and produce its recommendations and secure score."
+impact = "Without the initiative, Defender for Cloud does not assess the subscription against the benchmark, so misconfigurations such as public storage or missing encryption are not reported and the secure score does not reflect the subscription."
+attack = [
+  "Uses misconfigured resources in a subscription that is not assessed, where nobody is told about the weakness.",
+]
+remediation = [
+  "In Defender for Cloud, Environment settings, the subscription, Security policies, turn on the Microsoft cloud security benchmark standard.",
+  "Alternatively, assign the Microsoft cloud security benchmark initiative on the management group that contains the subscriptions.",
+]
+frameworks = [
+  "Microsoft cloud security benchmark",
+  "NIST 800-53 CA-7",
+]
+verify = '''
+Get-AzPolicyAssignment | Where-Object { $_.Properties.DisplayName -like '*Microsoft cloud security benchmark*' -or $_.DisplayName -like '*Microsoft cloud security benchmark*' } |
+  Select-Object Name, Scope'''
+cvss = "AV:N/AC:H/PR:N/UI:N/S:U/C:L/I:L/A:N"
+
+[[check.detail.references]]
+title = "Introduction to the Microsoft cloud security benchmark"
+url = "https://learn.microsoft.com/security/benchmark/azure/introduction"
+
+[[check]]
+id = "AZ-RBAC-012"
+title = "Defender for Cloud plans enabled per subscription"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "One or more subscriptions have a Microsoft Defender for Cloud plan on the Free tier instead of Standard for VirtualMachines (Defender for Servers), SqlServers, StorageAccounts, KeyVaults, Arm (Defender for Resource Manager) or Containers."
+impact = "Without these plans, Defender for Cloud does not raise threat detection alerts for those resource types: no alerts for suspicious Key Vault access, malicious storage uploads, unusual Azure Resource Manager operations or attacks on servers and containers. An intrusion in those resources can go undetected."
+attack = [
+  "Signs in with stolen credentials and lists or reads Key Vault secrets, storage data or Resource Manager configuration.",
+  "Performs the actions without triggering Defender alerts, because the plan for that resource type is off.",
+]
+remediation = [
+  "In Defender for Cloud, Environment settings, the subscription, Defender plans, turn on the plans for Servers, Databases, Storage, Key Vault, Resource Manager and Containers.",
+  "Or run Set-AzSecurityPricing -Name <plan> -PricingTier Standard for each plan.",
+  "Apply the plans at scale with the Azure Policy definitions for Defender plans on the management group.",
+]
+frameworks = [
+  "Microsoft cloud security benchmark",
+  "CIS Microsoft Azure Foundations Benchmark",
+  "NIST 800-53 SI-4",
+]
+verify = '''
+Get-AzSecurityPricing | Where-Object Name -in 'VirtualMachines','SqlServers','StorageAccounts','KeyVaults','Arm','Containers' |
+  Select-Object Name, PricingTier'''
+cvss = "AV:N/AC:H/PR:L/UI:N/S:U/C:H/I:L/A:N"
+mitre = ["T1078.004"]
+
+[[check.detail.references]]
+title = "What is Microsoft Defender for Cloud?"
+url = "https://learn.microsoft.com/azure/defender-for-cloud/defender-for-cloud-introduction"
+
+[[check]]
+id = "AZ-RBAC-013"
+title = "Defender for Cloud secure score and high-severity recommendations"
+status = "implemented"
+severity = "info"
+
+[check.detail]
+description = "The Microsoft Defender for Cloud secure score percentage for each subscription. This check is informational and always passes."
+impact = "No direct risk. A low score means many Defender for Cloud recommendations are open; the recommendations list in Defender for Cloud shows which ones carry the most weight."
+remediation = [
+  "Review the open recommendations in Defender for Cloud, Recommendations, starting with high severity items and controls with the largest potential score increase.",
+]
+frameworks = [
+  "Microsoft cloud security benchmark",
+]
+verify = '''
+Get-AzSecuritySecureScore | Select-Object Name, DisplayName, Percentage'''
+
+[[check.detail.references]]
+title = "Secure score in Defender for Cloud"
+url = "https://learn.microsoft.com/azure/defender-for-cloud/secure-score-security-controls"
+
+[[check]]
+id = "AZ-RBAC-014"
+title = "Activity log exported to Log Analytics / SIEM"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "One or more subscriptions have no diagnostic setting that exports the Administrative category of the Azure activity log to a Log Analytics workspace, an event hub or a storage account. The platform keeps activity log entries for only 90 days."
+impact = "Role assignment changes, resource deletions and other control plane operations are not sent to a SIEM, so they cannot be alerted on or correlated with sign-in data, and records older than 90 days are lost for incident investigation."
+attack = [
+  "Assigns itself a role or changes resources in the subscription.",
+  "Relies on the change not reaching the SIEM, and on the activity log entry expiring after 90 days.",
+]
+remediation = [
+  "In the Azure portal, Monitor, Activity log, Export Activity Logs, add a diagnostic setting for the subscription that sends at least the Administrative, Security and Policy categories to the central Log Analytics workspace.",
+  "Apply the setting at scale with the built-in Azure Policy that configures activity log export to a Log Analytics workspace.",
+]
+frameworks = [
+  "Microsoft cloud security benchmark",
+  "CIS Microsoft Azure Foundations Benchmark",
+  "NIST 800-53 AU-6",
+  "NIST 800-53 AU-11",
+]
+verify = '''
+az monitor diagnostic-settings subscription list --query "value[].{name:name, workspace:workspaceId, logs:logs[?enabled].category}"'''
+cvss = "AV:N/AC:H/PR:H/UI:N/S:U/C:N/I:L/A:N"
+
+[[check.detail.references]]
+title = "Azure Monitor activity log"
+url = "https://learn.microsoft.com/azure/azure-monitor/essentials/activity-log"
+
+[[check]]
+id = "AZ-RBAC-015"
+title = "Azure Lighthouse delegations to external tenants"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "One or more Azure Lighthouse delegations give principals in another tenant Contributor, User Access Administrator or Role Based Access Control Administrator on a subscription or resource group. Every Lighthouse delegation, with its managing tenant and roles, is listed as evidence."
+impact = "Users and service principals in the managing tenant act on your resources with credentials, MFA and offboarding controlled by that tenant. A compromise of the service provider gives the attacker the delegated access to your subscriptions, which is a known supply chain path."
+attack = [
+  "Compromises an account in the service provider's tenant that is included in the delegation.",
+  "Switches to the customer's delegated subscription from the provider tenant.",
+  "Uses Contributor to change or read resources, or uses User Access Administrator to assign roles to managed identities.",
+]
+remediation = [
+  "Review delegations in the Azure portal under Service providers, Service provider offers and Delegations, and remove those that are no longer needed.",
+  "Ask the provider to replace Contributor with narrower roles and to grant permanent access only through eligible (PIM) authorizations.",
+  "Do not accept delegations that grant User Access Administrator beyond assigning roles to managed identities.",
+]
+frameworks = [
+  "Microsoft cloud security benchmark",
+  "NIST 800-53 AC-6",
+  "NIST 800-53 SR-3",
+]
+verify = '''
+Get-AzManagedServicesAssignment | Select-Object Name, Id
+Get-AzManagedServicesDefinition | Select-Object Name, ManagedByTenantId, Authorization'''
+cvss = "AV:N/AC:H/PR:H/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1199", "T1078.004"]
+
+[[check.detail.references]]
+title = "What is Azure Lighthouse?"
+url = "https://learn.microsoft.com/azure/lighthouse/overview"
+
+[[check.detail.references]]
+title = "Recommended security practices for Azure Lighthouse"
+url = "https://learn.microsoft.com/azure/lighthouse/concepts/recommended-security-practices"
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1199: Trusted Relationship"
+url = "https://attack.mitre.org/techniques/T1199/"
+
+[[check]]
+id = "AZ-RBAC-016"
+title = "Automation accounts with Run As / managed identities holding high privileges"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "An Automation account's managed identity holds Owner, Contributor or User Access Administrator in Azure, or an Entra role."
+impact = "Anyone who can edit or start a runbook acts with the identity's rights, a common escalation path."
+remediation = [
+  "Give the identity only the roles its runbooks need, at the narrowest scope.",
+  "Limit who can edit runbooks to the same tier as the identity.",
+]
+verify = "Get-AzRoleAssignment -ObjectId <identity principal id>"
+mitre = ["T1078.004"]
+
+[[check.detail.references]]
+title = "Managed identities for Automation"
+url = "https://learn.microsoft.com/azure/automation/automation-security-overview"
+
+[[check]]
+id = "AZ-RBAC-017"
+title = "Logic Apps / Functions with privileged managed identities"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "A Logic App, Function app or App Service app's managed identity holds Owner, Contributor or User Access Administrator in Azure, or an Entra role."
+impact = "Anyone who can change the app's code or workflow can act with those rights."
+remediation = [
+  "Scope the identity's roles to what the app needs and protect who can deploy to it.",
+]
+verify = "Get-AzRoleAssignment -ObjectId <identity principal id>"
+mitre = ["T1078.004"]
+
+[[check.detail.references]]
+title = "Managed identities"
+url = "https://learn.microsoft.com/entra/identity/managed-identities-azure-resources/overview"
+
+[[check]]
+id = "AZ-RBAC-018"
+title = "Storage accounts with shared key access and public blob access"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "One or more storage accounts allow anonymous (public) blob access, or allow shared key authorization. With anonymous access allowed, any container set to Blob or Container access level can be read without credentials. With shared key access allowed, anyone holding an account key or a SAS signed with it has full access, bypassing Microsoft Entra ID and Azure RBAC."
+impact = "Data in public containers can be downloaded by anyone on the internet who finds the URL. Leaked account keys or SAS tokens, which often appear in code, scripts and connection strings, give access to all data in the account without any sign-in, MFA or Conditional Access."
+attack = [
+  "Finds a public container URL or an account key or SAS token in code, a script or a configuration file.",
+  "Reads or writes blobs directly with the key or anonymously, without signing in to Microsoft Entra ID.",
+]
+remediation = [
+  "In the storage account, Settings, Configuration, set Allow Blob anonymous access to Disabled, or run Set-AzStorageAccount -AllowBlobPublicAccess $false.",
+  "Move applications to Microsoft Entra ID authorization, then set Allow storage account key access to Disabled (Set-AzStorageAccount -AllowSharedKeyAccess $false).",
+  "Rotate account keys that may have been exposed.",
+  "Enforce both settings with the built-in Azure Policy definitions for storage accounts.",
+]
+frameworks = [
+  "Microsoft cloud security benchmark",
+  "CIS Microsoft Azure Foundations Benchmark",
+  "NIST 800-53 AC-3",
+]
+verify = '''
+Get-AzStorageAccount | Select-Object StorageAccountName, ResourceGroupName, AllowBlobPublicAccess, AllowSharedKeyAccess'''
+cvss = "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:L/A:N"
+mitre = ["T1552"]
+
+[[check.detail.references]]
+title = "Remediate anonymous read access to blob data"
+url = "https://learn.microsoft.com/azure/storage/blobs/anonymous-read-access-prevent"
+
+[[check.detail.references]]
+title = "Prevent Shared Key authorization for an Azure Storage account"
+url = "https://learn.microsoft.com/azure/storage/common/shared-key-authorization-prevent"
+
+[[check]]
+id = "AZ-RBAC-019"
+title = "Deployment scripts / runbooks containing credentials (keyword scan)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "A runbook or deployment script contains text that looks like a credential, or an unencrypted Automation variable is named like one. The collector scans the text and records only the type of match and the line number."
+impact = "Anyone with read access to the Automation account or resource group can read the credential."
+remediation = [
+  "Move the credential to Key Vault or an encrypted Automation credential, use managed identities, and rotate the exposed secret.",
+]
+verify = "Review the reported runbook lines and variables in the Azure portal."
+mitre = ["T1552"]
+
+[[check.detail.references]]
+title = "Automation credentials"
+url = "https://learn.microsoft.com/azure/automation/shared-resources/credentials"
+
+[[check]]
+id = "AZ-RBAC-020"
+title = "Azure VMs hosting DCs: who has VM Contributor, Run Command, disk snapshot rights (Tier 0 exposure)"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "Lists who can control domain controller or Tier 0 VMs in Azure: Owner, Contributor, User Access Administrator, Virtual Machine Contributor, Virtual Machine Administrator Login or Disk Snapshot Contributor at or above the VM. VMs are matched to AD by computer name."
+impact = "Run Command, extensions, sign-in or a disk snapshot of a DC gives full control of the domain, including the NTDS.dit database."
+remediation = [
+  "Put DC VMs in a dedicated subscription or resource group where only Tier 0 admins hold any of these roles, through PIM.",
+]
+verify = "Get-AzRoleAssignment -Scope <DC VM id>"
+mitre = ["T1651"]
+
+[[check.detail.references]]
+title = "Securing domain controllers in Azure"
+url = "https://learn.microsoft.com/windows-server/identity/ad-ds/plan/security-best-practices/securing-domain-controllers-against-attack"
+
+[[check]]
+id = "AZ-RBAC-021"
+title = "Azure Arc-connected servers that are DCs or Tier 0, and who can run extensions on them"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "Lists who can install extensions or run commands on domain controllers or Tier 0 servers connected to Azure Arc: Owner, Contributor, User Access Administrator, Azure Connected Machine Resource Administrator or Hybrid Server Resource Administrator."
+impact = "Arc extensions and Run Command execute as SYSTEM on the server, so these roles control the domain."
+remediation = [
+  "Remove Arc from Tier 0 servers, or treat the Arc resource group as Tier 0 and limit these roles to Tier 0 admins.",
+]
+verify = "Get-AzRoleAssignment -Scope <Arc machine id>"
+mitre = ["T1651"]
+
+[[check.detail.references]]
+title = "Azure Arc security overview"
+url = "https://learn.microsoft.com/azure/azure-arc/servers/security-overview"
+
+[[check]]
+id = "AZ-RBAC-022"
+title = "Azure Bastion / JIT VM access for Tier 0 VMs"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "A domain controller or Tier 0 VM in Azure is covered neither by a just-in-time VM access policy nor by an Azure Bastion host in its subscription."
+impact = "Management ports are reachable more widely and for longer than needed."
+remediation = [
+  "Reach Tier 0 VMs only through Azure Bastion or just-in-time access from Tier 0 admin workstations.",
+]
+verify = "Get-AzJitNetworkAccessPolicy"
+
+[[check.detail.references]]
+title = "Just-in-time VM access"
+url = "https://learn.microsoft.com/azure/defender-for-cloud/just-in-time-access-usage"

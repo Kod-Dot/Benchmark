@@ -1,0 +1,27 @@
+[workspace]
+resolver = "2"
+members = ["crates/dca-core", "app/src-tauri"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+thiserror = "2"
+
+# Release builds ship to customers: no symbols, whole-program optimization
+# and one codegen unit make the binary much harder to read, and abort on
+# panic leaves no unwinding tables to follow.
+[profile.release]
+strip = true
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+
+# `cargo test --release` uses this profile; keep it quick to build.
+[profile.bench]
+lto = "off"
+codegen-units = 16

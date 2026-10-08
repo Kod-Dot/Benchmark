@@ -1,0 +1,243 @@
+# M365-DEF: Defender XDR and security tooling posture
+
+area = "M365-DEF"
+
+[[check]]
+id = "M365-DEF-001"
+title = "Defender for Endpoint coverage (onboarded vs total devices)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "An enabled Windows device that signed in to Entra ID in the last 30 days has no matching Defender for Endpoint machine (by Entra device ID), or an onboarded machine is inactive."
+impact = "Devices without a working sensor are blind spots: attacks on them are neither detected nor stopped."
+remediation = [
+  "Onboard the missing devices through Intune or Group Policy, and investigate why inactive sensors stopped reporting.",
+]
+verify = "Defender portal > Assets > Devices; compare with Entra devices"
+
+[[check.detail.references]]
+title = "Onboard devices"
+url = "https://learn.microsoft.com/defender-endpoint/onboarding"
+
+[[check]]
+id = "M365-DEF-002"
+title = "Tamper protection enabled"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Intune reports tamper protection off on a Windows device. Up to 300 Windows devices are read."
+impact = "Malware or an attacker with admin rights can turn Defender off before acting."
+remediation = [
+  "Turn on tamper protection tenant-wide in the Defender portal, or through an Intune Windows Security experience policy.",
+]
+verify = "Get-MpComputerStatus | Select-Object IsTamperProtected"
+
+[[check.detail.references]]
+title = "Tamper protection"
+url = "https://learn.microsoft.com/defender-endpoint/prevent-changes-to-security-settings-with-tamper-protection"
+
+[[check]]
+id = "M365-DEF-003"
+title = "EDR in block mode"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Lists devices where Defender Antivirus runs in passive mode (another antivirus is primary). EDR in block mode is a portal setting no API exposes; confirm it is on for them."
+impact = "In passive mode Defender only watches; without EDR in block mode, malicious artifacts the other antivirus misses are not blocked."
+remediation = [
+  "Turn on EDR in block mode in the Defender portal (Settings > Endpoints > Advanced features).",
+]
+verify = "Get-MpComputerStatus | Select-Object AMRunningMode"
+
+[[check.detail.references]]
+title = "EDR in block mode"
+url = "https://learn.microsoft.com/defender-endpoint/edr-in-block-mode"
+
+[[check]]
+id = "M365-DEF-004"
+title = "Network protection and web protection"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "No assigned Intune policy turns on network protection in block mode (it is off or in audit mode)."
+impact = "Web protection, custom indicators and SmartScreen-style blocking do not apply outside Microsoft Edge."
+remediation = [
+  "Set network protection to block mode in the antivirus policy.",
+]
+verify = "Get-MpPreference | Select-Object EnableNetworkProtection"
+
+[[check.detail.references]]
+title = "Network protection"
+url = "https://learn.microsoft.com/defender-endpoint/network-protection"
+
+[[check]]
+id = "M365-DEF-005"
+title = "Automated investigation and remediation level"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Defender for Endpoint raised at least five alerts in 30 days and none of their evidence was remediated, prevented or blocked automatically. The automation level is not exposed by an API, so it is inferred from alert evidence."
+impact = "With automation off or waiting for approval, threats stay on devices until an analyst acts."
+remediation = [
+  "Set device groups to Full - remediate threats automatically (Settings > Endpoints > Device groups).",
+]
+verify = "Defender portal > Settings > Endpoints > Device groups > Automation level"
+
+[[check.detail.references]]
+title = "Automation levels"
+url = "https://learn.microsoft.com/defender-endpoint/automation-levels"
+
+[[check]]
+id = "M365-DEF-006"
+title = "Defender for Identity sensors health and coverage (links to AD-AUD-006)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "A domain controller has no Defender for Identity sensor, a sensor is not healthy, or a Defender for Identity health issue is open."
+impact = "Attacks such as DCSync, Kerberoasting and pass-the-ticket against that domain controller are not detected."
+remediation = [
+  "Install the sensor on every domain controller (and AD FS, AD CS and Entra Connect servers) and resolve open health issues.",
+]
+verify = "Defender portal > Settings > Identities > Sensors"
+mitre = ["T1003.006"]
+
+[[check.detail.references]]
+title = "Defender for Identity sensors"
+url = "https://learn.microsoft.com/defender-for-identity/deploy/install-sensor"
+
+[[check]]
+id = "M365-DEF-007"
+title = "Defender for Cloud Apps connected apps and session policies"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Defender for Cloud Apps is licensed but no enabled Conditional Access policy routes sessions through it (session control)."
+impact = "Session policies (block downloads on unmanaged devices, monitor risky sessions) do not apply."
+remediation = [
+  "Create Conditional Access policies with Use Conditional Access App Control for the apps that need session control.",
+]
+verify = "Get-MgIdentityConditionalAccessPolicy | Where-Object { $_.SessionControls.CloudAppSecurity.IsEnabled }"
+
+[[check.detail.references]]
+title = "Conditional Access app control"
+url = "https://learn.microsoft.com/defender-cloud-apps/proxy-intro-aad"
+
+[[check]]
+id = "M365-DEF-008"
+title = "Defender for Office 365 coverage (links to D1)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Defender for Office 365 is not licensed, or no Safe Links or Safe Attachments policy (custom rule, preset policy or built-in protection) applies to users."
+impact = "Malicious links and attachments in mail reach users without detonation or time-of-click checks."
+remediation = [
+  "Apply the Standard or Strict preset security policy, or custom Safe Links and Safe Attachments policies to all users.",
+]
+verify = "Get-SafeLinksRule; Get-SafeAttachmentRule; Get-EOPProtectionPolicyRule"
+
+[[check.detail.references]]
+title = "Preset security policies"
+url = "https://learn.microsoft.com/defender-office-365/preset-security-policies"
+
+[[check]]
+id = "M365-DEF-009"
+title = "Device exclusions and global exclusions in AV (too broad paths, processes)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "An assigned antivirus policy excludes a user-writable folder, an executable file type or a process attackers use to run code (PowerShell, cmd, rundll32 and similar)."
+impact = "Malware placed in the excluded location, or run through the excluded process, is not scanned."
+remediation = [
+  "Narrow exclusions to specific files and trusted, admin-only folders, as the software vendor documents.",
+]
+verify = "Get-MpPreference | Select-Object ExclusionPath, ExclusionProcess, ExclusionExtension"
+
+[[check.detail.references]]
+title = "Exclusions for Defender Antivirus"
+url = "https://learn.microsoft.com/defender-endpoint/navigate-defender-endpoint-antivirus-exclusions"
+
+[[check]]
+id = "M365-DEF-010"
+title = "Unified RBAC in Defender portal: who can run live response"
+status = "implemented"
+severity = "info"
+
+[check.detail]
+description = "Lists Security Administrators and Global Administrators, who can run live response on every onboarded device unless Defender unified RBAC narrows it."
+impact = "Live response gives a remote shell as SYSTEM on endpoints, servers and domain controllers."
+remediation = [
+  "Turn on Defender unified RBAC and give live response only to a small responder role, scoped to device groups.",
+]
+verify = "Defender portal > Settings > Permissions > Roles"
+
+[[check.detail.references]]
+title = "Unified RBAC"
+url = "https://learn.microsoft.com/defender-xdr/manage-rbac"
+
+[[check]]
+id = "M365-DEF-011"
+title = "Live response unsigned scripts allowed"
+status = "planned"
+
+[[check]]
+id = "M365-DEF-012"
+title = "Exposure Management / Secure Score trend (informational)"
+status = "implemented"
+severity = "info"
+
+[check.detail]
+description = "Shows the Microsoft Secure Score over the last 30 days."
+impact = "A falling score means new gaps; a flat score means recommendations are not being worked."
+remediation = [
+  "Review the top Secure Score recommendations regularly and track the trend.",
+]
+verify = "Defender portal > Exposure management > Secure Score"
+
+[[check.detail.references]]
+title = "Microsoft Secure Score"
+url = "https://learn.microsoft.com/defender-xdr/microsoft-secure-score"
+
+[[check]]
+id = "M365-DEF-013"
+title = "Incidents unresolved older than 30 days"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "A Defender XDR incident has been open (active or in progress) for more than 30 days."
+impact = "Unresolved incidents may be ongoing compromises nobody is handling."
+remediation = [
+  "Assign, investigate and resolve or close each incident.",
+]
+verify = "Get-MgSecurityIncident -Filter \"status eq 'active'\""
+
+[[check.detail.references]]
+title = "Manage incidents"
+url = "https://learn.microsoft.com/defender-xdr/manage-incidents"
+
+[[check]]
+id = "M365-DEF-014"
+title = "Streaming API / SIEM connection"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "No Microsoft Sentinel workspace has the Microsoft Defender XDR connector. A SIEM fed through the streaming API from elsewhere is not visible here."
+impact = "Defender incidents and raw events are not kept or correlated in a SIEM beyond the portal's own retention."
+remediation = [
+  "Connect Defender XDR to Sentinel, or stream events to the SIEM with the streaming API.",
+]
+verify = "Sentinel > Data connectors > Microsoft Defender XDR"
+
+[[check.detail.references]]
+title = "Connect Defender XDR to Sentinel"
+url = "https://learn.microsoft.com/azure/sentinel/connect-microsoft-365-defender"

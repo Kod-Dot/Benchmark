@@ -1,0 +1,185 @@
+# AD-APP: Exchange and legacy application footprint in AD
+
+area = "AD-APP"
+
+[[check]]
+id = "AD-APP-001"
+title = "Exchange Windows Permissions can change domain permissions (PrivExchange)"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "The Exchange Windows Permissions group has an allow entry with WriteDACL or GenericAll on the domain head itself (not inherit-only). Exchange setup granted this before the February 2019 updates that fixed PrivExchange."
+impact = "Every Exchange server can change permissions on the domain head and grant replication rights (DCSync). Anyone who takes over an Exchange server, or relays its authentication to LDAP, can do the same and read every password hash in the domain."
+attack = [
+  "Makes an Exchange server authenticate to a host they control, for example through a mailbox feature.",
+  "Relays that authentication to LDAP on a DC and grants an account replication rights on the domain head.",
+  "Uses DCSync to read the password hashes of all accounts.",
+]
+remediation = [
+  "Install a current Exchange cumulative update and run Setup /PrepareAD, which removes WriteDACL from the domain head.",
+  "If the group still has the entry afterwards, remove the WriteDACL entry from the domain head following Microsoft's guidance for ADV190007.",
+  "Enable LDAP signing and channel binding on DCs to block relaying to LDAP.",
+]
+frameworks = [
+  "NIST 800-53 AC-6",
+]
+verify = '''
+(Get-Acl "AD:$((Get-ADDomain).DistinguishedName)").Access |
+  Where-Object { $_.IdentityReference -like '*Exchange Windows Permissions' } |
+  Select-Object IdentityReference, ActiveDirectoryRights, InheritanceType, ObjectType'''
+cvss = "AV:N/AC:L/PR:L/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1003.006", "T1557"]
+
+[[check.detail.references]]
+title = "ADV190007: Guidance for Microsoft Exchange Server elevation of privilege vulnerability"
+url = "https://msrc.microsoft.com/update-guide/vulnerability/ADV190007"
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1003.006: DCSync"
+url = "https://attack.mitre.org/techniques/T1003/006/"
+
+[[check]]
+id = "AD-APP-002"
+title = "Exchange Trusted Subsystem / Exchange Windows Permissions membership"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "A user account is a direct member of Exchange Windows Permissions or Exchange Trusted Subsystem. These groups should contain only Exchange server computer accounts and Exchange groups."
+impact = "These groups hold broad rights over users, groups and computers in the domain, and in older setups over the domain head itself. A user in them can reset passwords or change permissions on most accounts."
+remediation = [
+  "Remove user accounts from both groups.",
+  "Give Exchange administrators the rights they need through Exchange role-based access control instead.",
+]
+frameworks = [
+  "NIST 800-53 AC-2",
+  "NIST 800-53 AC-6",
+]
+verify = '''
+'Exchange Windows Permissions', 'Exchange Trusted Subsystem' | ForEach-Object {
+  $g = $_; Get-ADGroupMember $g | Select-Object @{ n = 'Group'; e = { $g } }, Name, objectClass }'''
+mitre = ["T1078.002"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1078.002: Domain Accounts"
+url = "https://attack.mitre.org/techniques/T1078/002/"
+
+[[check]]
+id = "AD-APP-003"
+title = "SCCM/MECM accounts and their rights (NAA, client push accounts)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "A principal other than a site server computer account can change the Configuration Manager System Management container, or an account named for Configuration Manager (network access, client push) holds domain admin rights."
+impact = "Network access and client push account passwords can be recovered from clients; if they are domain admins, any client compromise becomes domain compromise. Rights on System Management let an attacker publish a rogue management point."
+remediation = [
+  "Remove domain admin rights from Configuration Manager accounts and use enhanced HTTP instead of a network access account.",
+  "Limit System Management to the site server computer accounts.",
+]
+verify = "Get-Acl \"AD:CN=System Management,CN=System,<domain DN>\""
+mitre = ["T1078.002"]
+
+[[check.detail.references]]
+title = "Configuration Manager accounts"
+url = "https://learn.microsoft.com/mem/configmgr/core/plan-design/hierarchy/accounts"
+
+[[check]]
+id = "AD-APP-004"
+title = "SQL service accounts with SPNs in privileged groups"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Accounts that run SQL Server (MSSQLSvc SPNs) are members of privileged groups."
+impact = "Any domain user can request a ticket for the SQL service and crack its password offline. SQL servers also store and run code as the service account."
+remediation = [
+  "Remove SQL service accounts from privileged groups.",
+  "Run SQL Server as a group managed service account with only the rights it needs.",
+]
+verify = "Get-ADUser -LDAPFilter '(servicePrincipalName=MSSQLSvc*)' -Properties MemberOf, ServicePrincipalName"
+cvss = "AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H"
+mitre = ["T1558.003"]
+
+[[check]]
+id = "AD-APP-005"
+title = "Legacy applications using LDAP simple bind (from events)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Clients sign in to LDAP on domain controllers with a simple bind (event 2889 with bind type 1). Event 2889 is logged only with LDAP Interface Events diagnostics at level 2."
+impact = "A simple bind over plain LDAP sends the password in clear text on the network."
+remediation = [
+  "Configure the applications to use LDAPS or a signed SASL bind.",
+  "Then require LDAP signing and channel binding.",
+]
+verify = "Get-WinEvent -FilterHashtable @{LogName='Directory Service';Id=2889}"
+mitre = ["T1040"]
+
+[[check]]
+id = "AD-APP-006"
+title = "Azure AD/Entra Connect service account rights (links to hybrid)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Accounts named MSOL_, Sync_ or AAD_, or with a description mentioning Azure AD Connect or Entra Connect, are listed. An account is flagged when it is in a privileged group, or when it is enabled and has not signed in for more than 90 days."
+impact = "The Entra Connect connector account usually has replication rights to synchronize password hashes. A privileged account gives the sync server, and anyone who controls it, even more power; an unused one keeps its rights after the sync server is gone and nobody watches it."
+remediation = [
+  "Remove the account from privileged groups; Entra Connect needs only the permissions set by its configuration.",
+  "Disable or delete accounts left from old sync servers, after confirming no running server uses them.",
+  "Treat the Entra Connect server as Tier 0.",
+]
+frameworks = [
+  "NIST 800-53 AC-2",
+  "NIST 800-53 AC-6",
+]
+verify = '''
+Get-ADUser -Filter "SamAccountName -like 'MSOL_*' -or SamAccountName -like 'Sync_*' -or SamAccountName -like 'AAD_*'" -Properties Description, LastLogonDate, MemberOf |
+  Select-Object SamAccountName, Enabled, LastLogonDate, Description, MemberOf'''
+mitre = ["T1003.006", "T1078.002"]
+
+[[check.detail.references]]
+title = "Microsoft Entra Connect: Accounts and permissions"
+url = "https://learn.microsoft.com/entra/identity/hybrid/connect/reference-connect-accounts-permissions"
+
+[[check.detail.references]]
+title = "Protecting Microsoft 365 from on-premises attacks"
+url = "https://learn.microsoft.com/entra/architecture/protect-m365-from-on-premises-attacks"
+
+[[check]]
+id = "AD-APP-007"
+title = "Third-party identity tool service accounts with DCSync"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Accounts of third-party identity, audit or security tools (by name or description) hold DCSync rights on the domain."
+impact = "These accounts can read every password hash. Their credentials are often stored on the tool's server, which then needs Tier 0 protection."
+remediation = [
+  "Confirm the tool needs replication rights; many need only read access.",
+  "Protect the account and the tool's server as Tier 0, or remove the rights.",
+]
+verify = "(Get-Acl \"AD:$((Get-ADDomain).DistinguishedName)\").Access | Where-Object { $_.ObjectType -in '1131f6aa-9c07-11d1-f79f-00c04fc2dcd2','1131f6ad-9c07-11d1-f79f-00c04fc2dcd2' }"
+cvss = "AV:N/AC:L/PR:H/UI:N/S:C/C:H/I:H/A:N"
+mitre = ["T1003.006"]
+
+[[check]]
+id = "AD-APP-008"
+title = "Orphaned application objects in Configuration partition"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "A service connection point is published under a disabled computer, or points to a host that is no longer a computer in the domain."
+impact = "Clients that look up the service find stale entries; an attacker who registers the old host name can receive their connections."
+remediation = [
+  "Delete orphaned service connection points with the application's own tools, or from ADSI Edit.",
+]
+verify = "Get-ADObject -LDAPFilter '(objectClass=serviceConnectionPoint)' -Properties serviceDNSName"
+
+[[check.detail.references]]
+title = "Service connection points"
+url = "https://learn.microsoft.com/windows/win32/ad/about-service-publication"

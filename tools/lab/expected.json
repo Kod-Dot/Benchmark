@@ -1,0 +1,355 @@
+{
+  "_about": "What the analysis must report for the lab domain seeded by tools/lab/seed.sh. status is failed, passed or not_assessed; includes lists names that must be among the affected objects; found_contains is text the found summary must contain. Samba does not return replication metadata (msDS-ReplValueMetaData, msDS-ReplAttributeMetaData), so the checks built on it are not assessed here and are covered by unit tests.",
+  "AD-ACC-009": {
+    "status": "failed",
+    "includes": [
+      "lab-noexpire"
+    ]
+  },
+  "AD-ACC-014": {
+    "status": "failed",
+    "includes": [
+      "Administrator"
+    ]
+  },
+  "AD-ACC-015": {
+    "status": "failed",
+    "includes": [
+      "S-1-5-21-9-9-9-1234"
+    ]
+  },
+  "AD-ACC-018": {
+    "status": "failed",
+    "includes": [
+      "lab-everyone"
+    ]
+  },
+  "AD-CMP-003": {
+    "status": "failed",
+    "includes": [
+      "LABAPP01$"
+    ]
+  },
+  "AD-KRB-017": {
+    "status": "failed",
+    "includes": [
+      "Administrator",
+      "lab-svc-da"
+    ]
+  },
+  "AD-PRIV-004": {
+    "status": "failed",
+    "includes": [
+      "lab-helpdesk"
+    ]
+  },
+  "AD-PRIV-007": {
+    "status": "failed",
+    "includes": [
+      "lab-helpdesk"
+    ]
+  },
+  "AD-PRIV-008": {
+    "status": "failed",
+    "includes": [
+      "lab-helpdesk"
+    ]
+  },
+  "AD-PRIV-012": {
+    "status": "failed",
+    "includes": [
+      "lab-svc-da"
+    ]
+  },
+  "AD-PRIV-019": {
+    "status": "failed",
+    "includes": [
+      "Administrator"
+    ]
+  },
+  "AD-PRIV-022": {
+    "status": "passed"
+  },
+  "AD-PRIV-026": {
+    "status": "failed",
+    "includes": [
+      "S-1-5-21-9-9-9-1234"
+    ]
+  },
+  "AD-IOC-009": {
+    "status": "failed",
+    "includes": [
+      "lab-hidden"
+    ]
+  },
+  "AD-LAPS-002": {
+    "status": "failed",
+    "includes": [
+      "LABAPP01$"
+    ]
+  },
+  "AD-OU-001": {
+    "status": "failed",
+    "includes": [
+      "lab-depth11"
+    ]
+  },
+  "AD-FND-005": {
+    "status": "passed",
+    "found_contains": "5 roles held by"
+  },
+  "AD-FND-006": {
+    "status": "passed"
+  },
+  "AD-FND-014": {
+    "status": "failed",
+    "includes": [
+      "lab-upn"
+    ]
+  },
+  "AD-FND-015": {
+    "status": "passed",
+    "found_contains": "users"
+  },
+  "AD-FND-016": {
+    "status": "failed",
+    "includes": [
+      "OLD"
+    ]
+  },
+  "AD-FND-017": {
+    "status": "passed",
+    "found_contains": "2 application partitions"
+  },
+  "AD-FND-018": {
+    "status": "passed"
+  },
+  "AD-SCH-004": {
+    "status": "failed",
+    "includes": [
+      "user-Display"
+    ]
+  },
+  "AD-SCH-005": {
+    "status": "passed"
+  },
+  "AD-ACL-007": {
+    "status": "failed",
+    "includes": [
+      "Configuration"
+    ]
+  },
+  "AD-ACL-017": {
+    "status": "failed",
+    "includes": [
+      "Domain Controllers"
+    ]
+  },
+  "AD-ACL-018": {
+    "status": "failed",
+    "includes": [
+      "lab-depth1"
+    ]
+  },
+  "AD-ACL-019": {
+    "status": "failed",
+    "includes": [
+      "Exchange Windows Permissions"
+    ]
+  },
+  "AD-ACL-022": {
+    "status": "passed",
+    "found_contains": "2 delegations"
+  },
+  "AD-ACL-024": {
+    "status": "failed",
+    "includes": [
+      "lab-operator"
+    ]
+  },
+  "AD-ACL-026": {
+    "status": "failed",
+    "includes": [
+      "Password Settings Container"
+    ]
+  },
+  "AD-ACL-012": {
+    "status": "failed",
+    "includes": [
+      "Administrator"
+    ]
+  },
+  "AD-ACL-013": {
+    "status": "failed",
+    "includes": [
+      "lab-depth3"
+    ]
+  },
+  "AD-ACL-020": {
+    "status": "failed",
+    "includes": [
+      "corp.example.com"
+    ]
+  },
+  "AD-ACL-021": {
+    "status": "failed",
+    "includes": [
+      "Certificate Templates"
+    ]
+  },
+  "AD-ACL-023": {
+    "status": "failed",
+    "includes": [
+      "lab-admins"
+    ]
+  },
+  "AD-PRIV-023": {
+    "status": "failed",
+    "includes": [
+      "AdminSDHolder"
+    ]
+  },
+  "AD-APP-004": {
+    "status": "failed",
+    "includes": [
+      "lab-svc-da"
+    ]
+  },
+  "AD-APP-007": {
+    "status": "failed",
+    "includes": [
+      "lab-varonis-svc"
+    ]
+  },
+  "AD-AUD-007": {
+    "status": "passed",
+    "found_contains": "1 decoy account"
+  },
+  "AD-BKP-003": {
+    "status": "failed",
+    "includes": [
+      "lab-backup"
+    ]
+  },
+  "AD-BKP-006": {
+    "status": "failed"
+  },
+  "AD-KRB-013": {
+    "status": "failed",
+    "includes": [
+      "lab-svc-da"
+    ]
+  },
+  "AD-KRB-018": {
+    "status": "failed",
+    "includes": [
+      "LABAPP02$"
+    ]
+  },
+  "AD-OU-005": {
+    "status": "passed"
+  },
+  "AD-OU-006": {
+    "status": "failed",
+    "includes": [
+      "lab-svc-da",
+      "lab-breakglass"
+    ]
+  },
+  "AD-PRIV-010": {
+    "status": "failed",
+    "includes": [
+      "lab-nest3"
+    ]
+  },
+  "AD-PRIV-018": {
+    "status": "failed",
+    "includes": [
+      "lab-svc-da"
+    ]
+  },
+  "AD-PRIV-028": {
+    "status": "passed",
+    "found_contains": "1 Tier 0 asset"
+  },
+  "AD-PRIV-030": {
+    "status": "passed",
+    "found_contains": "1 break-glass account"
+  },
+  "AD-DC-032": {
+    "status": "passed",
+    "found_contains": "No read-only domain controllers"
+  },
+  "AD-PRIV-027": {
+    "status": "not_assessed"
+  },
+  "AD-IOC-003": {
+    "status": "not_assessed"
+  },
+  "AD-IOC-012": {
+    "status": "not_assessed"
+  },
+  "AD-GPO-010": {
+    "status": "failed",
+    "includes": [
+      "Default Domain Controllers Policy"
+    ]
+  },
+  "AD-GPO-012": {
+    "status": "failed",
+    "includes": [
+      "Credential Validation",
+      "Kerberos Authentication Service"
+    ]
+  },
+  "AD-GPO-013": {
+    "status": "failed",
+    "found_contains": "128 MB"
+  },
+  "AD-GPO-016": {
+    "status": "failed",
+    "includes": [
+      "Default Domain Controllers Policy",
+      "PrivateProfile"
+    ]
+  },
+  "AD-GPO-017": {
+    "status": "failed",
+    "includes": [
+      "LDAP signing required",
+      "SMB signing required (server)"
+    ]
+  },
+  "AD-GPO-020": {
+    "status": "passed",
+    "found_contains": "1 application control policy"
+  },
+  "AD-GPO-021": {
+    "status": "failed",
+    "includes": [
+      "Monitoring Agent"
+    ]
+  },
+  "AD-GPO-024": {
+    "status": "failed",
+    "includes": [
+      "Default Domain Policy"
+    ]
+  },
+  "AD-GPO-025": {
+    "status": "passed",
+    "found_contains": "1 GPO uses loopback"
+  },
+  "AD-GPO-030": {
+    "status": "failed",
+    "includes": [
+      "Do not store LAN Manager hash"
+    ]
+  },
+  "AD-SVC-005": {
+    "status": "failed",
+    "includes": [
+      "lab-svc-da"
+    ]
+  }
+}

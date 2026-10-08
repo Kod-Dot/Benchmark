@@ -1,0 +1,883 @@
+/* Shared pieces of the Benchmark theme: pill buttons and tabs, pastel
+   severity badges, rounded panels, dashboard charts, search pills and the
+   results workspace. */
+
+a {
+  color: var(--accent-ink);
+  text-decoration: none;
+}
+
+a:hover {
+  color: var(--accent-ink-hover);
+}
+
+.small {
+  font-size: 13px;
+}
+
+.spacer {
+  flex: 1 1 auto;
+}
+
+.btn {
+  height: 38px;
+  justify-content: center;
+  white-space: nowrap;
+  line-height: 1;
+  text-decoration: none;
+}
+
+a.btn {
+  color: var(--text);
+}
+
+.btn.sm {
+  height: 32px;
+  padding: 0 14px;
+  font-size: 13px;
+}
+
+.btn.ghost {
+  background: transparent;
+  border-color: transparent;
+}
+
+.btn.ghost:hover:not(:disabled) {
+  background: var(--surface);
+}
+
+/* Round icon-only button (edit, more, pin) */
+.btn.round {
+  width: 38px;
+  padding: 0;
+}
+
+.linkbtn {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--accent-ink);
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.linkbtn:hover {
+  color: var(--accent-ink-hover);
+}
+
+.linkbtn.plain {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.linkbtn.plain:hover {
+  color: var(--accent-ink);
+}
+
+/* Search: same height as buttons; the input flexes and the shortcut never squashes. */
+.search {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 42px;
+  padding: 0 8px 0 16px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-muted);
+  width: 320px;
+  max-width: 100%;
+}
+
+.search input[type='text'],
+.search input[type='search'] {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  margin: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font: inherit;
+  color: var(--text);
+}
+
+.search:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.kbd {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  height: 22px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 0 7px;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  color: var(--text-muted);
+  background: transparent;
+}
+
+select.select,
+.select {
+  height: 38px;
+  padding: 0 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface-raised);
+  color: var(--text);
+  font: inherit;
+}
+
+/* Segmented control: a pill track with the chosen option as a solid pill */
+.seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+}
+
+.seg button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.seg button:hover:not(.on) {
+  background: var(--surface-raised);
+}
+
+.seg button.on {
+  background: var(--pill);
+  color: var(--pill-fg);
+}
+
+.seg button.on .count {
+  color: inherit;
+}
+
+.seg.sm button {
+  height: 26px;
+  padding: 0 11px;
+  font-size: 13px;
+}
+
+/* Severity badge: pastel fill, dark text, icon and word. Readable without
+   colour and the same in both themes. */
+.sev {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 10px 0 7px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  line-height: 1;
+  background: var(--sev-info-bg);
+  color: var(--ink);
+}
+
+.sev.critical {
+  background: var(--sev-critical-bg);
+}
+
+.sev.high {
+  background: var(--sev-high-bg);
+}
+
+.sev.medium {
+  background: var(--sev-medium-bg);
+}
+
+.sev.low {
+  background: var(--sev-low-bg);
+}
+
+.sev.pass {
+  background: var(--ok-bg);
+}
+
+.sev.lg {
+  height: 30px;
+  padding: 0 12px 0 9px;
+  font-size: 13px;
+  gap: 6px;
+}
+
+/* Status pill: the same pill shape as the severity badge, for a check's
+   outcome (passed, accepted, not assessed). Readable without colour: each
+   carries its own icon and word. */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 10px 0 7px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  line-height: 1;
+  background: var(--surface-alt);
+  color: var(--text-muted);
+}
+
+.pill.failed {
+  background: var(--sev-critical-bg);
+  color: var(--ink);
+}
+
+.pill.passed {
+  background: var(--ok-bg);
+  color: var(--ink);
+}
+
+.pill.accepted {
+  background: var(--sev-medium-bg);
+  color: var(--ink);
+}
+
+.pill.not_assessed {
+  background: var(--surface-alt);
+  color: var(--text-muted);
+}
+
+.pill.lg {
+  height: 30px;
+  padding: 0 12px 0 9px;
+  font-size: 13px;
+  gap: 6px;
+}
+
+/* Change markers */
+.chg {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+
+.chg.new {
+  color: var(--sev-critical);
+  background: var(--sev-critical-soft);
+}
+
+.chg.fixed,
+.chg.better {
+  color: var(--ok);
+  background: var(--ok-soft);
+}
+
+.chg.worse {
+  color: var(--sev-high);
+  background: var(--sev-high-soft);
+}
+
+.chg.still_open {
+  color: var(--text-muted);
+  border-color: var(--border-strong);
+  background: var(--surface-alt);
+}
+
+.state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.state.ok {
+  color: var(--ok);
+}
+
+.state.partial {
+  color: var(--sev-high);
+}
+
+.state.failed {
+  color: var(--sev-critical);
+}
+
+.state.neutral {
+  color: var(--text-muted);
+}
+
+.flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  background: var(--surface-alt);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.flag.warn {
+  background: var(--sev-high-soft);
+  color: var(--sev-high);
+}
+
+.flag.crit {
+  background: var(--sev-critical-soft);
+  color: var(--sev-critical);
+  font-weight: 600;
+}
+
+.flag.ok {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  font-size: 12.5px;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.otype {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 10px;
+  background: var(--surface-alt);
+  color: var(--text-muted);
+  flex: none;
+}
+
+.otype.t0 {
+  background: var(--sev-critical-soft);
+  color: var(--sev-critical);
+}
+
+/* Tables sit in a rounded panel without outer lines */
+.t {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  background: var(--surface);
+  border: none;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.t th {
+  height: 40px;
+}
+
+.t thead th:first-child {
+  border-top-left-radius: var(--radius-md);
+}
+
+.t thead th:last-child {
+  border-top-right-radius: var(--radius-md);
+}
+
+.t td {
+  height: 46px;
+}
+
+.t tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.t tbody tr:hover td {
+  background: var(--surface-raised);
+}
+
+.t tr.selected td {
+  background: var(--accent-soft);
+}
+
+.t.flat {
+  border: none;
+}
+
+/* A table placed straight on a results page sits in the page's margins */
+.page > .scroll-x,
+.page > .t {
+  margin: 0 28px 0 8px;
+}
+
+.t .pl {
+  padding-left: 16px;
+}
+
+.t .pr {
+  padding-right: 16px;
+}
+
+.scroll-x {
+  overflow-x: auto;
+}
+
+/* Dashboard panels on a 12-column grid that stacks on narrow windows */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.panel {
+  background: var(--surface);
+  border: none;
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.panel-h {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 58px;
+  padding: 6px 22px 0;
+}
+
+.panel-h h4 {
+  flex: 1 1 auto;
+  margin: 0;
+  font-size: 17px;
+  font-weight: 500;
+}
+
+.panel-h > .icon {
+  color: var(--text-muted);
+}
+
+.panel-b {
+  padding: 14px 22px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1 1 auto;
+}
+
+.panel-b.flush {
+  padding: 0;
+}
+
+.s3 { grid-column: span 3; }
+.s4 { grid-column: span 4; }
+.s5 { grid-column: span 5; }
+.s6 { grid-column: span 6; }
+.s7 { grid-column: span 7; }
+.s8 { grid-column: span 8; }
+.s12 { grid-column: span 12; }
+
+@media (max-width: 1100px) {
+  .s3, .s4, .s5 { grid-column: span 6; }
+  .s6, .s7, .s8 { grid-column: span 12; }
+}
+
+@media (max-width: 760px) {
+  .grid > * { grid-column: span 12; }
+}
+
+.kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.kpi .value,
+.score-big {
+  font-family: var(--font-display);
+  font-size: 38px;
+  font-weight: 300;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.score-big {
+  font-size: 52px;
+}
+
+.kpi .label {
+  color: var(--text-muted);
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.delta-up {
+  color: var(--ok);
+  font-weight: 600;
+}
+
+.delta-down {
+  color: var(--sev-critical);
+  font-weight: 600;
+}
+
+.hbar {
+  display: grid;
+  grid-template-columns: 110px 1fr 44px;
+  align-items: center;
+  gap: 12px;
+}
+
+.hbar .track,
+.meter {
+  border-radius: 999px;
+  background: var(--surface-alt);
+  overflow: hidden;
+  display: flex;
+}
+
+.hbar .track {
+  height: 14px;
+}
+
+.meter {
+  height: 8px;
+}
+
+.hbar .track span,
+.meter span {
+  display: block;
+  height: 100%;
+}
+
+.heat {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(124px, 1fr));
+  gap: 6px;
+}
+
+.heat button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.heat button:hover {
+  border-color: var(--border-strong);
+}
+
+.heat .code {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text);
+}
+
+.heat .score {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  font-size: 15px;
+}
+
+.h-crit { background: var(--sev-critical-soft); }
+.h-high { background: var(--sev-high-soft); }
+.h-med { background: var(--sev-medium-soft); }
+.h-ok { background: var(--ok-soft); }
+.h-na { background: var(--surface-alt); }
+
+/* Definition rows */
+.kv {
+  display: grid;
+  grid-template-columns: minmax(140px, 220px) 1fr;
+  border-top: 1px solid var(--border);
+  margin: 0;
+}
+
+.kv dt,
+.kv dd {
+  margin: 0;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  min-width: 0;
+}
+
+.kv dt {
+  color: var(--text-muted);
+}
+
+.kv.tight dt,
+.kv.tight dd {
+  padding: 6px 0;
+  min-height: 34px;
+}
+
+.kv.wrap dd {
+  flex-wrap: wrap;
+  word-break: break-word;
+}
+
+/* Tabs: pills, the chosen one solid */
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 32px 12px;
+}
+
+.tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 16px;
+  color: var(--text-muted);
+  font: inherit;
+  font-weight: 500;
+  background: color-mix(in srgb, var(--surface) 60%, transparent);
+  border: none;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+}
+
+.tabs button:hover:not(.on) {
+  color: var(--text);
+  background: var(--surface);
+}
+
+.tabs button.on {
+  color: var(--pill-fg);
+  background: var(--pill);
+}
+
+.tabs button.on .count {
+  color: inherit;
+}
+
+.count {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.on > .count,
+.active > .count {
+  color: var(--text);
+}
+
+.codeblock {
+  display: block;
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: auto;
+}
+
+.notice-line {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 14px 18px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.empty-state {
+  padding: 48px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+/* Space for the rows a virtualized table does not render (lib/virtual.svelte.ts) */
+.t tr.gap td,
+.t tbody tr.gap:hover td {
+  padding: 0;
+  border: none;
+  background: none;
+}
+
+/* Clickable table rows reached with the keyboard (lib/rownav.ts) */
+tr.row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* Windows high contrast (forced colours). Charts and meters carry their data
+   in colour fills, which forced colours would erase, so they keep their own
+   colours, outlined in the system text colour. Text keeps the system colours. */
+@media (forced-colors: active) {
+  .bar,
+  .track,
+  .meter,
+  .gauge,
+  .key,
+  .legend .line,
+  .legend .before,
+  .legend .after,
+  .h-crit,
+  .h-high,
+  .h-med,
+  .h-ok,
+  .sev,
+  .folder {
+    forced-color-adjust: none;
+  }
+
+  .track,
+  .meter,
+  .sev {
+    outline: 1px solid CanvasText;
+  }
+
+  tr.row:focus-visible {
+    outline-color: Highlight;
+  }
+
+  /* Selected states are shown with tinted backgrounds, which forced colours remove. */
+  button.on,
+  button.active,
+  [aria-checked='true'],
+  [aria-pressed='true'],
+  [aria-current='page'] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+}
+
+/* Folder card: a tab on the top left joined to the body by a soft curve.
+   Used only in Directory telemetry, in lemon, sky and lilac. The colour
+   groups the content; it never carries severity. */
+.folder {
+  --tabc: var(--lemon);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  color: var(--ink);
+}
+
+.folder.sky {
+  --tabc: var(--sky);
+}
+
+.folder.lilac {
+  --tabc: var(--lilac);
+}
+
+.folder .tabrow {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.folder .ftab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 46px;
+  padding: 0 22px;
+  border-radius: 22px 22px 0 0;
+  background: var(--tabc);
+  font-size: 15.5px;
+  font-weight: 500;
+}
+
+.folder .ftab::after {
+  content: '';
+  position: absolute;
+  right: -22px;
+  bottom: 0;
+  width: 22px;
+  height: 22px;
+  background: radial-gradient(circle at 100% 0, transparent 21px, var(--tabc) 22px);
+}
+
+.folder .fbody {
+  flex: 1 1 auto;
+  background: var(--tabc);
+  border-radius: 0 26px 26px 26px;
+  padding: 16px 22px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.folder .fbody .muted,
+.folder .ftab .muted {
+  color: rgb(20 20 20 / 0.72);
+}
+
+.folder a,
+.folder .linkbtn {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* Rounded list item, the reference's "context call" row */
+.item {
+  background: var(--surface-raised);
+  border-radius: var(--radius-item);
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Striped fill for "not yet": checks not assessed, steps not started */
+.striped {
+  background: repeating-linear-gradient(90deg, var(--stripe) 0 2px, transparent 2px 6px);
+}

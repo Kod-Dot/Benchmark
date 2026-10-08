@@ -1,0 +1,405 @@
+# HY-SYNC: Entra Connect / Cloud Sync
+
+area = "HY-SYNC"
+
+[[check]]
+id = "HY-SYNC-001"
+title = "Sync engine version and support status"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Microsoft Entra Connect Sync is version 1 (retired) or older than 2.4. Read on the server itself (the identity part); add AD FS and sync servers to the endpoint targets."
+impact = "Old sync versions miss security fixes and can stop synchronizing when Microsoft retires them."
+remediation = [
+  "Upgrade Entra Connect Sync to the current version, or move to Cloud Sync.",
+]
+verify = "Get-ADSyncGlobalSettings; or the version in Programs and Features"
+
+[[check.detail.references]]
+title = "Entra Connect version history"
+url = "https://learn.microsoft.com/entra/identity/hybrid/connect/reference-connect-version-history"
+
+[[check]]
+id = "HY-SYNC-002"
+title = "Last sync cycle time and errors"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Directory synchronization is enabled for the tenant, but the last successful sync is more than 24 hours old."
+impact = "Changes made in on-premises Active Directory, such as disabling a leaver or removing someone from a group, do not reach Entra ID, so people keep cloud access they should have lost."
+attack = [
+  "Keeps the password of an account that has been disabled on-premises.",
+  "Signs in to Microsoft 365, where the account is still enabled because sync has stopped.",
+]
+remediation = [
+  "On the Microsoft Entra Connect server, check the Synchronization Service Manager and the scheduler with Get-ADSyncScheduler for errors and stopped cycles.",
+  "In the Entra admin center, go to Identity > Hybrid management > Microsoft Entra Connect and check the sync status and Connect Health alerts.",
+  "Fix the cause and run a sync cycle, then confirm the last sync time updates.",
+]
+verify = "Get-MgOrganization | Select-Object OnPremisesSyncEnabled, OnPremisesLastSyncDateTime"
+cvss = "AV:N/AC:H/PR:L/UI:N/S:U/C:L/I:L/A:N"
+mitre = ["T1078.004"]
+
+[[check.detail.references]]
+title = "Microsoft Entra Connect Sync: Scheduler"
+url = "https://learn.microsoft.com/entra/identity/hybrid/connect/how-to-connect-sync-feature-scheduler"
+
+[[check]]
+id = "HY-SYNC-003"
+title = "Sync server treated as Tier 0 (who is local admin, who can log on)"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "The Entra Connect Sync server is not in AD's Tier 0, or a local administrator or an interactive sign-in on it is not Tier 0. Read on the server itself (the identity part); add AD FS and sync servers to the endpoint targets."
+impact = "The sync server holds the credentials to change AD and Entra ID; whoever controls it can take over both."
+remediation = [
+  "Treat the sync server as a domain controller: Tier 0 OU, Tier 0 admins only, no other software or logons.",
+]
+verify = "Get-LocalGroupMember Administrators on the sync server"
+mitre = ["T1078.002"]
+
+[[check.detail.references]]
+title = "Protect Entra Connect"
+url = "https://learn.microsoft.com/entra/identity/hybrid/connect/reference-connect-accounts-permissions"
+
+[[check]]
+id = "HY-SYNC-004"
+title = "AD DS connector account (MSOL_xxx) permissions too broad (DCSync, write on admins)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "The Microsoft Entra Connect AD DS connector account (MSOL_ account, or an account whose description says it was created by Azure AD Connect or Entra Connect) is a member of an AD admin group, or holds full control, write, owner, add member, reset password or msDS-KeyCredentialLink write rights over Tier 0 objects. DCSync rights on the domain are expected for password hash sync and are shown as evidence only; they make the sync server Tier 0."
+impact = "The connector account password is stored on the sync server. Anyone who gets local admin on that server can use the account to take over Domain Admins or other Tier 0 accounts, on top of the DCSync rights it already has."
+attack = [
+  "Gets local admin on the Microsoft Entra Connect server.",
+  "Extracts the AD DS connector account credentials from the sync configuration.",
+  "Uses the account's rights to reset a Domain Admin password, add itself to an admin group or write a shadow credential to a Tier 0 account.",
+]
+remediation = [
+  "Remove the connector account from AD admin groups after confirming which rights sync, writeback and Exchange hybrid really need.",
+  "Set the account's permissions with the ADSyncConfig module (for example Set-ADSyncRestrictedPermissions and the Set-ADSync*Permissions cmdlets) instead of broad delegations, and remove leftover ACEs on Tier 0 objects and AdminSDHolder.",
+  "Treat the sync server as Tier 0: limit local admins and logons to Tier 0 administrators.",
+]
+verify = "Get-ADUser -Filter \"SamAccountName -like 'MSOL_*'\" -Properties MemberOf | Select-Object SamAccountName, MemberOf; (Get-Acl \"AD:CN=AdminSDHolder,CN=System,$((Get-ADDomain).DistinguishedName)\").Access | Where-Object IdentityReference -like '*MSOL_*'"
+cvss = "AV:N/AC:L/PR:H/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1003.006", "T1098", "T1078.002"]
+
+[[check.detail.references]]
+title = "Microsoft Entra Connect: Accounts and permissions"
+url = "https://learn.microsoft.com/entra/identity/hybrid/connect/reference-connect-accounts-permissions"
+
+[[check.detail.references]]
+title = "Microsoft Entra Connect: Configure AD DS Connector account permissions"
+url = "https://learn.microsoft.com/entra/identity/hybrid/connect/how-to-connect-configure-ad-ds-connector-account"
+
+[[check]]
+id = "HY-SYNC-005"
+title = "AD DS connector account password age"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "The password of the Microsoft Entra Connect AD DS connector account is older than 365 days."
+impact = "The connector account usually has DCSync rights. A password that never changes stays valid in old backups, exported configurations and copies taken from current or retired sync servers, so a leak from years ago still works."
+attack = [
+  "Recovers the connector account password from an old sync server, backup or exported configuration.",
+  "Uses it to replicate password hashes from a domain controller with DCSync.",
+]
+remediation = [
+  "Plan a change window: changing the password in AD alone breaks sync until it is also updated in Microsoft Entra Connect.",
+  "Change the password in AD, then update it in the Synchronization Service Manager (Connectors > AD connector > Properties) and run a sync cycle to confirm it works.",
+  "Record the rotation and repeat it at least once a year.",
+]
+verify = "Get-ADUser -Filter \"SamAccountName -like 'MSOL_*'\" -Properties PasswordLastSet, Description | Select-Object SamAccountName, PasswordLastSet, Description"
+cvss = "AV:N/AC:H/PR:L/UI:N/S:U/C:H/I:H/A:N"
+mitre = ["T1078.002", "T1003.006"]
+
+[[check.detail.references]]
+title = "Changing the AD DS connector account password"
+url = "https://learn.microsoft.com/entra/identity/hybrid/connect/how-to-connect-sync-change-addsacct-pass"
+
+[[check.detail.references]]
+title = "Microsoft Entra Connect: Accounts and permissions"
+url = "https://learn.microsoft.com/entra/identity/hybrid/connect/reference-connect-accounts-permissions"
+
+[[check]]
+id = "HY-SYNC-006"
+title = "Entra connector account (Sync_xxx) / Directory Synchronization Accounts role"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "An account that holds the Entra Directory Synchronization Accounts role has not signed in for more than 30 days. It is likely left over from a retired or rebuilt sync server and still holds a privileged role."
+impact = "The Directory Synchronization Accounts role can write to synchronized users and groups in the tenant. An unused account with this role is a credential nobody watches, and its password may still sit on an old server or backup."
+attack = [
+  "Recovers the Entra connector account credentials from a decommissioned sync server or its backup.",
+  "Signs in with the account and uses its synchronization rights to change synchronized users or groups.",
+]
+remediation = [
+  "Confirm the account is not used by any active Microsoft Entra Connect or Cloud Sync server (compare with the Sync_<server> name of the current servers).",
+  "Remove the role assignment and delete the unused account.",
+  "Keep only the connector accounts of active sync servers in the role.",
+]
+verify = "$r = Get-MgDirectoryRole -Filter \"displayName eq 'Directory Synchronization Accounts'\"; Get-MgDirectoryRoleMember -DirectoryRoleId $r.Id | ForEach-Object { Get-MgUser -UserId $_.Id -Property displayName,userPrincipalName,signInActivity | Select-Object DisplayName, UserPrincipalName, @{n='LastSignIn';e={$_.SignInActivity.LastSignInDateTime}} }"
+cvss = "AV:N/AC:H/PR:L/UI:N/S:U/C:H/I:H/A:N"
+mitre = ["T1078.004", "T1098"]
+
+[[check.detail.references]]
+title = "Microsoft Entra Connect: Accounts and permissions"
+url = "https://learn.microsoft.com/entra/identity/hybrid/connect/reference-connect-accounts-permissions"
+
+[[check.detail.references]]
+title = "Microsoft Entra built-in roles"
+url = "https://learn.microsoft.com/entra/identity/role-based-access-control/permissions-reference"
+
+[[check]]
+id = "HY-SYNC-007"
+title = "Privileged on-prem accounts synced to Entra"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "An AD account that is a member of an AD admin group (Domain Admins, Enterprise Admins, Administrators, Schema Admins and similar) is synchronized to Entra ID, matched by its on-premises SID."
+impact = "The domain admin credential is now also usable in the cloud, where it can be phished or sprayed from the internet. A compromise of the cloud identity, for example through a stolen session or weak MFA, can lead back to the domain."
+attack = [
+  "Finds the synchronized cloud account of a domain admin.",
+  "Phishes or sprays the password against Entra ID and gets a valid credential.",
+  "Uses the same password on-premises to log on as a domain admin.",
+]
+remediation = [
+  "Give administrators separate accounts: a Tier 0 AD account that is not synchronized and a normal user account for cloud use.",
+  "Exclude Tier 0 accounts from sync with OU or attribute filtering, after confirming the account does not need cloud access.",
+  "Check that removing the account from sync scope does not delete mailboxes or licenses the person still needs (the cloud object is soft-deleted).",
+]
+verify = "Get-ADGroupMember 'Domain Admins' -Recursive | ForEach-Object { Get-MgUser -Filter \"onPremisesSecurityIdentifier eq '$($_.SID)'\" -Property userPrincipalName,onPremisesSecurityIdentifier }"
+cvss = "AV:N/AC:L/PR:H/UI:N/S:C/C:H/I:H/A:N"
+mitre = ["T1078.002", "T1078.004", "T1556.007"]
+
+[[check.detail.references]]
+title = "Protecting Microsoft 365 from on-premises attacks"
+url = "https://learn.microsoft.com/entra/architecture/protect-m365-from-on-premises-attacks"
+
+[[check.detail.references]]
+title = "Microsoft Entra Connect Sync: Configure filtering"
+url = "https://learn.microsoft.com/entra/identity/hybrid/connect/how-to-connect-sync-configure-filtering"
+
+[[check]]
+id = "HY-SYNC-008"
+title = "Sync scope: Tier 0 OUs synced unnecessarily"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Tier 0 AD groups (Domain Admins, Enterprise Admins, Administrators and similar) are synchronized to Entra ID as groups."
+impact = "The membership of the most sensitive groups becomes visible to every tenant user, and the synced groups can be used by mistake in Conditional Access, app assignments or role assignments, linking cloud access to Tier 0 membership."
+attack = [
+  "Reads the synced Domain Admins group in Entra ID to list the domain's administrators.",
+  "Targets those people with phishing in the cloud.",
+]
+remediation = [
+  "Check whether the synced groups are used anywhere in the tenant (app assignments, Conditional Access, licensing) before changing scope.",
+  "Exclude the Tier 0 groups from sync, for example by moving sync scope away from the Users container or adding a filtering rule.",
+  "Run a sync cycle and confirm the groups are removed from Entra ID.",
+]
+verify = "Get-MgGroup -All -Property displayName,onPremisesSyncEnabled,onPremisesSecurityIdentifier | Where-Object { $_.OnPremisesSyncEnabled -and $_.OnPremisesSecurityIdentifier -match '-(512|518|519|544)$' } | Select-Object DisplayName, OnPremisesSecurityIdentifier"
+cvss = "AV:N/AC:H/PR:H/UI:N/S:U/C:L/I:L/A:N"
+mitre = ["T1069.003", "T1078.004"]
+
+[[check.detail.references]]
+title = "Microsoft Entra Connect Sync: Configure filtering"
+url = "https://learn.microsoft.com/entra/identity/hybrid/connect/how-to-connect-sync-configure-filtering"
+
+[[check.detail.references]]
+title = "Protecting Microsoft 365 from on-premises attacks"
+url = "https://learn.microsoft.com/entra/architecture/protect-m365-from-on-premises-attacks"
+
+[[check]]
+id = "HY-SYNC-009"
+title = "Password writeback enabled and its permission scope (can reset privileged on-prem accounts)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Password writeback is enabled in the tenant and the AD DS connector account can reset passwords of, or has full control over, Tier 0 accounts in AD."
+impact = "A password reset in the cloud, or anyone holding the connector account credentials, can set the password of a domain admin. This makes the cloud and the sync server a path into Tier 0."
+attack = [
+  "Gets the connector account credentials from the sync server, or control of a synced Tier 0 user in Entra ID.",
+  "Resets the password of a Tier 0 account through writeback or directly with the connector account.",
+  "Logs on to a domain controller with the new password.",
+]
+remediation = [
+  "Limit the connector account's reset password right to the OUs that hold normal users, with Set-ADSyncPasswordWritebackPermissions on those OUs only.",
+  "Remove reset password and full control rights on Tier 0 objects and AdminSDHolder after confirming nothing else depends on them.",
+  "Keep Tier 0 accounts out of sync scope so they cannot be reset from the cloud.",
+]
+verify = "On the sync server run Get-ADSyncAADCompanyFeature and check PasswordWriteBack, then run (Get-Acl \"AD:CN=AdminSDHolder,CN=System,$((Get-ADDomain).DistinguishedName)\").Access | Where-Object IdentityReference -like '*MSOL_*'"
+cvss = "AV:N/AC:L/PR:H/UI:N/S:C/C:H/I:H/A:N"
+mitre = ["T1098", "T1556.007", "T1078.002"]
+
+[[check.detail.references]]
+title = "How does self-service password reset writeback work in Microsoft Entra ID?"
+url = "https://learn.microsoft.com/entra/identity/authentication/concept-sspr-writeback"
+
+[[check.detail.references]]
+title = "Microsoft Entra Connect: Accounts and permissions"
+url = "https://learn.microsoft.com/entra/identity/hybrid/connect/reference-connect-accounts-permissions"
+
+[[check]]
+id = "HY-SYNC-010"
+title = "Device writeback / group writeback scope"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Group writeback or device writeback is on in Entra Connect Sync. Read on the server itself (the identity part); add AD FS and sync servers to the endpoint targets."
+impact = "Cloud group owners and admins then decide memberships of groups written into AD, so AD permissions depend on cloud accounts."
+remediation = [
+  "Turn off writeback that is not needed, and scope it to an OU that no Tier 0 permission depends on.",
+]
+verify = "Get-ADSyncAADCompanyFeature"
+
+[[check.detail.references]]
+title = "Group writeback"
+url = "https://learn.microsoft.com/entra/identity/hybrid/connect/how-to-connect-group-writeback-v2"
+
+[[check]]
+id = "HY-SYNC-011"
+title = "Hard match / soft match takeover protection (BlockSoftMatch, BlockCloudObjectTakeoverThroughHardMatch)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Soft match or hard match takeover protection is off: blockSoftMatchEnabled or blockCloudObjectTakeoverThroughHardMatchEnabled is false in the directory synchronization features. A synchronized on-premises object can be joined to an existing cloud account."
+impact = "Someone who can create or edit users in on-premises Active Directory can take over an existing cloud-only account, including a cloud administrator, by matching its UPN, proxy address or immutable ID."
+attack = [
+  "Creates or edits an on-premises user so its proxyAddresses, UPN or sourceAnchor match a cloud-only administrator.",
+  "Waits for the sync cycle to join the on-premises object to the cloud account.",
+  "Sets the password on-premises and signs in to Entra ID as the cloud administrator.",
+]
+remediation = [
+  "Turn on blockSoftMatchEnabled and blockCloudObjectTakeoverThroughHardMatchEnabled on the tenant's onPremisesSynchronization features with Microsoft Graph.",
+  "When an object really needs to be matched, turn soft match on only for the duration of that migration.",
+]
+verify = "Invoke-MgGraphRequest -Method GET 'https://graph.microsoft.com/v1.0/directory/onPremisesSynchronization'"
+cvss = "AV:N/AC:L/PR:H/UI:N/S:C/C:H/I:H/A:N"
+mitre = ["T1098", "T1078.004", "T1556.007"]
+
+[[check.detail.references]]
+title = "Microsoft Entra Connect: When you have an existing tenant"
+url = "https://learn.microsoft.com/entra/identity/hybrid/connect/how-to-connect-install-existing-tenant"
+
+[[check.detail.references]]
+title = "Microsoft Entra Connect Sync service features"
+url = "https://learn.microsoft.com/entra/identity/hybrid/connect/how-to-connect-syncservice-features"
+
+[[check]]
+id = "HY-SYNC-012"
+title = "Staging server configuration consistency"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "More than one sync server is active, none is, or a staging server runs a different version or different features from the active one. Read on the server itself (the identity part); add AD FS and sync servers to the endpoint targets."
+impact = "Two active servers fight over the directory; a mismatched staging server cannot take over cleanly in a disaster."
+remediation = [
+  "Keep one active server and a staging server on the same version and configuration.",
+]
+verify = "Get-ADSyncScheduler | Select-Object StagingModeEnabled on each server"
+
+[[check.detail.references]]
+title = "Staging server"
+url = "https://learn.microsoft.com/entra/identity/hybrid/connect/how-to-connect-sync-staging-server"
+
+[[check]]
+id = "HY-SYNC-013"
+title = "Cloud Sync agents inventory and gMSA used"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "A Cloud Sync provisioning agent does not run as a gMSA, or runs on a server that is not Tier 0. Read on the server itself (the identity part); add AD FS and sync servers to the endpoint targets."
+impact = "The agent's account writes to AD; a password-based account or a lower-tier server exposes it."
+remediation = [
+  "Reinstall the agent with a gMSA and keep it on Tier 0 servers.",
+]
+verify = "Get-CimInstance Win32_Service -Filter \"Name='AADConnectProvisioningAgent'\" | Select-Object StartName"
+
+[[check.detail.references]]
+title = "Cloud Sync gMSA"
+url = "https://learn.microsoft.com/entra/identity/hybrid/cloud-sync/how-to-prerequisites"
+
+[[check]]
+id = "HY-SYNC-014"
+title = "Seamless SSO enabled and AZUREADSSOACC key rollover age"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Seamless SSO is set up (the AZUREADSSOACC computer account exists in AD) and the account password, which is the Kerberos decryption key shared with Entra ID, is older than 30 days."
+impact = "Anyone who obtains the AZUREADSSOACC key can forge Kerberos tickets for any synchronized user and sign in to Entra ID as them. An old key gives a stolen copy a long useful life."
+attack = [
+  "Obtains the AZUREADSSOACC password hash, for example with DCSync.",
+  "Forges a Kerberos service ticket for a chosen synchronized user.",
+  "Exchanges the ticket for an Entra ID sign-in as that user.",
+]
+remediation = [
+  "Roll over the Kerberos decryption key with Update-AzureADSSOForest from the AzureADSSO module on the Microsoft Entra Connect server.",
+  "Repeat the rollover at least every 30 days.",
+  "If Seamless SSO is no longer needed, turn it off in Microsoft Entra Connect and then remove the AZUREADSSOACC account.",
+]
+verify = "Get-ADComputer AZUREADSSOACC -Properties PasswordLastSet | Select-Object Name, PasswordLastSet"
+cvss = "AV:N/AC:H/PR:H/UI:N/S:U/C:H/I:H/A:N"
+mitre = ["T1558", "T1556.007", "T1078.004"]
+
+[[check.detail.references]]
+title = "Microsoft Entra Seamless single sign-on: Frequently asked questions"
+url = "https://learn.microsoft.com/entra/identity/hybrid/connect/how-to-connect-sso-faq"
+
+[[check]]
+id = "HY-SYNC-015"
+title = "Pass-through Authentication agents inventory and placement"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "A pass-through authentication agent runs on a server that is not Tier 0. Read on the server itself (the identity part); add AD FS and sync servers to the endpoint targets."
+impact = "Each agent sees the clear-text password of every cloud sign-in it validates; whoever controls the server can read them."
+remediation = [
+  "Run pass-through agents only on Tier 0 servers (domain controllers or dedicated Tier 0 servers), at least three for resilience.",
+]
+verify = "Entra admin center > Entra Connect > Pass-through authentication agents"
+mitre = ["T1556"]
+
+[[check.detail.references]]
+title = "Pass-through authentication security"
+url = "https://learn.microsoft.com/entra/identity/hybrid/connect/how-to-connect-pta-security-deep-dive"
+
+[[check]]
+id = "HY-SYNC-016"
+title = "Attribute filtering and duplicate attribute resiliency errors"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Synchronized users or groups in Entra ID have on-premises provisioning errors, for example a duplicate UPN or a proxyAddresses conflict."
+impact = "Affected objects are not fully synchronized: changes made on-premises may not reach Entra ID, and an object can sign in or receive mail under an unexpected address."
+attack = [
+  "Creates an on-premises object with a proxy address or UPN that conflicts with an existing user.",
+  "Relies on the conflict going unnoticed to receive mail or cause confusion about which account is real.",
+]
+remediation = [
+  "Review the errors in Microsoft Entra Connect Health or with Get-MgUser and onPremisesProvisioningErrors.",
+  "Fix the conflicting attribute on the right on-premises object after confirming which object should own it.",
+  "Run a sync cycle and confirm the errors clear.",
+]
+verify = "Get-MgUser -All -Property userPrincipalName,onPremisesProvisioningErrors | Where-Object { $_.OnPremisesProvisioningErrors } | Select-Object UserPrincipalName, OnPremisesProvisioningErrors"
+cvss = "AV:N/AC:H/PR:L/UI:N/S:U/C:N/I:L/A:L"
+mitre = ["T1078.004"]
+
+[[check.detail.references]]
+title = "Identity synchronization and duplicate attribute resiliency"
+url = "https://learn.microsoft.com/entra/identity/hybrid/connect/how-to-connect-syncservice-duplicate-attribute-resiliency"

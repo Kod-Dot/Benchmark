@@ -1,0 +1,757 @@
+# AD-PKI: AD Certificate Services
+
+area = "AD-PKI"
+
+[[check]]
+id = "AD-PKI-001"
+title = "Enterprise CAs inventory and operating system support"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Lists every enterprise CA published under Enrollment Services, with its host name and the expiry date of its CA certificate. The operating system is read from the operatingSystem attribute of the CA's computer object. A CA whose computer object reports Windows Server 2003, 2008 or 2012 is flagged as out of support. Patch level and installed updates are not read."
+impact = "A CA on an unsupported Windows Server version no longer receives security updates, including fixes for AD CS flaws. Whoever takes control of a CA host can use its private key to issue certificates that sign in as any account in the forest."
+attack = [
+  "Finds the enterprise CA hosts in the Enrollment Services container.",
+  "Exploits a vulnerability that is no longer patched on the CA's operating system.",
+  "Uses the CA's private key to issue a sign-in certificate for a Domain Admin.",
+]
+remediation = [
+  "Migrate each flagged CA to a supported Windows Server version.",
+  "Until then, treat the CA host as Tier 0: restrict who can sign in to it and isolate it on the network.",
+  "Remove Enrollment Services objects for CAs that have been decommissioned so the inventory stays accurate.",
+]
+frameworks = [
+  "NIST 800-53 SI-2",
+  "NIST 800-53 CM-8",
+]
+verify = '''
+$cfg = (Get-ADRootDSE).configurationNamingContext
+Get-ADObject -SearchBase "CN=Enrollment Services,CN=Public Key Services,CN=Services,$cfg" -Filter * -Properties dNSHostName |
+  Where-Object dNSHostName | ForEach-Object { Get-ADComputer -Filter "dNSHostName -eq '$($_.dNSHostName)'" -Properties operatingSystem } |
+  Select-Object Name, dNSHostName, operatingSystem'''
+mitre = ["T1649", "T1068"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1649: Steal or Forge Authentication Certificates"
+url = "https://attack.mitre.org/techniques/T1649/"
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1068: Exploitation for Privilege Escalation"
+url = "https://attack.mitre.org/techniques/T1068/"
+
+[[check]]
+id = "AD-PKI-002"
+title = "ESC1: templates allowing enrollee-supplied subject with client auth EKU and low-priv enrollment"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "A certificate template published on an enterprise CA lets the requester write any name into the subject, the certificates it issues can be used to sign in (Client Authentication, PKINIT, Smart Card Logon, Any Purpose or no usage restriction), and principals other than admins and Tier 0 can enroll without manager approval or an authorized signature. A domain controller maps such a certificate to the account it names, so the template issues sign-in certificates for any account."
+impact = "Any principal with Enroll can request a certificate in the name of a Domain Admin and sign in as that admin. The certificate stays valid for its lifetime even after the admin changes their password."
+attack = [
+  "Signs in as any user who can enroll and lists the templates they can use.",
+  "Requests a certificate on the template with a Domain Admin's UPN in the subject alternative name.",
+  "Uses the certificate to request a Kerberos ticket (PKINIT) as that Domain Admin.",
+]
+remediation = [
+  "In the Certificate Templates console, open the template, Subject Name tab, and select Build from this Active Directory information.",
+  "On the Security tab, remove Enroll for broad groups such as Domain Users and Authenticated Users; grant it only to the group that needs the template.",
+  "If the template is unused, remove it from every CA instead.",
+  "Revoke certificates already issued from the template whose subject does not match the requester.",
+]
+frameworks = [
+  "ANSSI vuln1_adcs_template_auth_enroll_with_name",
+  "NIST 800-53 AC-6",
+]
+verify = '''
+Get-ADObject -SearchBase "CN=Certificate Templates,CN=Public Key Services,CN=Services,$((Get-ADRootDSE).configurationNamingContext)" -Filter * -Properties msPKI-Certificate-Name-Flag |
+  Where-Object { $_.'msPKI-Certificate-Name-Flag' -band 1 } | Select-Object Name'''
+cvss = "AV:N/AC:L/PR:L/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1649", "T1078.002", "T1550"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1649: Steal or Forge Authentication Certificates"
+url = "https://attack.mitre.org/techniques/T1649/"
+
+[[check.detail.references]]
+title = "KB5014754: Certificate-based authentication changes on Windows domain controllers"
+url = "https://support.microsoft.com/help/5014754"
+
+[[check.detail.references]]
+title = "Certified Pre-Owned: Abusing Active Directory Certificate Services (SpecterOps, 2021)"
+url = "https://specterops.io/wp-content/uploads/sites/3/2022/06/Certified_Pre-Owned.pdf"
+
+[[check]]
+id = "AD-PKI-003"
+title = "ESC2: Any Purpose / no EKU templates enrollable by low-priv users"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "A certificate template published on an enterprise CA issues certificates with the Any Purpose usage or with no usage restriction at all, and principals other than admins and Tier 0 can enroll without manager approval or an authorized signature. Such a certificate is accepted for client authentication and can also act as an enrollment agent certificate."
+impact = "An enrollee can use the certificate to sign in, and can use it as an enrollment agent to request certificates on behalf of other users, including Domain Admins. A certificate with no usage restriction can also be used as a subordinate CA certificate in some trust paths."
+attack = [
+  "Signs in as any user who can enroll and requests a certificate on the template.",
+  "Uses the certificate as an enrollment agent to request a certificate on behalf of a Domain Admin.",
+  "Uses that certificate to request a Kerberos ticket (PKINIT) as the Domain Admin.",
+]
+remediation = [
+  "In the Certificate Templates console, open the template, Extensions tab, and replace Any Purpose or the empty usage list with only the usages the template needs.",
+  "On the Security tab, remove Enroll for broad groups such as Domain Users and Authenticated Users.",
+  "If the template is unused, remove it from every CA.",
+]
+frameworks = [
+  "NIST 800-53 AC-6",
+  "NIST 800-53 IA-5",
+]
+verify = '''
+Get-ADObject -SearchBase "CN=Certificate Templates,CN=Public Key Services,CN=Services,$((Get-ADRootDSE).configurationNamingContext)" -Filter * -Properties pKIExtendedKeyUsage, msPKI-Certificate-Application-Policy |
+  Where-Object { -not $_.pKIExtendedKeyUsage -or $_.pKIExtendedKeyUsage -contains '2.5.29.37.0' } |
+  Select-Object Name, pKIExtendedKeyUsage, msPKI-Certificate-Application-Policy'''
+cvss = "AV:N/AC:L/PR:L/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1649", "T1078.002", "T1550"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1649: Steal or Forge Authentication Certificates"
+url = "https://attack.mitre.org/techniques/T1649/"
+
+[[check.detail.references]]
+title = "Certified Pre-Owned: Abusing Active Directory Certificate Services (SpecterOps, 2021)"
+url = "https://specterops.io/wp-content/uploads/sites/3/2022/06/Certified_Pre-Owned.pdf"
+
+[[check]]
+id = "AD-PKI-004"
+title = "ESC3: Enrollment agent templates"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "A certificate template published on an enterprise CA issues Certificate Request Agent certificates, and principals other than admins and Tier 0 can enroll without manager approval or an authorized signature. A Certificate Request Agent certificate lets its holder request certificates on behalf of other users."
+impact = "An enrollee gets an enrollment agent certificate and uses it to request a sign-in certificate for a Domain Admin on any template that accepts enrollment agents, such as the default User template. Unless the CA restricts enrollment agents, this gives full control of the domain."
+attack = [
+  "Signs in as any user who can enroll and requests a Certificate Request Agent certificate on the template.",
+  "Uses it to co-sign a request on behalf of a Domain Admin on an authentication template.",
+  "Uses the resulting certificate to request a Kerberos ticket (PKINIT) as that Domain Admin.",
+]
+remediation = [
+  "On the template's Security tab, grant Enroll only to the named enrollment agents who need it.",
+  "On the Issuance Requirements tab, require CA certificate manager approval.",
+  "On each CA, configure restricted enrollment agents so agents can enroll only for specific users and templates.",
+  "If the template is unused, remove it from every CA.",
+]
+frameworks = [
+  "NIST 800-53 AC-6",
+  "NIST 800-53 IA-5",
+]
+verify = '''
+Get-ADObject -SearchBase "CN=Certificate Templates,CN=Public Key Services,CN=Services,$((Get-ADRootDSE).configurationNamingContext)" -Filter * -Properties pKIExtendedKeyUsage, msPKI-Certificate-Application-Policy, msPKI-Enrollment-Flag, msPKI-RA-Signature |
+  Where-Object { $_.pKIExtendedKeyUsage -contains '1.3.6.1.4.1.311.20.2.1' -or $_.'msPKI-Certificate-Application-Policy' -contains '1.3.6.1.4.1.311.20.2.1' } |
+  Select-Object Name, msPKI-Enrollment-Flag, msPKI-RA-Signature'''
+cvss = "AV:N/AC:L/PR:L/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1649", "T1078.002", "T1550"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1649: Steal or Forge Authentication Certificates"
+url = "https://attack.mitre.org/techniques/T1649/"
+
+[[check.detail.references]]
+title = "Certified Pre-Owned: Abusing Active Directory Certificate Services (SpecterOps, 2021)"
+url = "https://specterops.io/wp-content/uploads/sites/3/2022/06/Certified_Pre-Owned.pdf"
+
+[[check]]
+id = "AD-PKI-005"
+title = "ESC4: Certificate templates writable by non-admins"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "A certificate template can be changed by a principal other than admins and Tier 0: the principal owns the template, or has full control, permission to modify permissions, permission to take ownership, or write access to all or some of its properties. All templates are checked, published or not."
+impact = "A principal who can change a template can turn it into an ESC1 template: let the enrollee supply the subject, add client authentication, remove approval and grant themselves Enroll. They then request a certificate as a Domain Admin. An unpublished template is only one step from use, since publishing it needs a CA admin."
+attack = [
+  "Finds a template on which a controlled account has write rights.",
+  "Changes the template to allow an enrollee-supplied subject with client authentication and grants itself Enroll.",
+  "Requests a certificate as a Domain Admin and signs in with it, then restores the template.",
+]
+remediation = [
+  "On each flagged template's Security tab, remove Full Control, Write, and Modify permissions for everyone except PKI admins.",
+  "Set the owner of each template to Enterprise Admins or a dedicated PKI admin group.",
+  "Monitor changes to certificate template objects in the directory service change audit log.",
+]
+frameworks = [
+  "NIST 800-53 AC-6",
+  "NIST 800-53 AC-3",
+]
+verify = '''
+$base = "CN=Certificate Templates,CN=Public Key Services,CN=Services,$((Get-ADRootDSE).configurationNamingContext)"
+Get-ADObject -SearchBase $base -Filter * -Properties nTSecurityDescriptor | ForEach-Object {
+  $t = $_.Name
+  $_.nTSecurityDescriptor.Access | Where-Object { $_.AccessControlType -eq 'Allow' -and $_.ActiveDirectoryRights -match 'GenericAll|GenericWrite|WriteDacl|WriteOwner|WriteProperty' } |
+    Select-Object @{n='Template';e={$t}}, IdentityReference, ActiveDirectoryRights
+}'''
+cvss = "AV:N/AC:L/PR:L/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1649", "T1078.002"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1649: Steal or Forge Authentication Certificates"
+url = "https://attack.mitre.org/techniques/T1649/"
+
+[[check.detail.references]]
+title = "Certified Pre-Owned: Abusing Active Directory Certificate Services (SpecterOps, 2021)"
+url = "https://specterops.io/wp-content/uploads/sites/3/2022/06/Certified_Pre-Owned.pdf"
+
+[[check]]
+id = "AD-PKI-006"
+title = "ESC5: Writable PKI objects (CA objects, NTAuth, AIA, CDP and other Public Key Services containers)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "An object under CN=Public Key Services in the configuration partition, other than a certificate template or an issuance policy object, can be changed by a principal other than admins and Tier 0. This covers the enterprise CA objects, the NTAuthCertificates store, and the AIA, CDP, Certification Authorities and Enrollment Services containers. The principal owns the object, or has full control, permission to modify permissions, permission to take ownership, or write access to its properties. The CA host's computer object and the CA's own registry are not read."
+impact = "Write access to these objects lets an attacker add a rogue CA to the NTAuth store or to the trusted roots, publish templates on a CA, or redirect where certificates and revocation lists are fetched. Adding a CA they control to NTAuth lets them forge a sign-in certificate for any account."
+attack = [
+  "Finds a PKI object on which a controlled account has write rights.",
+  "Adds a certificate for a CA it controls to the NTAuthCertificates store, or changes an enterprise CA object's published templates.",
+  "Forges or requests a certificate for a Domain Admin and signs in with it.",
+]
+remediation = [
+  "On each flagged object, remove write, Modify permissions and Take ownership rights for everyone except PKI admins (use ADSI Edit on the configuration partition).",
+  "Set the owner of each object to Enterprise Admins.",
+  "Audit changes to objects under CN=Public Key Services.",
+]
+frameworks = [
+  "NIST 800-53 AC-6",
+  "NIST 800-53 AC-3",
+]
+verify = '''
+$base = "CN=Public Key Services,CN=Services,$((Get-ADRootDSE).configurationNamingContext)"
+Get-ADObject -SearchBase $base -Filter { objectClass -ne 'pKICertificateTemplate' -and objectClass -ne 'msPKI-Enterprise-Oid' } -Properties nTSecurityDescriptor | ForEach-Object {
+  $o = $_.DistinguishedName
+  $_.nTSecurityDescriptor.Access | Where-Object { $_.AccessControlType -eq 'Allow' -and $_.ActiveDirectoryRights -match 'GenericAll|GenericWrite|WriteDacl|WriteOwner|WriteProperty' } |
+    Select-Object @{n='Object';e={$o}}, IdentityReference, ActiveDirectoryRights
+}'''
+cvss = "AV:N/AC:L/PR:L/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1649", "T1556"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1649: Steal or Forge Authentication Certificates"
+url = "https://attack.mitre.org/techniques/T1649/"
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1556: Modify Authentication Process"
+url = "https://attack.mitre.org/techniques/T1556/"
+
+[[check.detail.references]]
+title = "Certified Pre-Owned: Abusing Active Directory Certificate Services (SpecterOps, 2021)"
+url = "https://specterops.io/wp-content/uploads/sites/3/2022/06/Certified_Pre-Owned.pdf"
+
+[[check]]
+id = "AD-PKI-007"
+title = "ESC6: EDITF_ATTRIBUTESUBJECTALTNAME2 on CA"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "A CA has EDITF_ATTRIBUTESUBJECTALTNAME2 set in its policy module, so it puts subject alternative names from request attributes into certificates (ESC6)."
+impact = "Any user who can enroll in a template that allows client authentication can request a certificate for any account, including a domain admin, and sign in as it."
+remediation = [
+  "Turn the flag off: certutil -setreg policy\\EditFlags -EDITF_ATTRIBUTESUBJECTALTNAME2, then restart Certificate Services.",
+  "Apply the May 2022 updates and full certificate mapping enforcement on DCs.",
+]
+verify = "certutil -getreg policy\\EditFlags"
+cvss = "AV:N/AC:L/PR:L/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1649"]
+
+[[check.detail.references]]
+title = "Certified Pre-Owned (SpecterOps)"
+url = "https://specterops.io/wp-content/uploads/sites/3/2022/06/Certified_Pre-Owned.pdf"
+
+[[check]]
+id = "AD-PKI-008"
+title = "ESC7: ManageCA / ManageCertificates held by low-priv users"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "Principals outside Tier 0 hold ManageCA (CA administrator) or ManageCertificates (certificate manager) on a CA (ESC7)."
+impact = "ManageCA can turn on ESC6 or add officers; ManageCertificates can approve pending requests, including ones for privileged accounts. Both lead to domain compromise."
+remediation = [
+  "Remove the rights from the CA's Security tab, leaving only Tier 0 groups.",
+  "Review who can manage the CA server itself.",
+]
+verify = "certutil -getreg CA\\Security"
+cvss = "AV:N/AC:L/PR:L/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1649"]
+
+[[check.detail.references]]
+title = "Certified Pre-Owned (SpecterOps)"
+url = "https://specterops.io/wp-content/uploads/sites/3/2022/06/Certified_Pre-Owned.pdf"
+
+[[check]]
+id = "AD-PKI-009"
+title = "ESC8: Web enrollment (HTTP) endpoints exposed to NTLM relay"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "AD CS web enrollment is installed and served over HTTP, or without Extended Protection for Authentication (ESC8)."
+impact = "An attacker can coerce a DC or server to authenticate and relay that NTLM authentication to web enrollment, getting a certificate as the machine and with it control of it."
+remediation = [
+  "Remove web enrollment if it is not needed.",
+  "Otherwise serve it over HTTPS only, require Extended Protection for Authentication and turn off NTLM for it.",
+]
+verify = "Get-WebBinding -Name 'Default Web Site'; Get-WebConfigurationProperty -PSPath 'IIS:\\' -Location 'Default Web Site/CertSrv' -Filter system.webServer/security/authentication/windowsAuthentication/extendedProtection -Name tokenChecking"
+cvss = "AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1557.001", "T1649"]
+
+[[check.detail.references]]
+title = "Certified Pre-Owned (SpecterOps)"
+url = "https://specterops.io/wp-content/uploads/sites/3/2022/06/Certified_Pre-Owned.pdf"
+
+[[check]]
+id = "AD-PKI-010"
+title = "ESC9: authentication templates without the SID security extension"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "A certificate template published on an enterprise CA issues certificates that can be used to sign in, has the CT_FLAG_NO_SECURITY_EXTENSION flag set, and principals other than admins and Tier 0 can enroll. Certificates from this template do not carry the requester's SID, so a domain controller falls back to mapping them by UPN or DNS name. The domain controllers' StrongCertificateBindingEnforcement and CertificateMappingMethods registry settings (ESC10) are not read."
+impact = "An attacker who can change the UPN of one account sets it to a Domain Admin's name, enrolls on the template as that account, and restores the UPN. Without the SID extension, the certificate then maps to the Domain Admin. Domain controllers in full enforcement mode reject such certificates."
+attack = [
+  "Uses write access on an account to set its UPN to a Domain Admin's sAMAccountName.",
+  "Enrolls on the template as that account; the certificate carries the Domain Admin's name and no SID.",
+  "Restores the UPN and signs in with the certificate as the Domain Admin.",
+]
+remediation = [
+  "Clear CT_FLAG_NO_SECURITY_EXTENSION (0x80000) from msPKI-Enrollment-Flag on each flagged template, unless an application is known to need it.",
+  "Put all domain controllers in full enforcement mode for strong certificate binding (StrongCertificateBindingEnforcement = 2), as described in KB5014754.",
+  "Remove Enroll on the template for broad groups.",
+]
+frameworks = [
+  "NIST 800-53 IA-5",
+  "NIST 800-53 AC-6",
+]
+verify = '''
+Get-ADObject -SearchBase "CN=Certificate Templates,CN=Public Key Services,CN=Services,$((Get-ADRootDSE).configurationNamingContext)" -Filter * -Properties msPKI-Enrollment-Flag |
+  Where-Object { $_.'msPKI-Enrollment-Flag' -band 0x80000 } | Select-Object Name, msPKI-Enrollment-Flag'''
+cvss = "AV:N/AC:H/PR:L/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1649", "T1078.002", "T1550"]
+
+[[check.detail.references]]
+title = "KB5014754: Certificate-based authentication changes on Windows domain controllers"
+url = "https://support.microsoft.com/help/5014754"
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1649: Steal or Forge Authentication Certificates"
+url = "https://attack.mitre.org/techniques/T1649/"
+
+[[check]]
+id = "AD-PKI-011"
+title = "ESC11: RPC enrollment without packet privacy (IF_ENFORCEENCRYPTICERTREQUEST)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "A CA does not require encrypted RPC certificate requests (IF_ENFORCEENCRYPTICERTREQUEST off in InterfaceFlags) (ESC11)."
+impact = "NTLM authentication can be relayed to the CA's RPC interface to request certificates as the victim."
+remediation = [
+  "certutil -setreg CA\\InterfaceFlags +IF_ENFORCEENCRYPTICERTREQUEST, then restart Certificate Services.",
+]
+verify = "certutil -getreg CA\\InterfaceFlags"
+mitre = ["T1557.001", "T1649"]
+
+[[check]]
+id = "AD-PKI-012"
+title = "ESC13: issuance policy linked to groups"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "A certificate template published on an enterprise CA carries an issuance policy whose OID object is linked to a group through msDS-OIDToGroupLink, and principals other than admins and Tier 0 can enroll. When someone signs in with a certificate carrying that policy, the domain controller adds the linked group to their Kerberos token."
+impact = "Every principal who can enroll on the template gets the rights of the linked group when they sign in with the certificate, without being a member of it. If the group holds privileged rights, this is a hidden path to those privileges that group membership reviews do not show."
+attack = [
+  "Signs in as a user who can enroll and requests a certificate on the template.",
+  "Uses the certificate to request a Kerberos ticket (PKINIT); the ticket includes the linked group.",
+  "Uses the group's rights, for example to administer servers or change directory objects.",
+]
+remediation = [
+  "Remove the msDS-OIDToGroupLink value from the issuance policy object if the link is not needed.",
+  "If the link is needed, restrict Enroll on the template to the users who should hold the group's rights, and require manager approval.",
+  "Make sure the linked group holds no more rights than the certificate holders need.",
+]
+frameworks = [
+  "NIST 800-53 AC-6",
+  "NIST 800-53 AC-2",
+]
+verify = '''
+Get-ADObject -SearchBase "CN=OID,CN=Public Key Services,CN=Services,$((Get-ADRootDSE).configurationNamingContext)" -LDAPFilter "(msDS-OIDToGroupLink=*)" -Properties msPKI-Cert-Template-OID, msDS-OIDToGroupLink |
+  Select-Object DisplayName, msPKI-Cert-Template-OID, msDS-OIDToGroupLink'''
+cvss = "AV:N/AC:L/PR:L/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1649", "T1078.002"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1649: Steal or Forge Authentication Certificates"
+url = "https://attack.mitre.org/techniques/T1649/"
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1078.002: Valid Accounts: Domain Accounts"
+url = "https://attack.mitre.org/techniques/T1078/002/"
+
+[[check]]
+id = "AD-PKI-013"
+title = "ESC14: weak explicit mappings (altSecurityIdentities)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "A user or computer account has an explicit certificate mapping in altSecurityIdentities that does not use one of the strong forms: issuer and serial number, subject key identifier, or SHA1 hash of the public key. Weak forms map a certificate by e-mail address (RFC822), subject only, issuer only, or issuer and subject."
+impact = "A domain controller signs in anyone who presents a certificate matching a weak mapping as that account. An attacker who can get a certificate with a matching e-mail or subject from any CA in NTAuth, for example by changing their own mail attribute, can sign in as the mapped account."
+attack = [
+  "Finds an account whose altSecurityIdentities maps by e-mail or subject.",
+  "Obtains a certificate whose e-mail or subject matches, for example by setting its own mail attribute before enrolling.",
+  "Signs in with that certificate as the mapped account.",
+]
+remediation = [
+  "Replace each weak mapping with an X509:<I>issuer<SR>serial, X509:<SKI> or X509:<SHA1-PUKEY> mapping for the account's actual certificate.",
+  "Remove mappings that are no longer used.",
+  "Restrict who can write altSecurityIdentities and mail on privileged accounts.",
+]
+frameworks = [
+  "NIST 800-53 IA-5",
+  "NIST 800-53 IA-2",
+]
+verify = '''
+Get-ADObject -LDAPFilter "(altSecurityIdentities=X509:*)" -Properties altSecurityIdentities |
+  Where-Object { $_.altSecurityIdentities | Where-Object { $_ -notmatch '<SR>|<SKI>|<SHA1-PUKEY>' } } |
+  Select-Object Name, ObjectClass, altSecurityIdentities'''
+cvss = "AV:N/AC:H/PR:L/UI:N/S:U/C:H/I:H/A:N"
+mitre = ["T1649", "T1078.002", "T1098"]
+
+[[check.detail.references]]
+title = "KB5014754: Certificate-based authentication changes on Windows domain controllers"
+url = "https://support.microsoft.com/help/5014754"
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1649: Steal or Forge Authentication Certificates"
+url = "https://attack.mitre.org/techniques/T1649/"
+
+[[check]]
+id = "AD-PKI-014"
+title = "ESC15 / EKUwu: schema v1 templates with enrollee-supplied subject"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "A schema version 1 certificate template published on an enterprise CA lets the requester supply the subject, and principals other than admins and Tier 0 can enroll. On a CA without the November 2024 update (CVE-2024-49019), a requester can add application policies, such as Client Authentication, to a request on a version 1 template, and the CA copies them into the certificate."
+impact = "On an unpatched CA, an enrollee can request a certificate for any account with Client Authentication added, even when the template's own usage is only server authentication, and sign in as that account. The default WebServer template is a common example."
+attack = [
+  "Signs in as a user who can enroll on the version 1 template.",
+  "Requests a certificate with a Domain Admin's name as subject and Client Authentication added as an application policy.",
+  "Uses the certificate to sign in as that Domain Admin.",
+]
+remediation = [
+  "Install the November 2024 security update (CVE-2024-49019) on every CA.",
+  "Duplicate the template to a newer schema version and retire the version 1 template, or select Build from this Active Directory information on it.",
+  "Remove Enroll on the template for broad groups such as Domain Users and Authenticated Users.",
+]
+frameworks = [
+  "NIST 800-53 SI-2",
+  "NIST 800-53 AC-6",
+]
+verify = '''
+Get-ADObject -SearchBase "CN=Certificate Templates,CN=Public Key Services,CN=Services,$((Get-ADRootDSE).configurationNamingContext)" -Filter * -Properties msPKI-Template-Schema-Version, msPKI-Certificate-Name-Flag |
+  Where-Object { $_.'msPKI-Template-Schema-Version' -le 1 -and $_.'msPKI-Certificate-Name-Flag' -band 1 } | Select-Object Name'''
+cvss = "AV:N/AC:L/PR:L/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1649", "T1078.002", "T1550"]
+
+[[check.detail.references]]
+title = "CVE-2024-49019: Active Directory Certificate Services Elevation of Privilege Vulnerability"
+url = "https://msrc.microsoft.com/update-guide/vulnerability/CVE-2024-49019"
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1649: Steal or Forge Authentication Certificates"
+url = "https://attack.mitre.org/techniques/T1649/"
+
+[[check]]
+id = "AD-PKI-015"
+title = "ESC16: CA-wide security extension disabled"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "A CA disables the szOID_NTDS_CA_SECURITY_EXT (1.3.6.1.4.1.311.25.2) extension CA-wide (ESC16)."
+impact = "Without the SID extension, certificates map to accounts only by name, which re-opens the attacks the 2022 strong-mapping updates closed."
+remediation = [
+  "Remove 1.3.6.1.4.1.311.25.2 from the policy module's DisableExtensionList and restart Certificate Services.",
+]
+verify = "certutil -getreg policy\\DisableExtensionList"
+mitre = ["T1649"]
+
+[[check]]
+id = "AD-PKI-016"
+title = "CA certificate key length and hash algorithm"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Reads the CA certificates published on each enterprise CA object and flags any that use an RSA key shorter than 2048 bits or a signature made with MD5 or SHA-1."
+impact = "A short RSA key or a weak signature hash makes it more feasible to forge certificates that chain to the CA. Modern clients and services also increasingly reject SHA-1 signed chains, which can break authentication."
+attack = [
+  "Reads the CA certificate from the directory.",
+  "Targets the weak key or hash to forge a certificate that chains to the CA.",
+  "Signs in or impersonates a service with the forged certificate.",
+]
+remediation = [
+  "Renew the CA certificate with a new RSA key of at least 2048 bits (3072 or 4096 for a root) or an ECC key, and SHA-256 or stronger as the signature hash.",
+  "Update CAPolicy.inf and the CA's CSP settings before renewing so the new key and hash are used.",
+  "Publish the renewed certificate to NTAuth, AIA and the trusted roots, then retire the old one.",
+]
+frameworks = [
+  "NIST 800-53 SC-12",
+  "NIST 800-53 SC-13",
+]
+verify = '''
+Get-ADObject -SearchBase "CN=Enrollment Services,CN=Public Key Services,CN=Services,$((Get-ADRootDSE).configurationNamingContext)" -Filter * -Properties cACertificate |
+  ForEach-Object { $_.cACertificate | ForEach-Object { [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($_) } } |
+  Select-Object Subject, @{n='Key';e={$_.PublicKey.Oid.FriendlyName}}, @{n='Bits';e={$_.PublicKey.Key.KeySize}}, @{n='Signature';e={$_.SignatureAlgorithm.FriendlyName}}'''
+mitre = ["T1649"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1649: Steal or Forge Authentication Certificates"
+url = "https://attack.mitre.org/techniques/T1649/"
+
+[[check.detail.references]]
+title = "NIST SP 800-57 Part 1 Rev. 5: Recommendation for Key Management"
+url = "https://csrc.nist.gov/pubs/sp/800/57/pt1/r5/final"
+
+[[check]]
+id = "AD-PKI-017"
+title = "CA certificate expiry"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Reads the CA certificates published on each enterprise CA object and flags any that have expired or expire within 180 days. CRL publication is not checked, since it needs the CA or its CDP locations."
+impact = "When a CA certificate expires, certificates it issued stop chaining to a valid CA. Smart card and certificate sign-in, TLS and other services that rely on them fail. A CA cannot issue certificates that outlive its own certificate, so issued certificates also get shorter as expiry nears."
+attack = [
+  "No direct attack; an expired or expiring CA certificate causes an outage of certificate-based services.",
+  "During an unplanned renewal, rushed changes to CA settings and templates can introduce weak configuration.",
+]
+remediation = [
+  "Renew each flagged CA certificate well before it expires, from the Certification Authority console (All Tasks, Renew CA Certificate).",
+  "Publish the renewed certificate to NTAuth, AIA and the trusted roots.",
+  "Decommission CA objects whose certificate has expired and that no longer issue certificates.",
+]
+frameworks = [
+  "NIST 800-53 SC-12",
+]
+verify = '''
+Get-ADObject -SearchBase "CN=Enrollment Services,CN=Public Key Services,CN=Services,$((Get-ADRootDSE).configurationNamingContext)" -Filter * -Properties cACertificate |
+  ForEach-Object { $_.cACertificate | ForEach-Object { [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($_) } } |
+  Select-Object Subject, NotAfter'''
+mitre = ["T1649"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1649: Steal or Forge Authentication Certificates"
+url = "https://attack.mitre.org/techniques/T1649/"
+
+[[check.detail.references]]
+title = "NIST SP 800-57 Part 1 Rev. 5: Recommendation for Key Management"
+url = "https://csrc.nist.gov/pubs/sp/800/57/pt1/r5/final"
+
+[[check]]
+id = "AD-PKI-018"
+title = "Sensitive templates with enrollee-supplied subject and no approval"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "A certificate template published on an enterprise CA issues sign-in certificates (Client Authentication, PKINIT, Smart Card Logon, Any Purpose or no usage restriction) or Certificate Request Agent certificates, lets the requester supply the subject, and requires neither CA manager approval nor an authorized signature. Unlike ESC1, this check does not look at who can enroll, so it also flags templates that only admins can use today."
+impact = "Nothing but the template's enrollment permissions stands between a requester and a certificate for any account. One permission mistake, or one compromised account with Enroll, turns the template into ESC1."
+attack = [
+  "Gains control of any account that can enroll on the template.",
+  "Requests a certificate with a Domain Admin's name in the subject.",
+  "Signs in with the certificate as that Domain Admin.",
+]
+remediation = [
+  "On the template's Issuance Requirements tab, select CA certificate manager approval, or require an authorized signature.",
+  "If the subject does not need to come from the request, select Build from this Active Directory information on the Subject Name tab.",
+  "Keep Enroll on the template limited to a small, named group.",
+]
+frameworks = [
+  "NIST 800-53 AC-6",
+  "NIST 800-53 IA-5",
+]
+verify = '''
+Get-ADObject -SearchBase "CN=Certificate Templates,CN=Public Key Services,CN=Services,$((Get-ADRootDSE).configurationNamingContext)" -Filter * -Properties msPKI-Certificate-Name-Flag, msPKI-Enrollment-Flag, msPKI-RA-Signature, pKIExtendedKeyUsage |
+  Where-Object { ($_.'msPKI-Certificate-Name-Flag' -band 1) -and -not ($_.'msPKI-Enrollment-Flag' -band 2) -and -not $_.'msPKI-RA-Signature' } |
+  Select-Object Name, pKIExtendedKeyUsage'''
+cvss = "AV:N/AC:L/PR:H/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1649", "T1078.002"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1649: Steal or Forge Authentication Certificates"
+url = "https://attack.mitre.org/techniques/T1649/"
+
+[[check.detail.references]]
+title = "Certified Pre-Owned: Abusing Active Directory Certificate Services (SpecterOps, 2021)"
+url = "https://specterops.io/wp-content/uploads/sites/3/2022/06/Certified_Pre-Owned.pdf"
+
+[[check]]
+id = "AD-PKI-019"
+title = "Templates with very long validity"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "A certificate template published on an enterprise CA issues certificates valid for more than two years, read from its pKIExpirationPeriod attribute."
+impact = "A long-lived certificate keeps working for its whole lifetime. If one is stolen or wrongly issued, it gives the holder persistent access, including after password resets, until it expires or is revoked and the revocation is checked."
+attack = [
+  "Steals or wrongly obtains a certificate issued from the template.",
+  "Keeps signing in with it for years, even after the account's password changes.",
+]
+remediation = [
+  "On the template's General tab, reduce the validity period to the shortest that fits its use; one year or less for user and computer authentication.",
+  "Use autoenrollment so certificates renew automatically before they expire.",
+  "Revoke certificates that are no longer needed.",
+]
+frameworks = [
+  "NIST 800-53 IA-5",
+  "NIST 800-53 SC-12",
+]
+verify = '''
+Get-ADObject -SearchBase "CN=Certificate Templates,CN=Public Key Services,CN=Services,$((Get-ADRootDSE).configurationNamingContext)" -Filter * -Properties pKIExpirationPeriod |
+  Select-Object Name, @{n='ValidityDays';e={ [math]::Abs([BitConverter]::ToInt64($_.pKIExpirationPeriod, 0)) / 864000000000 }}'''
+mitre = ["T1649", "T1078.002"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1649: Steal or Forge Authentication Certificates"
+url = "https://attack.mitre.org/techniques/T1649/"
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1078.002: Valid Accounts: Domain Accounts"
+url = "https://attack.mitre.org/techniques/T1078/002/"
+
+[[check]]
+id = "AD-PKI-020"
+title = "NTAuth store contents (unexpected CAs trusted for logon)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Compares the certificates in the forest's NTAuthCertificates store with the CA certificates of the enterprise CAs published under Enrollment Services. Any certificate in NTAuth that does not belong to one of those enterprise CAs is flagged, including root CAs and CAs from other forests or vendors."
+impact = "Domain controllers accept sign-in certificates from every CA in NTAuth. A CA there that is not one of this forest's issuing CAs, and is not tightly controlled, can issue a certificate that signs in as any account, including Domain Admins."
+attack = [
+  "Compromises or gets enrollment rights on a CA that is in NTAuth but managed outside the forest's Tier 0.",
+  "Obtains a certificate from it naming a Domain Admin.",
+  "Uses the certificate to request a Kerberos ticket (PKINIT) as that Domain Admin.",
+]
+remediation = [
+  "Review each flagged certificate and remove it from NTAuth if the CA should not issue logon certificates (certutil -viewdelstore on the NTAuth store, run by an Enterprise Admin).",
+  "Keep only the forest's issuing CAs in NTAuth; root CAs should not be in it.",
+  "Manage any third-party CA that must stay in NTAuth as a Tier 0 asset.",
+]
+frameworks = [
+  "NIST 800-53 IA-5",
+  "NIST 800-53 AC-6",
+]
+verify = '''
+Get-ADObject "CN=NTAuthCertificates,CN=Public Key Services,CN=Services,$((Get-ADRootDSE).configurationNamingContext)" -Properties cACertificate |
+  ForEach-Object { $_.cACertificate | ForEach-Object { [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($_) } } |
+  Select-Object Subject, Issuer, Thumbprint, NotAfter'''
+cvss = "AV:N/AC:H/PR:L/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1649", "T1556", "T1078.002"]
+
+[[check.detail.references]]
+title = "KB5014754: Certificate-based authentication changes on Windows domain controllers"
+url = "https://support.microsoft.com/help/5014754"
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1649: Steal or Forge Authentication Certificates"
+url = "https://attack.mitre.org/techniques/T1649/"
+
+[[check.detail.references]]
+title = "Certified Pre-Owned: Abusing Active Directory Certificate Services (SpecterOps, 2021)"
+url = "https://specterops.io/wp-content/uploads/sites/3/2022/06/Certified_Pre-Owned.pdf"
+
+[[check]]
+id = "AD-PKI-021"
+title = "Root CA online (should be offline)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "An enterprise CA published under Enrollment Services has a self-signed CA certificate, which means the forest's root CA is online and issuing certificates directly."
+impact = "The root CA's private key sits on a networked, domain-joined server. If that server is compromised, the root key cannot be revoked by anything above it; every certificate in the hierarchy must be reissued under a new root."
+attack = [
+  "Compromises the domain-joined server that runs the root CA.",
+  "Extracts the root CA's private key.",
+  "Forges certificates, including sign-in certificates for any account, that every client trusts.",
+]
+remediation = [
+  "Build a two-tier hierarchy: an offline, non-domain-joined root CA and one or more online enterprise subordinate CAs.",
+  "Move issuance to the subordinate CAs, then take the root offline and use it only to sign subordinate certificates and CRLs.",
+  "Protect the root key with a hardware security module where possible.",
+]
+frameworks = [
+  "NIST 800-53 SC-12",
+]
+verify = '''
+Get-ADObject -SearchBase "CN=Enrollment Services,CN=Public Key Services,CN=Services,$((Get-ADRootDSE).configurationNamingContext)" -Filter * -Properties cACertificate |
+  ForEach-Object { $_.cACertificate | ForEach-Object { [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($_) } } |
+  Select-Object Subject, Issuer, @{n='SelfSigned';e={$_.Subject -eq $_.Issuer}}'''
+mitre = ["T1649"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1649: Steal or Forge Authentication Certificates"
+url = "https://attack.mitre.org/techniques/T1649/"
+
+[[check.detail.references]]
+title = "NIST SP 800-57 Part 1 Rev. 5: Recommendation for Key Management"
+url = "https://csrc.nist.gov/pubs/sp/800/57/pt1/r5/final"
+
+[[check]]
+id = "AD-PKI-022"
+title = "CA backup and private key protection (HSM) inventory"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "A CA's private key is held by a software key storage provider rather than a hardware security module (HSM)."
+impact = "Anyone with admin rights on the CA server can export a software key and forge certificates for any account indefinitely."
+remediation = [
+  "Move the CA key to an HSM when the CA is renewed or rebuilt.",
+  "Until then, treat the CA server and its backups as Tier 0.",
+]
+verify = "certutil -getreg CA\\CSP\\Provider"
+mitre = ["T1649", "T1552"]
+
+[[check]]
+id = "AD-PKI-023"
+title = "Auditing enabled on CAs"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "A CA does not audit every event category (AuditFilter below 127)."
+impact = "Without full CA auditing, certificate requests, approvals and configuration changes made during an attack leave no record."
+remediation = [
+  "certutil -setreg CA\\AuditFilter 127, restart Certificate Services, and turn on Audit Certification Services.",
+]
+verify = "certutil -getreg CA\\AuditFilter"
+mitre = ["T1562.002"]
+
+[[check]]
+id = "AD-PKI-024"
+title = "Published but unused templates"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Templates a CA publishes that it did not issue any certificate from in the last 90 days."
+impact = "Every published template is attack surface: one that is misconfigured or later changed can be abused even though nobody needs it."
+remediation = [
+  "Stop publishing templates that are not used.",
+]
+verify = "certutil -catemplates; certutil -view -restrict \"NotBefore>=<date>\" -out CertificateTemplate"
+mitre = ["T1649"]

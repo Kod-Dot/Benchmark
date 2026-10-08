@@ -1,0 +1,1190 @@
+{
+  "checks": [
+    {
+      "id": "AD-PKI-002",
+      "status": "failed",
+      "affected_count": 2,
+      "affected_unit": "template",
+      "affected": [
+        {
+          "name": "UserAuth-Legacy",
+          "kind": "template",
+          "location": "CN=UserAuth-Legacy,CN=Certificate Templates,CN=Public Key Services,CN=Services,CN=Configuration,DC=corp,DC=example,DC=com",
+          "reason": "Enroll: Domain Users; supplies subject; Client Authentication; no manager approval",
+          "object": "t-userauth"
+        },
+        {
+          "name": "CORP-ISSUING-CA",
+          "kind": "ca",
+          "location": "PKI01.corp.example.com",
+          "reason": "Publishes UserAuth-Legacy",
+          "object": "ca-issuing"
+        },
+        {
+          "name": "Domain Users",
+          "kind": "group",
+          "location": "CN=Domain Users,CN=Users,DC=corp,DC=example,DC=com",
+          "reason": "Every member can enroll",
+          "object": "g-domain-users"
+        }
+      ],
+      "expected": "Templates with Client Authentication do not let low-privileged principals supply the subject",
+      "found": "1 template fails: enrollee supplies subject and Domain Users can enroll",
+      "evidence": [
+        {
+          "label": "Read from",
+          "value": "Configuration partition via LDAP on DC01, CA registry on PKI01"
+        }
+      ],
+      "raw": "msPKI-Certificate-Name-Flag : 0x00000001  (ENROLLEE_SUPPLIES_SUBJECT)\npKIExtendedKeyUsage        : 1.3.6.1.5.5.7.3.2  (Client Authentication)\nmsPKI-Enrollment-Flag      : 0x00000000  (no manager approval)\nmsPKI-RA-Signature         : 0\nnTSecurityDescriptor       : CORP\\Domain Users  Allow  Enroll\nPublished by               : CORP-ISSUING-CA"
+    },
+    {
+      "id": "AD-KRB-003",
+      "status": "failed",
+      "affected_count": 2,
+      "affected_unit": "computers",
+      "affected": [
+        {
+          "name": "APP01",
+          "kind": "computer",
+          "location": "CN=APP01,OU=Servers,DC=corp,DC=example,DC=com",
+          "reason": "TrustedForDelegation",
+          "object": "c-app01"
+        },
+        {
+          "name": "FS01",
+          "kind": "computer",
+          "location": "CN=FS01,OU=Servers,DC=corp,DC=example,DC=com",
+          "reason": "TrustedForDelegation",
+          "object": "c-fs01"
+        }
+      ],
+      "expected": "Only domain controllers are trusted for unconstrained delegation",
+      "found": "2 member servers are trusted for unconstrained delegation",
+      "raw": "userAccountControl : 0x81000  (WORKSTATION_TRUST_ACCOUNT, TRUSTED_FOR_DELEGATION)"
+    },
+    {
+      "id": "EN-CA-004",
+      "status": "failed",
+      "affected": [
+        {
+          "name": "example.onmicrosoft.com",
+          "kind": "tenant",
+          "reason": "No enabled policy blocks Exchange ActiveSync and other legacy clients"
+        }
+      ],
+      "expected": "An enabled policy blocks legacy authentication for all users",
+      "found": "Policy \"CA010 Block legacy auth\" exists but is in report-only mode",
+      "evidence": [
+        {
+          "label": "Read from",
+          "value": "Microsoft Graph /identity/conditionalAccess/policies"
+        }
+      ]
+    },
+    {
+      "id": "AD-PRIV-021",
+      "status": "failed",
+      "affected_count": 1,
+      "affected_unit": "account",
+      "affected": [
+        {
+          "name": "krbtgt",
+          "kind": "user",
+          "location": "CN=krbtgt,CN=Users,DC=corp,DC=example,DC=com",
+          "reason": "Password last set 7 Jul 2023, 1,186 days ago",
+          "object": "u-krbtgt"
+        }
+      ],
+      "expected": "krbtgt password changed in the last 180 days",
+      "found": "Last changed 1,186 days ago",
+      "evidence": [
+        {
+          "label": "pwdLastSet",
+          "value": "2023-07-07 09:14:22 UTC"
+        },
+        {
+          "label": "Threshold",
+          "value": "180 days"
+        }
+      ]
+    },
+    {
+      "id": "AD-PRIV-017",
+      "status": "failed",
+      "affected_count": 1,
+      "affected_unit": "account",
+      "affected": [
+        {
+          "name": "adm-jsmith",
+          "kind": "user",
+          "location": "CN=adm-jsmith,OU=Admins,OU=Tier 0,DC=corp,DC=example,DC=com",
+          "reason": "MSSQLSvc/sql-old.corp.example.com:1433",
+          "object": "u-adm-jsmith"
+        }
+      ]
+    },
+    {
+      "id": "AD-PRIV-015",
+      "status": "failed",
+      "affected_count": 3,
+      "affected_unit": "accounts",
+      "affected": [
+        {
+          "name": "adm-jsmith",
+          "kind": "user",
+          "object": "u-adm-jsmith"
+        },
+        {
+          "name": "adm-mlopez",
+          "kind": "user",
+          "object": "u-adm-mlopez"
+        },
+        {
+          "name": "svc-backup",
+          "kind": "user",
+          "object": "u-svc-backup"
+        }
+      ]
+    },
+    {
+      "id": "AD-DC-011",
+      "status": "failed",
+      "affected_count": 3,
+      "affected_unit": "domain controllers",
+      "affected": [
+        {
+          "name": "DC01",
+          "kind": "computer",
+          "object": "c-dc01"
+        },
+        {
+          "name": "DC02",
+          "kind": "computer",
+          "object": "c-dc02"
+        },
+        {
+          "name": "DC03",
+          "kind": "computer",
+          "object": "c-dc03"
+        }
+      ],
+      "expected": "LDAPServerIntegrity = 2 (require signing)",
+      "found": "LDAPServerIntegrity = 1 on all domain controllers"
+    },
+    {
+      "id": "AD-PRIV-003",
+      "status": "failed",
+      "affected_count": 7,
+      "affected_unit": "members",
+      "severity": "medium",
+      "affected": [
+        {
+          "name": "adm-jsmith",
+          "kind": "user",
+          "object": "u-adm-jsmith"
+        },
+        {
+          "name": "adm-mlopez",
+          "kind": "user",
+          "object": "u-adm-mlopez"
+        },
+        {
+          "name": "Administrator",
+          "kind": "user",
+          "object": "u-administrator"
+        }
+      ],
+      "expected": "5 members or fewer",
+      "found": "7 members, 2 of them nested through IT-Admins"
+    },
+    {
+      "id": "AD-CMP-007",
+      "status": "failed",
+      "affected_count": 4,
+      "affected_unit": "computers",
+      "affected": [
+        {
+          "name": "WS-LON-014",
+          "kind": "computer",
+          "object": "c-ws-lon-014"
+        },
+        {
+          "name": "WS-LON-022",
+          "kind": "computer",
+          "object": "c-ws-lon-022"
+        },
+        {
+          "name": "WS-MAD-003",
+          "kind": "computer",
+          "object": "c-ws-mad-003"
+        }
+      ]
+    },
+    {
+      "id": "AD-GPO-004",
+      "status": "failed",
+      "affected_count": 1,
+      "affected_unit": "GPO",
+      "affected": [
+        {
+          "name": "Legacy Local Admin",
+          "kind": "gpo",
+          "location": "\\\\corp.example.com\\SYSVOL\\corp.example.com\\Policies\\{6AC1786C-016F-11D2-945F-00C04FB984F9}\\Machine\\Preferences\\Groups\\Groups.xml",
+          "reason": "cpassword for the local Administrator",
+          "object": "gpo-legacy"
+        }
+      ]
+    },
+    {
+      "id": "AD-ACC-001",
+      "status": "failed",
+      "affected_count": 2,
+      "affected_unit": "users",
+      "affected": [
+        {
+          "name": "m.garcia",
+          "kind": "user",
+          "object": "u-mgarcia"
+        },
+        {
+          "name": "helpdesk01",
+          "kind": "user",
+          "object": "u-helpdesk01"
+        }
+      ]
+    },
+    {
+      "id": "AD-PWD-012",
+      "status": "failed",
+      "affected_count": 3,
+      "affected_unit": "users",
+      "affected": [
+        {
+          "name": "svc-backup",
+          "kind": "user",
+          "object": "u-svc-backup"
+        },
+        {
+          "name": "helpdesk01",
+          "kind": "user",
+          "object": "u-helpdesk01"
+        },
+        {
+          "name": "svc-sql01",
+          "kind": "user",
+          "object": "u-svc-sql01"
+        }
+      ]
+    },
+    {
+      "id": "AD-PRIV-011",
+      "status": "failed",
+      "affected_count": 1,
+      "affected_unit": "account",
+      "affected": [
+        {
+          "name": "t.nguyen",
+          "kind": "user",
+          "reason": "Disabled, still in IT-Admins",
+          "object": "u-tnguyen"
+        }
+      ]
+    },
+    {
+      "id": "EN-AUTH-001",
+      "status": "failed",
+      "affected_count": 2,
+      "affected_unit": "users",
+      "affected": [
+        {
+          "name": "r.lee@example.com",
+          "kind": "user",
+          "object": "e-rlee"
+        },
+        {
+          "name": "m.garcia@example.com",
+          "kind": "user",
+          "object": "e-mgarcia"
+        }
+      ]
+    },
+    {
+      "id": "AD-DC-006",
+      "status": "failed",
+      "affected_count": 3,
+      "affected_unit": "domain controllers",
+      "affected": [
+        {
+          "name": "DC01",
+          "kind": "computer"
+        },
+        {
+          "name": "DC02",
+          "kind": "computer"
+        },
+        {
+          "name": "DC03",
+          "kind": "computer"
+        }
+      ]
+    },
+    {
+      "id": "AD-LEG-001",
+      "status": "failed",
+      "affected_count": 3,
+      "affected_unit": "domain controllers",
+      "affected": [
+        {
+          "name": "DC01",
+          "kind": "computer"
+        }
+      ]
+    },
+    {
+      "id": "EN-TEN-002",
+      "status": "failed",
+      "affected": [
+        {
+          "name": "example.onmicrosoft.com",
+          "kind": "tenant"
+        }
+      ]
+    },
+    {
+      "id": "AD-ACL-001",
+      "status": "failed",
+      "affected_count": 1,
+      "affected_unit": "principal",
+      "affected": [
+        {
+          "name": "Exchange Windows Permissions",
+          "kind": "group"
+        }
+      ]
+    },
+    {
+      "id": "EN-APP-001",
+      "status": "passed"
+    },
+    {
+      "id": "EN-APP-004",
+      "status": "passed"
+    },
+    {
+      "id": "EN-APP-007",
+      "status": "passed"
+    },
+    {
+      "id": "EN-APP-010",
+      "status": "passed"
+    },
+    {
+      "id": "EN-APP-013",
+      "status": "passed"
+    },
+    {
+      "id": "EN-APP-016",
+      "status": "passed"
+    },
+    {
+      "id": "EN-APP-019",
+      "status": "passed"
+    },
+    {
+      "id": "EN-APP-022",
+      "status": "passed"
+    },
+    {
+      "id": "EN-AUTH-002",
+      "status": "passed"
+    },
+    {
+      "id": "EN-AUTH-005",
+      "status": "passed"
+    },
+    {
+      "id": "EN-AUTH-008",
+      "status": "passed"
+    },
+    {
+      "id": "EN-AUTH-011",
+      "status": "passed"
+    },
+    {
+      "id": "EN-AUTH-014",
+      "status": "passed"
+    },
+    {
+      "id": "EN-AUTH-017",
+      "status": "passed"
+    },
+    {
+      "id": "EN-AUTH-020",
+      "status": "passed"
+    },
+    {
+      "id": "EN-CA-003",
+      "status": "passed"
+    },
+    {
+      "id": "EN-CA-007",
+      "status": "passed"
+    },
+    {
+      "id": "EN-CA-010",
+      "status": "passed"
+    },
+    {
+      "id": "EN-CA-013",
+      "status": "passed"
+    },
+    {
+      "id": "EN-CA-016",
+      "status": "passed"
+    },
+    {
+      "id": "EN-CA-019",
+      "status": "passed"
+    },
+    {
+      "id": "EN-CA-022",
+      "status": "passed"
+    },
+    {
+      "id": "EN-DEV-001",
+      "status": "passed"
+    },
+    {
+      "id": "EN-DEV-004",
+      "status": "passed"
+    },
+    {
+      "id": "EN-DEV-007",
+      "status": "passed"
+    },
+    {
+      "id": "EN-DEV-010",
+      "status": "passed"
+    },
+    {
+      "id": "EN-GRP-001",
+      "status": "passed"
+    },
+    {
+      "id": "EN-GRP-004",
+      "status": "passed"
+    },
+    {
+      "id": "EN-GRP-007",
+      "status": "passed"
+    },
+    {
+      "id": "EN-GRP-010",
+      "status": "passed"
+    },
+    {
+      "id": "EN-ID-003",
+      "status": "passed"
+    },
+    {
+      "id": "EN-ID-006",
+      "status": "passed"
+    },
+    {
+      "id": "EN-ID-009",
+      "status": "passed"
+    },
+    {
+      "id": "EN-ID-012",
+      "status": "passed"
+    },
+    {
+      "id": "EN-ID-015",
+      "status": "passed"
+    },
+    {
+      "id": "EN-MON-002",
+      "status": "passed"
+    },
+    {
+      "id": "EN-MON-005",
+      "status": "passed"
+    },
+    {
+      "id": "EN-MON-008",
+      "status": "passed"
+    },
+    {
+      "id": "EN-MON-011",
+      "status": "passed"
+    },
+    {
+      "id": "EN-PRIV-002",
+      "status": "passed"
+    },
+    {
+      "id": "EN-PRIV-005",
+      "status": "passed"
+    },
+    {
+      "id": "EN-PRIV-008",
+      "status": "passed"
+    },
+    {
+      "id": "EN-PRIV-011",
+      "status": "passed"
+    },
+    {
+      "id": "EN-PRIV-014",
+      "status": "passed"
+    },
+    {
+      "id": "EN-PRIV-017",
+      "status": "passed"
+    },
+    {
+      "id": "EN-PRIV-020",
+      "status": "passed"
+    },
+    {
+      "id": "EN-TEN-001",
+      "status": "passed"
+    },
+    {
+      "id": "EN-TEN-005",
+      "status": "passed"
+    },
+    {
+      "id": "EN-TEN-008",
+      "status": "passed"
+    },
+    {
+      "id": "EN-TEN-011",
+      "status": "passed"
+    },
+    {
+      "id": "EN-TEN-014",
+      "status": "passed"
+    },
+    {
+      "id": "EN-TEN-017",
+      "status": "passed"
+    },
+    {
+      "id": "HY-FED-002",
+      "status": "passed"
+    },
+    {
+      "id": "HY-FED-005",
+      "status": "passed"
+    },
+    {
+      "id": "HY-FED-008",
+      "status": "passed"
+    },
+    {
+      "id": "HY-PATH-001",
+      "status": "passed"
+    },
+    {
+      "id": "HY-PATH-004",
+      "status": "passed"
+    },
+    {
+      "id": "HY-PATH-007",
+      "status": "passed"
+    },
+    {
+      "id": "HY-SYNC-002",
+      "status": "passed"
+    },
+    {
+      "id": "HY-SYNC-005",
+      "status": "passed"
+    },
+    {
+      "id": "HY-SYNC-008",
+      "status": "passed"
+    },
+    {
+      "id": "HY-SYNC-011",
+      "status": "passed"
+    },
+    {
+      "id": "HY-SYNC-014",
+      "status": "passed"
+    },
+    {
+      "id": "AD-ACC-002",
+      "status": "passed"
+    },
+    {
+      "id": "AD-ACC-005",
+      "status": "passed"
+    },
+    {
+      "id": "AD-ACC-008",
+      "status": "passed"
+    },
+    {
+      "id": "AD-ACC-011",
+      "status": "passed"
+    },
+    {
+      "id": "AD-ACC-014",
+      "status": "passed"
+    },
+    {
+      "id": "AD-ACC-017",
+      "status": "passed"
+    },
+    {
+      "id": "AD-ACL-003",
+      "status": "passed"
+    },
+    {
+      "id": "AD-ACL-006",
+      "status": "passed"
+    },
+    {
+      "id": "AD-ACL-009",
+      "status": "passed"
+    },
+    {
+      "id": "AD-ACL-012",
+      "status": "passed"
+    },
+    {
+      "id": "AD-ACL-015",
+      "status": "passed"
+    },
+    {
+      "id": "AD-ACL-018",
+      "status": "passed"
+    },
+    {
+      "id": "AD-ACL-021",
+      "status": "passed"
+    },
+    {
+      "id": "AD-ACL-024",
+      "status": "passed"
+    },
+    {
+      "id": "AD-ACL-027",
+      "status": "passed"
+    },
+    {
+      "id": "AD-APP-002",
+      "status": "passed"
+    },
+    {
+      "id": "AD-APP-005",
+      "status": "passed"
+    },
+    {
+      "id": "AD-APP-008",
+      "status": "passed"
+    },
+    {
+      "id": "AD-AUD-003",
+      "status": "passed"
+    },
+    {
+      "id": "AD-AUD-006",
+      "status": "passed"
+    },
+    {
+      "id": "AD-AUD-009",
+      "status": "passed"
+    },
+    {
+      "id": "AD-AUD-012",
+      "status": "passed"
+    },
+    {
+      "id": "AD-BKP-003",
+      "status": "passed"
+    },
+    {
+      "id": "AD-BKP-006",
+      "status": "passed"
+    },
+    {
+      "id": "AD-CMP-001",
+      "status": "passed"
+    },
+    {
+      "id": "AD-CMP-004",
+      "status": "passed"
+    },
+    {
+      "id": "AD-CMP-008",
+      "status": "passed"
+    },
+    {
+      "id": "AD-DC-001",
+      "status": "passed"
+    },
+    {
+      "id": "AD-DC-004",
+      "status": "passed"
+    },
+    {
+      "id": "AD-DC-008",
+      "status": "passed"
+    },
+    {
+      "id": "AD-DC-012",
+      "status": "passed"
+    },
+    {
+      "id": "AD-DC-015",
+      "status": "passed"
+    },
+    {
+      "id": "AD-DC-018",
+      "status": "passed"
+    },
+    {
+      "id": "AD-DC-021",
+      "status": "passed"
+    },
+    {
+      "id": "AD-DC-024",
+      "status": "passed"
+    },
+    {
+      "id": "AD-DC-027",
+      "status": "passed"
+    },
+    {
+      "id": "AD-DC-030",
+      "status": "passed"
+    },
+    {
+      "id": "AD-DNS-001",
+      "status": "passed"
+    },
+    {
+      "id": "AD-DNS-004",
+      "status": "passed"
+    },
+    {
+      "id": "AD-DNS-007",
+      "status": "passed"
+    },
+    {
+      "id": "AD-DNS-010",
+      "status": "passed"
+    },
+    {
+      "id": "AD-DNS-013",
+      "status": "passed"
+    },
+    {
+      "id": "AD-FND-002",
+      "status": "passed"
+    },
+    {
+      "id": "AD-FND-005",
+      "status": "passed"
+    },
+    {
+      "id": "AD-FND-008",
+      "status": "passed"
+    },
+    {
+      "id": "AD-FND-011",
+      "status": "passed"
+    },
+    {
+      "id": "AD-FND-014",
+      "status": "passed"
+    },
+    {
+      "id": "AD-FND-017",
+      "status": "passed"
+    },
+    {
+      "id": "AD-GPO-002",
+      "status": "passed"
+    },
+    {
+      "id": "AD-GPO-006",
+      "status": "passed"
+    },
+    {
+      "id": "AD-GPO-009",
+      "status": "passed"
+    },
+    {
+      "id": "AD-GPO-012",
+      "status": "passed"
+    },
+    {
+      "id": "AD-GPO-015",
+      "status": "passed"
+    },
+    {
+      "id": "AD-GPO-018",
+      "status": "passed"
+    },
+    {
+      "id": "AD-GPO-021",
+      "status": "passed"
+    },
+    {
+      "id": "AD-GPO-024",
+      "status": "passed"
+    },
+    {
+      "id": "AD-GPO-027",
+      "status": "passed"
+    },
+    {
+      "id": "AD-GPO-030",
+      "status": "passed"
+    },
+    {
+      "id": "AD-IOC-003",
+      "status": "passed"
+    },
+    {
+      "id": "AD-IOC-006",
+      "status": "passed"
+    },
+    {
+      "id": "AD-IOC-009",
+      "status": "passed"
+    },
+    {
+      "id": "AD-IOC-012",
+      "status": "passed"
+    },
+    {
+      "id": "AD-KRB-001",
+      "status": "passed"
+    },
+    {
+      "id": "AD-KRB-005",
+      "status": "passed"
+    },
+    {
+      "id": "AD-KRB-008",
+      "status": "passed"
+    },
+    {
+      "id": "AD-KRB-011",
+      "status": "passed"
+    },
+    {
+      "id": "AD-KRB-014",
+      "status": "passed"
+    },
+    {
+      "id": "AD-KRB-017",
+      "status": "passed"
+    },
+    {
+      "id": "AD-KRB-020",
+      "status": "passed"
+    },
+    {
+      "id": "AD-LAPS-003",
+      "status": "passed"
+    },
+    {
+      "id": "AD-LAPS-006",
+      "status": "passed"
+    },
+    {
+      "id": "AD-LEG-002",
+      "status": "passed"
+    },
+    {
+      "id": "AD-LEG-005",
+      "status": "passed"
+    },
+    {
+      "id": "AD-LEG-008",
+      "status": "passed"
+    },
+    {
+      "id": "AD-LEG-011",
+      "status": "passed"
+    },
+    {
+      "id": "AD-OU-002",
+      "status": "passed"
+    },
+    {
+      "id": "AD-OU-005",
+      "status": "passed"
+    },
+    {
+      "id": "AD-OU-008",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PKI-004",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PKI-007",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PKI-010",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PKI-013",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PKI-016",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PKI-019",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PKI-022",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PRIV-001",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PRIV-005",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PRIV-008",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PRIV-012",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PRIV-016",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PRIV-020",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PRIV-024",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PRIV-027",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PRIV-030",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PWD-003",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PWD-006",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PWD-009",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PWD-013",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PWD-016",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PWD-019",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PWD-022",
+      "status": "passed"
+    },
+    {
+      "id": "AD-REP-003",
+      "status": "passed"
+    },
+    {
+      "id": "AD-REP-006",
+      "status": "passed"
+    },
+    {
+      "id": "AD-REP-009",
+      "status": "passed"
+    },
+    {
+      "id": "AD-REP-012",
+      "status": "passed"
+    },
+    {
+      "id": "AD-REP-015",
+      "status": "passed"
+    },
+    {
+      "id": "AD-SCH-002",
+      "status": "passed"
+    },
+    {
+      "id": "AD-SCH-005",
+      "status": "passed"
+    },
+    {
+      "id": "AD-SVC-002",
+      "status": "passed"
+    },
+    {
+      "id": "AD-SVC-005",
+      "status": "passed"
+    },
+    {
+      "id": "AD-SVC-008",
+      "status": "passed"
+    },
+    {
+      "id": "AD-TRU-001",
+      "status": "passed"
+    },
+    {
+      "id": "AD-TRU-004",
+      "status": "passed"
+    },
+    {
+      "id": "AD-TRU-007",
+      "status": "passed"
+    },
+    {
+      "id": "AD-TRU-010",
+      "status": "passed"
+    }
+  ],
+  "paths": [
+    {
+      "title": "Any domain user can become Domain Admin in 2 steps",
+      "severity": "critical",
+      "checks": [
+        "AD-PKI-002"
+      ],
+      "steps": [
+        {
+          "name": "Domain Users",
+          "kind": "group",
+          "object": "g-domain-users",
+          "via": "Enroll"
+        },
+        {
+          "name": "UserAuth-Legacy",
+          "kind": "template",
+          "object": "t-userauth",
+          "via": "ESC1: any subject"
+        },
+        {
+          "name": "Domain Admins",
+          "kind": "group",
+          "object": "g-domain-admins"
+        }
+      ]
+    },
+    {
+      "title": "Helpdesk can reach Domain Admins in 3 steps",
+      "severity": "critical",
+      "checks": [
+        "AD-KRB-003",
+        "AD-PRIV-016"
+      ],
+      "steps": [
+        {
+          "name": "Helpdesk",
+          "kind": "group",
+          "object": "g-helpdesk",
+          "via": "GenericWrite"
+        },
+        {
+          "name": "APP01",
+          "kind": "computer",
+          "object": "c-app01",
+          "via": "HasSession"
+        },
+        {
+          "name": "adm-jsmith",
+          "kind": "user",
+          "object": "u-adm-jsmith",
+          "via": "MemberOf"
+        },
+        {
+          "name": "Domain Admins",
+          "kind": "group",
+          "object": "g-domain-admins"
+        }
+      ]
+    },
+    {
+      "title": "On-premises account reaches Global Administrator",
+      "severity": "high",
+      "checks": [
+        "EN-PRIV-002"
+      ],
+      "steps": [
+        {
+          "name": "Server Operators",
+          "kind": "group",
+          "object": "g-server-operators",
+          "via": "AdminTo"
+        },
+        {
+          "name": "SYNC01",
+          "kind": "computer",
+          "object": "c-sync01",
+          "via": "Password writeback"
+        },
+        {
+          "name": "admin.r.lee",
+          "kind": "user",
+          "object": "e-admin-rlee",
+          "via": "HasRole"
+        },
+        {
+          "name": "Global Administrator",
+          "kind": "role",
+          "object": "r-global-admin"
+        }
+      ]
+    },
+    {
+      "title": "Exchange Windows Permissions can grant itself DCSync",
+      "severity": "critical",
+      "checks": [
+        "AD-ACL-001"
+      ],
+      "steps": [
+        {
+          "name": "Exchange Windows Permissions",
+          "kind": "group",
+          "via": "WriteDACL"
+        },
+        {
+          "name": "corp.example.com",
+          "kind": "domain"
+        }
+      ]
+    }
+  ]
+}

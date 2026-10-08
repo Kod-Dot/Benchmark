@@ -1,0 +1,255 @@
+# M365-TMS: Teams
+
+area = "M365-TMS"
+
+[[check]]
+id = "M365-TMS-001"
+title = "External access (federation) open to all domains"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Teams external access (federation) is open to all external domains."
+impact = "Anyone with a Teams tenant can chat with and call users, a route attackers use for phishing and fake help desk calls."
+remediation = [
+  "Allow external access only for the domains you work with.",
+]
+verify = "Get-CsTenantFederationConfiguration"
+
+[[check.detail.references]]
+title = "Teams external access"
+url = "https://learn.microsoft.com/microsoftteams/trusted-organizations-external-meetings-chat"
+
+[[check]]
+id = "M365-TMS-002"
+title = "Communication with unmanaged Teams accounts (consumer) allowed"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Users can communicate with personal (consumer) Teams accounts, or those accounts can start conversations."
+impact = "Unmanaged accounts with no accountability can contact users directly, a common social engineering route."
+remediation = [
+  "Turn off communication with unmanaged Teams accounts, or at least turn off inbound.",
+]
+verify = "Get-CsTenantFederationConfiguration | Select-Object AllowTeamsConsumer, AllowTeamsConsumerInbound"
+
+[[check.detail.references]]
+title = "Teams external access"
+url = "https://learn.microsoft.com/microsoftteams/trusted-organizations-external-meetings-chat"
+
+[[check]]
+id = "M365-TMS-003"
+title = "Guest access settings and guest capabilities"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Guest access is on and guests can delete messages, share their entire screen or start meetings."
+impact = "Guests have more control than collaboration needs, including removing evidence of what they posted."
+remediation = [
+  "Turn off guest message deletion, limit screen sharing to one application and turn off Meet now for guests.",
+]
+verify = "Get-CsTeamsGuestMessagingConfiguration; Get-CsTeamsGuestMeetingConfiguration"
+
+[[check.detail.references]]
+title = "Guest access in Teams"
+url = "https://learn.microsoft.com/microsoftteams/guest-access"
+
+[[check]]
+id = "M365-TMS-004"
+title = "Anonymous users can join and start meetings"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Anonymous people can join meetings, or can start them."
+impact = "Uninvited people can join or hold meetings in the organization's name."
+remediation = [
+  "Turn off anonymous join, or keep it and stop anonymous users from starting meetings, with lobby for everyone outside the organization.",
+]
+verify = "Get-CsTeamsMeetingConfiguration; Get-CsTeamsMeetingPolicy -Identity Global"
+
+[[check.detail.references]]
+title = "Teams meeting policies"
+url = "https://learn.microsoft.com/microsoftteams/settings-policies-reference"
+
+[[check]]
+id = "M365-TMS-005"
+title = "Lobby bypass settings"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "A meeting policy lets everyone, or people from federated organizations, bypass the lobby, or lets dial-in callers bypass it."
+impact = "Outsiders join meetings directly, without the organizer admitting them."
+remediation = [
+  "Admit people in the organization (excluding guests) automatically; everyone else waits in the lobby.",
+]
+verify = "Get-CsTeamsMeetingPolicy | Select-Object Identity, AutoAdmittedUsers, AllowPSTNUsersToBypassLobby"
+
+[[check.detail.references]]
+title = "Teams meeting policies"
+url = "https://learn.microsoft.com/microsoftteams/settings-policies-reference"
+
+[[check]]
+id = "M365-TMS-006"
+title = "Third-party and custom app upload allowed"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "An app setup policy lets users upload custom apps (side-loading)."
+impact = "Users can install unreviewed apps that read their chats and files."
+remediation = [
+  "Allow custom app upload only for a developer policy assigned to named people.",
+]
+verify = "Get-CsTeamsAppSetupPolicy | Select-Object Identity, AllowSideLoading"
+
+[[check.detail.references]]
+title = "Manage custom app policies"
+url = "https://learn.microsoft.com/microsoftteams/teams-custom-app-policies-and-settings"
+
+[[check]]
+id = "M365-TMS-007"
+title = "App permission policies and blocked apps"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "The global app permission policy allows every third-party or every custom app."
+impact = "Any app in the store, including ones with broad permissions, can be added by users."
+remediation = [
+  "Allow only reviewed third-party apps and require admin approval for others.",
+]
+verify = "Get-CsTeamsAppPermissionPolicy -Identity Global"
+
+[[check.detail.references]]
+title = "Manage app permission policies"
+url = "https://learn.microsoft.com/microsoftteams/teams-app-permission-policies"
+
+[[check]]
+id = "M365-TMS-008"
+title = "Teams created without owners"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "A team has no owner."
+impact = "Nobody manages its members, guests and channels."
+remediation = [
+  "Assign at least two owners to every team.",
+]
+verify = "Get-MgGroup with resourceProvisioningOptions Team, expanded owners"
+
+[[check.detail.references]]
+title = "Teams lifecycle"
+url = "https://learn.microsoft.com/microsoftteams/plan-teams-lifecycle"
+
+[[check]]
+id = "M365-TMS-009"
+title = "Teams with guests and sensitive labels"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "A team whose sensitivity label or name marks it as confidential (finance, legal, HR, board and similar) has guest members."
+impact = "Outsiders read conversations and files that the team's own classification says should stay inside."
+remediation = [
+  "Review the guests and remove those who should not be there; use a label that blocks guests for such teams.",
+]
+verify = "Get-MgGroupMember -GroupId <team> | Where-Object userType -eq Guest"
+
+[[check.detail.references]]
+title = "Sensitivity labels for Teams"
+url = "https://learn.microsoft.com/purview/sensitivity-labels-teams-groups-sites"
+
+[[check]]
+id = "M365-TMS-010"
+title = "Email into channels allowed"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Email into channels is on without a list of allowed senders."
+impact = "Anyone who learns a channel's address can post mail and attachments into it."
+remediation = [
+  "Turn off email into channels, or allow only listed sender domains.",
+]
+verify = "Get-CsTeamsClientConfiguration | Select-Object AllowEmailIntoChannel, RestrictedSenderList"
+
+[[check.detail.references]]
+title = "Teams meeting policies"
+url = "https://learn.microsoft.com/microsoftteams/settings-policies-reference"
+
+[[check]]
+id = "M365-TMS-011"
+title = "Cloud storage providers enabled in Teams"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Third-party cloud storage (Dropbox, Box, Google Drive, ShareFile or Egnyte) can be added in Teams."
+impact = "Files move to storage outside the organization's retention, DLP and auditing."
+remediation = [
+  "Turn off third-party storage providers that are not approved.",
+]
+verify = "Get-CsTeamsClientConfiguration"
+
+[[check.detail.references]]
+title = "Teams meeting policies"
+url = "https://learn.microsoft.com/microsoftteams/settings-policies-reference"
+
+[[check]]
+id = "M365-TMS-012"
+title = "Meeting recording storage and expiration"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Meeting recordings never expire."
+impact = "Recordings of every meeting accumulate in OneDrive and SharePoint indefinitely."
+remediation = [
+  "Set a recording expiration (for example 120 days) in the meeting policy.",
+]
+verify = "Get-CsTeamsMeetingPolicy -Identity Global | Select-Object AllowCloudRecording, NewMeetingRecordingExpirationDays"
+
+[[check.detail.references]]
+title = "Auto-expiration of meeting recordings"
+url = "https://learn.microsoft.com/microsoftteams/meeting-expiration"
+
+[[check]]
+id = "M365-TMS-013"
+title = "External chat file sharing"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Chats with external organizations are allowed and OneDrive allows Anyone links, so files shared in those chats can become Anyone links."
+impact = "Files passed in external chats can end up as anonymous links that work for anyone."
+remediation = [
+  "Limit OneDrive sharing to guests, and external access to known domains.",
+]
+verify = "Get-CsTenantFederationConfiguration; Get-SPOTenant | Select-Object OneDriveSharingCapability"
+
+[[check.detail.references]]
+title = "Teams external access"
+url = "https://learn.microsoft.com/microsoftteams/trusted-organizations-external-meetings-chat"
+
+[[check]]
+id = "M365-TMS-014"
+title = "Teams admin roles assignments"
+status = "implemented"
+severity = "info"
+
+[check.detail]
+description = "Lists the holders of Teams Administrator, Teams Communications Administrator and Teams Devices Administrator."
+impact = "Teams admins control external access, apps and meeting policies for everyone."
+remediation = [
+  "Review the holders and assign the roles through PIM.",
+]
+verify = "Get-MgRoleManagementDirectoryRoleAssignment -Filter \"roleDefinitionId eq '69091246-20e8-4a56-aa4d-066075b2a7a8'\""
+
+[[check.detail.references]]
+title = "Teams admin roles"
+url = "https://learn.microsoft.com/microsoftteams/using-admin-roles"

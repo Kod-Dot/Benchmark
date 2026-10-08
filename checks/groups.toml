@@ -1,0 +1,33 @@
+# Top-level groups shown on the Scope step, in display order.
+
+[[group]]
+id = "onprem"
+title = "On-premises Active Directory"
+
+[[group]]
+id = "entra"
+title = "Microsoft Entra ID"
+
+[[group]]
+id = "hybrid"
+title = "Hybrid identity"
+
+[[group]]
+id = "m365"
+title = "Microsoft 365 workloads"
+
+[[group]]
+id = "azure"
+title = "Azure resources"
+
+[[group]]
+id = "endpoints"
+title = "Workstations and servers"
+
+[[group]]
+id = "baselines"
+title = "Per-setting baselines"
+
+[[group]]
+id = "hunting"
+title = "Threat hunting"

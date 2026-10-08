@@ -1,0 +1,243 @@
+# AD-AUD: Auditing and monitoring readiness
+
+area = "AD-AUD"
+
+[[check]]
+id = "AD-AUD-001"
+title = "Advanced audit policy actually effective on each DC (auditpol), not just in GPO"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "The effective audit policy on the DC (auditpol) lacks subcategories from Microsoft's domain controller baseline."
+impact = "Missing audit events leave attacks such as Kerberoasting, DCSync, group changes and log tampering invisible, and leave investigators without evidence."
+remediation = [
+  "Configure Advanced Audit Policy in the Default Domain Controllers Policy to the baseline, and enable \"Force audit policy subcategory settings\".",
+  "Confirm with auditpol /get /category:* on each DC.",
+]
+verify = "auditpol /get /category:*"
+mitre = ["T1562.002"]
+
+[[check.detail.references]]
+title = "Audit policy recommendations"
+url = "https://learn.microsoft.com/windows-server/identity/ad-ds/plan/security-best-practices/audit-policy-recommendations"
+
+[[check]]
+id = "AD-AUD-002"
+title = "Directory Service Changes auditing enabled"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Directory Service Changes is not audited for success on the DC."
+impact = "Changes to users, groups, GPOs and permissions (events 5136-5141) are not recorded, so unauthorised changes cannot be detected or reconstructed."
+remediation = [
+  "Enable \"Audit Directory Service Changes\" (Success) in the Default Domain Controllers Policy.",
+  "Make sure sensitive objects have auditing entries in their SACL (AD-AUD-003).",
+]
+verify = "auditpol /get /subcategory:\"Directory Service Changes\""
+mitre = ["T1562.002"]
+
+[[check.detail.references]]
+title = "Audit Directory Service Changes"
+url = "https://learn.microsoft.com/windows/security/threat-protection/auditing/audit-directory-service-changes"
+
+[[check]]
+id = "AD-AUD-003"
+title = "SACLs on sensitive objects (AdminSDHolder, domain root, privileged groups) for change auditing"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "The domain head, AdminSDHolder or a privileged group has no audit entry (SACL) for successful changes. Reading SACLs needs the \"Manage auditing and security log\" right; without it the check is not assessed."
+impact = "Changes to the most sensitive objects raise no 5136 event, so permission and membership tampering goes unrecorded."
+remediation = [
+  "Add an audit entry for Everyone, success, Write all properties, Modify permissions and Modify owner on these objects.",
+]
+verify = "(Get-Acl -Audit \"AD:CN=AdminSDHolder,CN=System,<domain DN>\").Audit"
+mitre = ["T1562.002"]
+
+[[check.detail.references]]
+title = "Audit Directory Service Changes"
+url = "https://learn.microsoft.com/windows/security/threat-protection/auditing/audit-directory-service-changes"
+
+[[check]]
+id = "AD-AUD-004"
+title = "Security log size and wrap behavior"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "The DC's Security log is smaller than 1 GB or stops logging when full."
+impact = "A busy DC overwrites a small log within hours, so evidence of an attack is gone before anyone looks. A log set to stop when full stops recording events."
+remediation = [
+  "Set the Security log to at least 1 GB (4 GB is common for DCs) with overwrite as needed.",
+  "Forward events to a SIEM or Windows Event Collector.",
+]
+verify = "Get-WinEvent -ListLog Security -ComputerName <dc> | Select-Object MaximumSizeInBytes, LogMode"
+mitre = ["T1562.002"]
+
+[[check.detail.references]]
+title = "Event log size recommendations"
+url = "https://learn.microsoft.com/windows/security/threat-protection/auditing/appendix-a-security-monitoring-recommendations-for-many-audit-events"
+
+[[check]]
+id = "AD-AUD-005"
+title = "Log forwarding (WEF or SIEM agent) missing on DCs"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "No known log agent (for example Splunk, NXLog, Winlogbeat, Elastic Agent, Wazuh, Azure Monitor Agent) is in the installed software of the DC, and no Windows Event Forwarding SubscriptionManager policy is set."
+impact = "Events stay only on the DC. An attacker who gains control of the DC can clear the logs, and investigators lose the evidence; detection depends on someone reading the DC's logs directly."
+remediation = [
+  "Forward DC events to a SIEM or a Windows Event Collector, with an agent or with Windows Event Forwarding (Configure target Subscription Manager).",
+  "If an agent not on the known list is used, confirm it runs on every DC.",
+]
+frameworks = [
+  "NIST 800-53 AU-6",
+  "NIST 800-53 AU-9(2)",
+]
+verify = '''
+Invoke-Command -ComputerName <dc> {
+  Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*', 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*' | Select-Object DisplayName
+  Get-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\EventLog\EventForwarding\SubscriptionManager' -ErrorAction SilentlyContinue }'''
+mitre = ["T1070.001", "T1562.002"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1070.001"
+url = "https://attack.mitre.org/techniques/T1070/001/"
+
+[[check]]
+id = "AD-AUD-006"
+title = "Microsoft Defender for Identity sensor deployed on all DCs (and AD CS, ADFS, Entra Connect)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "The Microsoft Defender for Identity sensor is not running on the DC."
+impact = "Identity attacks on that DC (DCSync, Kerberoasting, pass-the-ticket, reconnaissance) are not detected."
+remediation = [
+  "Install the Defender for Identity sensor on every DC, and on AD CS, AD FS and Entra Connect servers, or document the alternative detection in place.",
+]
+verify = "Get-Service -ComputerName <dc> -Name AATPSensor"
+
+[[check.detail.references]]
+title = "Microsoft Defender for Identity prerequisites"
+url = "https://learn.microsoft.com/defender-for-identity/deploy/prerequisites"
+
+[[check]]
+id = "AD-AUD-007"
+title = "Honeytoken / decoy accounts configured (informational)"
+status = "implemented"
+severity = "info"
+
+[check.detail]
+description = "Whether decoy (honeytoken) accounts exist, found by names or descriptions such as honey, decoy, canary or bait."
+impact = "A decoy account that nobody should use gives a reliable alert when an attacker tries credentials or Kerberoasts it."
+remediation = [
+  "Create one or more decoy accounts that look attractive (for example with an SPN or adminCount) and alert on any use.",
+]
+verify = "Get-ADUser -Filter * -Properties Description | Where-Object { \"$($_.Name) $($_.Description)\" -match 'honey|decoy|canary|bait' }"
+mitre = ["T1078.002"]
+
+[[check]]
+id = "AD-AUD-008"
+title = "Sysmon not running on DCs"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "No service whose name starts with Sysmon is installed on the DC, or it is installed but not running."
+impact = "Without Sysmon, process, network and registry activity on the DC is recorded only as far as the Security log and other tools cover it, which leaves gaps for detecting and investigating attacks."
+remediation = [
+  "Deploy Sysmon with a maintained configuration on every DC and forward its events, or document the endpoint detection tool that provides the same telemetry.",
+  "Start the Sysmon service where it is installed but stopped, and find out why it stopped.",
+]
+frameworks = [
+  "NIST 800-53 AU-12",
+  "NIST 800-53 SI-4",
+]
+verify = "Get-Service -ComputerName <dc> -Name Sysmon*"
+
+[[check.detail.references]]
+title = "Sysmon"
+url = "https://learn.microsoft.com/sysinternals/downloads/sysmon"
+
+[[check]]
+id = "AD-AUD-009"
+title = "PowerShell transcription target protected"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "PowerShell transcription is on for domain controllers, but transcripts are written to the users' Documents folders or to a local path on the DC."
+impact = "Transcripts kept where the person who ran the commands can delete them are not reliable evidence after an attack."
+remediation = [
+  "Set the transcript output directory to a central share where users can only create files, not read or change them.",
+]
+verify = "Get-ItemProperty HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\PowerShell\\Transcription"
+mitre = ["T1070.001"]
+
+[[check]]
+id = "AD-AUD-010"
+title = "\"Manage auditing and security log\" on DCs held by non-admins"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "A GPO linked to the Domain Controllers OU or the domain head grants Manage auditing and security log (SeSecurityPrivilege) to a principal other than admins, Tier 0 and built-in service identities."
+impact = "The holder can view and clear the Security log on DCs and change auditing settings (SACLs) on objects, so they can hide their own actions and those of others."
+remediation = [
+  "Edit the listed GPO, User Rights Assignment, and remove the principal from Manage auditing and security log.",
+  "Grant read access to logs through Event Log Readers or log forwarding instead.",
+]
+frameworks = [
+  "NIST 800-53 AU-9",
+  "NIST 800-53 AC-6",
+]
+verify = '''
+(Get-GPInheritance -Target (Get-ADDomain).DomainControllersContainer).InheritedGpoLinks | ForEach-Object {
+  Select-String -Path "\\$env:USERDNSDOMAIN\SYSVOL\$env:USERDNSDOMAIN\Policies\{$($_.GpoId)}\Machine\Microsoft\Windows NT\SecEdit\GptTmpl.inf" -ErrorAction SilentlyContinue `
+    -Pattern '^SeSecurityPrivilege' }'''
+mitre = ["T1070.001", "T1562.002"]
+
+[[check.detail.references]]
+title = "User Rights Assignment"
+url = "https://learn.microsoft.com/previous-versions/windows/it-pro/windows-10/security/threat-protection/security-policy-settings/user-rights-assignment"
+
+[[check]]
+id = "AD-AUD-011"
+title = "Time since last security log clear (event 1102)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "The DC's Security log was cleared (event 1102) within the period the log still holds."
+impact = "Clearing the Security log destroys evidence and is a common step after an intrusion. Every clear should be explained."
+remediation = [
+  "Confirm who cleared the log and why, from the account in event 1102.",
+  "Restrict who can manage auditing and the Security log (\"Manage auditing and security log\").",
+]
+verify = "Get-WinEvent -ComputerName <dc> -FilterHashtable @{LogName='Security'; Id=1102}"
+mitre = ["T1070.001"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1070.001"
+url = "https://attack.mitre.org/techniques/T1070/001/"
+
+[[check]]
+id = "AD-AUD-012"
+title = "Recent suspicious events summary (lockout storms, 4625 spikes, 4742 on DCs)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Summary of suspicious activity in the DC security logs: lockout storms, a spike of failed sign-ins (over 1,000 a day), and changes to DC computer accounts made by users."
+impact = "Each pattern is an early sign of password guessing or of an attack on DC accounts."
+remediation = [
+  "Investigate the sources of failed sign-ins and lockouts.",
+  "Confirm every change to a DC computer account.",
+]
+verify = "Get-WinEvent -FilterHashtable @{LogName='Security';Id=4740,4625,4742}"
+mitre = ["T1110"]

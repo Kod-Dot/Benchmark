@@ -1,0 +1,193 @@
+# HY-PATH: Cross-environment privilege paths
+
+area = "HY-PATH"
+
+[[check]]
+id = "HY-PATH-001"
+title = "On-prem admins who are also Entra Global Admins (same synced identity)"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "The same synchronized identity is an administrator on both sides: an Entra user with a privileged Entra role (active or eligible) whose on-premises account, matched by SID, is a member of an AD admin group."
+impact = "Compromise on either side gives the other. A stolen cloud session or phished password leads to the domain, and a domain compromise gives the attacker a cloud administrator."
+attack = [
+  "Compromises the on-premises account, for example by Kerberoasting or credential theft on a workstation.",
+  "Uses the same password, or resets it on-premises and lets sync carry it, to sign in to Entra ID.",
+  "Activates or uses the privileged Entra role to take over the tenant.",
+]
+remediation = [
+  "Give the person separate accounts: a cloud-only account for Entra roles and a non-synced Tier 0 account for AD.",
+  "Move the Entra role assignment to the cloud-only account, confirm it works, then remove the role from the synced account.",
+  "Remove the AD account from the admin group if it is a daily-use account, after confirming a separate admin account exists.",
+]
+verify = "For each member of the AD admin groups run Get-MgUser -Filter \"onPremisesSecurityIdentifier eq '<SID>'\", then check the user's active and eligible assignments in the Entra admin center under Roles and admins."
+cvss = "AV:N/AC:L/PR:H/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1078.002", "T1078.004", "T1556.007"]
+
+[[check.detail.references]]
+title = "Protecting Microsoft 365 from on-premises attacks"
+url = "https://learn.microsoft.com/entra/architecture/protect-m365-from-on-premises-attacks"
+
+[[check.detail.references]]
+title = "Best practices for Microsoft Entra roles"
+url = "https://learn.microsoft.com/entra/identity/role-based-access-control/best-practices"
+
+[[check]]
+id = "HY-PATH-002"
+title = "Entra roles that can take over on-prem (Hybrid Identity Admin, password writeback reach)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Lists cloud principals with a path into on-premises AD: Hybrid Identity Administrators, and, when password writeback is on and on-premises admins are synchronized, holders of roles that can reset their passwords."
+impact = "A cloud admin role that is not Tier 0 can change which on-premises identities the cloud trusts, or reset an on-premises admin's password through writeback."
+remediation = [
+  "Keep Hybrid Identity Administrator for Tier 0 admins only.",
+  "Do not synchronize on-premises admin accounts, or scope password writeback so they are excluded.",
+]
+verify = "Get-MgRoleManagementDirectoryRoleAssignment -Filter \"roleDefinitionId eq '8ac3fc64-6eca-42ea-9e69-59f4c7b60eb2'\""
+mitre = ["T1098"]
+
+[[check.detail.references]]
+title = "Protecting Microsoft 365 from on-premises attacks"
+url = "https://learn.microsoft.com/entra/architecture/protect-m365-from-on-premises-attacks"
+
+[[check]]
+id = "HY-PATH-003"
+title = "On-prem groups that grant Entra roles via sync"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "A group synchronized from on-premises AD holds an Entra role, or Owner, User Access Administrator or Contributor on Azure resources."
+impact = "Whoever can change the group's membership in AD, including delegated OU admins and Account Operators, gets the cloud role."
+remediation = [
+  "Grant cloud roles through cloud-only groups (role-assignable groups cannot be synchronized) and remove synced groups from Azure role assignments.",
+]
+verify = "Get-MgGroup -Filter 'onPremisesSyncEnabled eq true' and compare with role assignments."
+mitre = ["T1098"]
+
+[[check.detail.references]]
+title = "Protecting Microsoft 365 from on-premises attacks"
+url = "https://learn.microsoft.com/entra/architecture/protect-m365-from-on-premises-attacks"
+
+[[check]]
+id = "HY-PATH-004"
+title = "Cloud admins whose on-prem account is weakly protected"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "A synchronized Entra account with a privileged Entra role has a weakly protected on-premises account: password never expires, password older than 365 days, a servicePrincipalName set (Kerberoastable), Kerberos pre-authentication not required, or delegation allowed (not marked sensitive and not in Protected Users)."
+impact = "Any domain user can attack the on-premises side of a cloud administrator. Once the AD password is cracked or reset, sync carries it to Entra ID and the attacker holds the Entra role."
+attack = [
+  "Requests a service ticket (Kerberoasting) or an AS-REP for the account and cracks the password offline.",
+  "Signs in to Entra ID with the cracked password.",
+  "Uses the privileged Entra role.",
+]
+remediation = [
+  "Move the Entra role to a cloud-only account, which removes the on-premises dependency.",
+  "Until then, remove unneeded servicePrincipalName values and the pre-authentication exception after checking what uses them, and set a long password that is rotated.",
+  "Mark the account sensitive and cannot be delegated, or add it to Protected Users after confirming its sign-ins support it.",
+]
+verify = "Get-ADUser <samAccountName> -Properties PasswordNeverExpires, PasswordLastSet, ServicePrincipalName, DoesNotRequirePreAuth, AccountNotDelegated, MemberOf | Select-Object SamAccountName, PasswordNeverExpires, PasswordLastSet, ServicePrincipalName, DoesNotRequirePreAuth, AccountNotDelegated"
+cvss = "AV:N/AC:L/PR:L/UI:N/S:C/C:H/I:H/A:N"
+mitre = ["T1558.003", "T1558.004", "T1110", "T1078.004"]
+
+[[check.detail.references]]
+title = "Protecting Microsoft 365 from on-premises attacks"
+url = "https://learn.microsoft.com/entra/architecture/protect-m365-from-on-premises-attacks"
+
+[[check.detail.references]]
+title = "Protected Users security group"
+url = "https://learn.microsoft.com/windows-server/security/credentials-protection-and-management/protected-users-security-group"
+
+[[check]]
+id = "HY-PATH-005"
+title = "Synced service accounts with cloud permissions"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "A synchronized on-premises service account (an AD user with a servicePrincipalName, or named like svc*) holds an Entra directory role or owns an Entra application or service principal."
+impact = "Service account passwords are often old, shared and Kerberoastable. Cracking one gives cloud permissions, and an owned application lets the attacker add credentials and act as that application."
+attack = [
+  "Kerberoasts the service account and cracks its password offline.",
+  "Signs in to Entra ID as the synchronized service account.",
+  "Uses the directory role, or adds a client secret to the owned application and uses its permissions.",
+]
+remediation = [
+  "Confirm why the service account needs the role or ownership; most do not.",
+  "Remove the directory role and transfer application ownership to a named administrator or a cloud-only account.",
+  "Exclude service accounts from sync when they have no cloud use, and use managed identities or workload identities for cloud automation.",
+]
+verify = "Get-ADUser -Filter 'ServicePrincipalName -like \"*\"' | ForEach-Object { Get-MgUser -Filter \"onPremisesSecurityIdentifier eq '$($_.SID)'\" } | ForEach-Object { Get-MgUserOwnedObject -UserId $_.Id; Get-MgUserMemberOf -UserId $_.Id }"
+cvss = "AV:N/AC:L/PR:L/UI:N/S:C/C:H/I:H/A:N"
+mitre = ["T1558.003", "T1078.004", "T1098.001"]
+
+[[check.detail.references]]
+title = "Protecting Microsoft 365 from on-premises attacks"
+url = "https://learn.microsoft.com/entra/architecture/protect-m365-from-on-premises-attacks"
+
+[[check.detail.references]]
+title = "Best practices for Microsoft Entra roles"
+url = "https://learn.microsoft.com/entra/identity/role-based-access-control/best-practices"
+
+[[check]]
+id = "HY-PATH-006"
+title = "Combined attack graph: shortest paths crossing the hybrid boundary"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "An ordinary on-premises principal (Domain Users, Authenticated Users or Everyone) has a chain of memberships and permissions to an AD account that is synchronized and holds a privileged Entra role."
+impact = "Any domain user can take over the account on-premises and, through sync and its password, the cloud admin role."
+remediation = [
+  "Break the chain (the first permission in it), and do not synchronize accounts that hold cloud admin roles.",
+]
+verify = "Review the chain shown, starting with its first permission."
+mitre = ["T1098", "T1078.004"]
+
+[[check.detail.references]]
+title = "Protecting Microsoft 365 from on-premises attacks"
+url = "https://learn.microsoft.com/entra/architecture/protect-m365-from-on-premises-attacks"
+
+[[check]]
+id = "HY-PATH-007"
+title = "Intune/Endpoint management of DCs or Tier 0 servers from the cloud (cloud-to-Tier-0 path)"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "Cloud endpoint management reaches Tier 0: a domain controller or Tier 0 server is enrolled in Intune, matched by host name."
+impact = "Compromising an Intune admin, or a cloud account with Intune rights, leads to code execution on Tier 0 and the whole on-premises domain."
+remediation = [
+  "Unenroll Tier 0 machines from Intune and co-management.",
+  "Treat any cloud service that manages Tier 0 machines as Tier 0 itself.",
+]
+verify = "Compare Intune managed devices with domain controllers and Tier 0 servers."
+mitre = ["T1651"]
+
+[[check.detail.references]]
+title = "Enterprise access model"
+url = "https://learn.microsoft.com/security/privileged-access-workstations/privileged-access-access-model"
+
+[[check]]
+id = "HY-PATH-008"
+title = "Azure Arc / cloud agents on DCs with management rights (inventory)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Lists domain controllers and Tier 0 servers running the Azure Arc agent, matched by host name, with the agent version and status."
+impact = "The agent lets whoever has extension rights on the Arc resource run code as SYSTEM on the server, which moves Tier 0 control into Azure RBAC."
+remediation = [
+  "Remove the Arc agent from Tier 0 servers, or manage the Arc resources as Tier 0.",
+]
+verify = "Get-AzConnectedMachine | Select-Object Name, AgentVersion, Status"
+mitre = ["T1651"]
+
+[[check.detail.references]]
+title = "Azure Arc security overview"
+url = "https://learn.microsoft.com/azure/azure-arc/servers/security-overview"

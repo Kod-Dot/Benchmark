@@ -1,0 +1,284 @@
+# Assessment areas. Generated from docs/plans/dc-assessor-plan.md, then maintained by hand.
+
+[[area]]
+code = "AD-FND"
+title = "Forest and domain fundamentals"
+group = "onprem"
+sources = ["ldap"]
+
+[[area]]
+code = "AD-DC"
+title = "Domain controller health and hardening"
+group = "onprem"
+sources = ["ldap", "dc-remote"]
+
+[[area]]
+code = "AD-REP"
+title = "Replication and topology"
+group = "onprem"
+sources = ["ldap", "sysvol"]
+
+[[area]]
+code = "AD-PRIV"
+title = "Privileged groups and Tier 0"
+group = "onprem"
+sources = ["ldap"]
+
+[[area]]
+code = "AD-ACL"
+title = "Dangerous ACLs and delegation of control"
+group = "onprem"
+sources = ["ldap"]
+
+[[area]]
+code = "AD-KRB"
+title = "Kerberos and delegation"
+group = "onprem"
+sources = ["ldap"]
+
+[[area]]
+code = "AD-PWD"
+title = "Password and account policy"
+group = "onprem"
+sources = ["ldap", "sysvol"]
+
+[[area]]
+code = "AD-ACC"
+title = "Account hygiene"
+group = "onprem"
+sources = ["ldap"]
+
+[[area]]
+code = "AD-SVC"
+title = "Service accounts"
+group = "onprem"
+sources = ["ldap"]
+
+[[area]]
+code = "AD-LAPS"
+title = "LAPS and local admin management"
+group = "onprem"
+sources = ["ldap"]
+
+[[area]]
+code = "AD-GPO"
+title = "Group Policy"
+group = "onprem"
+sources = ["ldap", "sysvol"]
+
+[[area]]
+code = "AD-PKI"
+title = "AD Certificate Services"
+group = "onprem"
+sources = ["ldap"]
+
+[[area]]
+code = "AD-TRU"
+title = "Trusts"
+group = "onprem"
+sources = ["ldap"]
+
+[[area]]
+code = "AD-DNS"
+title = "DNS"
+group = "onprem"
+sources = ["ldap"]
+
+[[area]]
+code = "AD-LEG"
+title = "Legacy and insecure protocols"
+group = "onprem"
+sources = ["dc-remote", "dc-events"]
+
+[[area]]
+code = "AD-AUD"
+title = "Auditing and monitoring readiness"
+group = "onprem"
+sources = ["ldap", "dc-remote", "dc-events"]
+
+[[area]]
+code = "AD-BKP"
+title = "Backup and recovery"
+group = "onprem"
+sources = ["ldap"]
+
+[[area]]
+code = "AD-APP"
+title = "Exchange and legacy application footprint in AD"
+group = "onprem"
+sources = ["ldap"]
+
+[[area]]
+code = "AD-OU"
+title = "OU structure and administrative model"
+group = "onprem"
+sources = ["ldap"]
+
+[[area]]
+code = "AD-CMP"
+title = "Computers and endpoints seen from AD"
+group = "onprem"
+sources = ["ldap"]
+
+[[area]]
+code = "AD-SCH"
+title = "Schema and configuration anomalies"
+group = "onprem"
+sources = ["ldap"]
+
+[[area]]
+code = "AD-IOC"
+title = "Persistence and compromise indicators"
+group = "onprem"
+sources = ["ldap"]
+
+[[area]]
+code = "EN-TEN"
+title = "Tenant configuration"
+group = "entra"
+sources = ["graph"]
+
+[[area]]
+code = "EN-ID"
+title = "Identities and accounts"
+group = "entra"
+sources = ["graph", "graph-logs"]
+
+[[area]]
+code = "EN-AUTH"
+title = "Authentication and MFA"
+group = "entra"
+sources = ["graph"]
+
+[[area]]
+code = "EN-CA"
+title = "Conditional Access"
+group = "entra"
+sources = ["graph"]
+
+[[area]]
+code = "EN-PRIV"
+title = "Privileged roles and PIM"
+group = "entra"
+sources = ["graph"]
+
+[[area]]
+code = "EN-APP"
+title = "Applications and service principals"
+group = "entra"
+sources = ["graph"]
+
+[[area]]
+code = "EN-DEV"
+title = "Devices"
+group = "entra"
+sources = ["graph"]
+
+[[area]]
+code = "EN-GRP"
+title = "Groups and collaboration"
+group = "entra"
+sources = ["graph"]
+
+[[area]]
+code = "EN-MON"
+title = "Logging, monitoring and Identity Protection"
+group = "entra"
+sources = ["graph", "graph-logs"]
+
+[[area]]
+code = "HY-SYNC"
+title = "Entra Connect / Cloud Sync"
+group = "hybrid"
+sources = ["ldap", "graph"]
+
+[[area]]
+code = "HY-FED"
+title = "Federation"
+group = "hybrid"
+sources = ["ldap", "graph"]
+
+[[area]]
+code = "HY-PATH"
+title = "Cross-environment privilege paths"
+group = "hybrid"
+sources = ["ldap", "graph"]
+
+[[area]]
+code = "M365-EXO"
+title = "Exchange Online"
+group = "m365"
+sources = ["exo"]
+
+[[area]]
+code = "M365-SPO"
+title = "SharePoint Online and OneDrive"
+group = "m365"
+sources = ["spo"]
+
+[[area]]
+code = "M365-TMS"
+title = "Teams"
+group = "m365"
+sources = ["teams"]
+
+[[area]]
+code = "M365-INT"
+title = "Intune and endpoint management"
+group = "m365"
+sources = ["graph"]
+
+[[area]]
+code = "M365-PUR"
+title = "Purview, audit and data protection"
+group = "m365"
+sources = ["purview"]
+
+[[area]]
+code = "M365-DEF"
+title = "Defender XDR and security tooling posture"
+group = "m365"
+sources = ["defender"]
+
+[[area]]
+code = "AZ-RBAC"
+title = "Azure control plane and RBAC"
+group = "azure"
+sources = ["arm"]
+
+[[area]]
+code = "AZ-KV"
+title = "Key Vault and secrets"
+group = "azure"
+sources = ["arm"]
+
+[[area]]
+code = "EP-HARD"
+title = "Windows endpoint and server hardening"
+group = "endpoints"
+sources = ["endpoints"]
+
+[[area]]
+code = "EP-T0"
+title = "Tier 0 servers beyond DCs"
+group = "endpoints"
+sources = ["endpoints"]
+
+[[area]]
+code = "HUNT-AD"
+title = "On-prem hunt"
+group = "hunting"
+sources = ["ldap", "dc-events"]
+
+[[area]]
+code = "HUNT-EN"
+title = "Cloud hunt"
+group = "hunting"
+sources = ["graph-logs"]
+
+[[area]]
+code = "BSL"
+title = "Per-setting baseline compliance"
+group = "baselines"
+sources = ["dc-remote", "endpoints", "graph"]
+generated = true

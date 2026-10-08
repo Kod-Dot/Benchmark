@@ -1,0 +1,10 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "resources": {
+      "../../checks/": "checks/",
+      "../../collectors/": "collectors/",
+      "../../target/release/benchmark-password.exe": "BenchmarkPassword.exe"
+    }
+  }
+}

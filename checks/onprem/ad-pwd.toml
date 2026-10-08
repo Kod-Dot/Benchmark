@@ -1,0 +1,446 @@
+# AD-PWD: Password and account policy
+
+area = "AD-PWD"
+
+[[check]]
+id = "AD-PWD-001"
+title = "Default domain password policy: minimum length below 14"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "The default domain password policy allows passwords shorter than 14 characters."
+impact = "Short passwords are much easier to guess, spray and crack offline."
+remediation = [
+  "Set the minimum password length to at least 14 in the Default Domain Policy, or use fine-grained password policies for users that cannot meet it yet.",
+  "Deploy a banned-password list such as Microsoft Entra Password Protection.",
+]
+verify = "Get-ADDefaultDomainPasswordPolicy | Select-Object MinPasswordLength"
+mitre = ["T1110", "T1110.003"]
+
+[[check.detail.references]]
+title = "Password policy recommendations"
+url = "https://learn.microsoft.com/microsoft-365/admin/misc/password-policy-recommendations"
+
+[[check]]
+id = "AD-PWD-002"
+title = "Complexity disabled"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Password complexity is disabled in the default domain policy."
+impact = "Users can choose single-word or numeric passwords that appear in every password-spraying list."
+remediation = [
+  "Enable \"Password must meet complexity requirements\" in the Default Domain Policy, or enforce a banned-password list.",
+]
+verify = "Get-ADDefaultDomainPasswordPolicy | Select-Object ComplexityEnabled"
+mitre = ["T1110"]
+
+[[check.detail.references]]
+title = "Password policy recommendations"
+url = "https://learn.microsoft.com/microsoft-365/admin/misc/password-policy-recommendations"
+
+[[check]]
+id = "AD-PWD-003"
+title = "Maximum password age policy"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Reads maxPwdAge and minPwdLength on the domain head. The check passes when passwords expire within 1 to 365 days, or when they never expire and the minimum length is 14 or more. It fails when passwords expire after more than 365 days, or never expire with a minimum shorter than 14."
+impact = "A short password that never changes, or changes only every few years, stays useful to an attacker for a long time once it has been guessed or leaked."
+remediation = [
+  "Either set Maximum password age to 365 days or less, or set Minimum password length to 14 or more if passwords should not expire.",
+  "Combine with a banned-password list and MFA where possible.",
+]
+frameworks = [
+  "NIST 800-53 IA-5",
+]
+verify = '''
+Get-ADDefaultDomainPasswordPolicy | Select-Object MaxPasswordAge, MinPasswordLength'''
+mitre = ["T1110", "T1078.002"]
+
+[[check.detail.references]]
+title = "Maximum password age"
+url = "https://learn.microsoft.com/windows/security/threat-protection/security-policy-settings/maximum-password-age"
+
+[[check.detail.references]]
+title = "Password policy recommendations"
+url = "https://learn.microsoft.com/microsoft-365/admin/misc/password-policy-recommendations"
+
+[[check]]
+id = "AD-PWD-004"
+title = "Password history below 24"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "The default domain policy remembers fewer than 24 previous passwords."
+impact = "Users can cycle back to old, possibly leaked passwords."
+remediation = [
+  "Set \"Enforce password history\" to 24.",
+]
+verify = "Get-ADDefaultDomainPasswordPolicy | Select-Object PasswordHistoryCount"
+mitre = ["T1110"]
+
+[[check.detail.references]]
+title = "Password policy recommendations"
+url = "https://learn.microsoft.com/microsoft-365/admin/misc/password-policy-recommendations"
+
+[[check]]
+id = "AD-PWD-005"
+title = "Reversible encryption enabled (policy or per-account)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Passwords are stored with reversible encryption, either domain-wide in the password policy or on individual accounts."
+impact = "Anyone who can read password data from AD (a backup, DCSync, a DC disk) gets these passwords in clear text, not as hashes."
+remediation = [
+  "Disable \"Store passwords using reversible encryption\" in the domain policy and on each listed account.",
+  "Reset the passwords of the listed accounts so the reversible copy is discarded.",
+]
+verify = "Get-ADUser -LDAPFilter '(userAccountControl:1.2.840.113556.1.4.803:=128)'"
+mitre = ["T1003"]
+
+[[check]]
+id = "AD-PWD-006"
+title = "Account lockout threshold disabled or too high"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Account lockout is disabled or allows more than 10 failed attempts."
+impact = "Attackers can try passwords against every account without being stopped (password spraying and brute force)."
+remediation = [
+  "Set the lockout threshold between 5 and 10 attempts with a 15-minute lockout duration and observation window.",
+  "Monitor for spraying in sign-in logs.",
+]
+verify = "Get-ADDefaultDomainPasswordPolicy | Select-Object LockoutThreshold, LockoutDuration"
+mitre = ["T1110", "T1110.003"]
+
+[[check.detail.references]]
+title = "Password policy recommendations"
+url = "https://learn.microsoft.com/microsoft-365/admin/misc/password-policy-recommendations"
+
+[[check]]
+id = "AD-PWD-007"
+title = "Lockout duration and observation window"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "When account lockout is on, the lockout duration and the observation window in the default domain policy must each be at least 15 minutes. A duration of 0, meaning an admin must unlock the account, also passes. When lockout is off this check only notes it; AD-PWD-006 reports that."
+impact = "A short lockout or a short window lets an attacker wait a few minutes and try again, so password spraying continues at a slower but steady rate."
+remediation = [
+  "Set Account lockout duration and Reset account lockout counter after to at least 15 minutes in the Default Domain Policy.",
+]
+frameworks = [
+  "NIST 800-53 AC-7",
+]
+verify = '''
+Get-ADDefaultDomainPasswordPolicy | Select-Object LockoutThreshold, LockoutDuration, LockoutObservationWindow'''
+mitre = ["T1110", "T1110.003"]
+
+[[check.detail.references]]
+title = "Account lockout duration"
+url = "https://learn.microsoft.com/windows/security/threat-protection/security-policy-settings/account-lockout-duration"
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1110.003: Password Spraying"
+url = "https://attack.mitre.org/techniques/T1110/003/"
+
+[[check]]
+id = "AD-PWD-008"
+title = "Fine-grained password policies inventory and precedence"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Lists every fine-grained password policy (password settings object) with its settings and targets. A policy is flagged when it applies to no one, applies only to objects that were not found, or shares its precedence with another policy. Reading password settings objects needs delegated rights; with a standard account none are visible even when they exist."
+impact = "A policy that applies to no one gives a false sense that some accounts are protected. When two policies share a precedence, which one wins depends on GUID order, so an account may get the weaker one."
+remediation = [
+  "Give each policy a unique precedence.",
+  "Link each policy to the groups it is meant for, or delete it if it is no longer needed.",
+]
+frameworks = [
+  "NIST 800-53 IA-5",
+]
+verify = '''
+Get-ADFineGrainedPasswordPolicy -Filter * | Select-Object Name, Precedence, AppliesTo, MinPasswordLength'''
+mitre = ["T1110"]
+
+[[check.detail.references]]
+title = "Get-ADFineGrainedPasswordPolicy"
+url = "https://learn.microsoft.com/powershell/module/activedirectory/get-adfinegrainedpasswordpolicy"
+
+[[check]]
+id = "AD-PWD-009"
+title = "FGPPs weaker than the default policy"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Fine-grained password policies are weaker than the default domain policy in at least one way: a shorter minimum length, a shorter history, complexity off while the domain has it on, reversible encryption on, or no lockout while the domain has one. Reading password settings objects needs delegated rights; with a standard account none are visible even when they exist."
+impact = "Accounts under a weaker policy can have passwords the domain policy would refuse, and may not be locked out, so they are easier to guess or spray."
+remediation = [
+  "Raise each listed setting in the policy to at least the domain value.",
+  "Turn off reversible encryption in the policy and reset the passwords of the accounts it applies to.",
+  "If a group truly needs an exception, document it and keep the group small.",
+]
+frameworks = [
+  "NIST 800-53 IA-5",
+  "NIST 800-53 AC-7",
+]
+verify = '''
+Get-ADDefaultDomainPasswordPolicy
+Get-ADFineGrainedPasswordPolicy -Filter * |
+  Select-Object Name, MinPasswordLength, PasswordHistoryCount, ComplexityEnabled, ReversibleEncryptionEnabled, LockoutThreshold'''
+mitre = ["T1110", "T1110.003"]
+
+[[check.detail.references]]
+title = "Get-ADFineGrainedPasswordPolicy"
+url = "https://learn.microsoft.com/powershell/module/activedirectory/get-adfinegrainedpasswordpolicy"
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1110.003: Password Spraying"
+url = "https://attack.mitre.org/techniques/T1110/003/"
+
+[[check]]
+id = "AD-PWD-010"
+title = "Privileged accounts not covered by a strong FGPP"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Enabled admin accounts get a minimum password length below 14 from the policy that applies to them: a fine-grained policy linked directly or through a group, or otherwise the domain policy. Reading password settings objects needs delegated rights; with a standard account none are visible even when they exist."
+impact = "Admin accounts are the most valuable to guess or crack. A short minimum lets them keep passwords that fall to spraying or offline cracking."
+remediation = [
+  "Create a fine-grained password policy with a minimum length of 14 or more and link it to the admin groups.",
+  "Give it a lower precedence number than any other policy that applies to those accounts.",
+  "Have the admins change their passwords so the new minimum takes effect.",
+]
+frameworks = [
+  "NIST 800-53 IA-5",
+  "NIST 800-53 AC-6",
+]
+verify = '''
+Get-ADGroupMember 'Domain Admins' -Recursive |
+  ForEach-Object { [pscustomobject]@{ Name = $_.Name; Policy = (Get-ADUserResultantPasswordPolicy -Identity $_).Name } }'''
+mitre = ["T1110", "T1078.002"]
+
+[[check.detail.references]]
+title = "Get-ADFineGrainedPasswordPolicy"
+url = "https://learn.microsoft.com/powershell/module/activedirectory/get-adfinegrainedpasswordpolicy"
+
+[[check.detail.references]]
+title = "Password policy recommendations"
+url = "https://learn.microsoft.com/microsoft-365/admin/misc/password-policy-recommendations"
+
+[[check]]
+id = "AD-PWD-011"
+title = "Users with PASSWD_NOTREQD flag"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Enabled accounts have the PASSWD_NOTREQD flag, so the password policy does not apply to them and their password may be empty."
+impact = "An account with an empty or trivial password can be used by anyone who knows its name."
+remediation = [
+  "Clear PASSWD_NOTREQD on each listed account and set a password that meets the policy.",
+]
+verify = "Get-ADUser -LDAPFilter '(&(userAccountControl:1.2.840.113556.1.4.803:=32)(!(userAccountControl:1.2.840.113556.1.4.803:=2)))'"
+mitre = ["T1078"]
+
+[[check]]
+id = "AD-PWD-012"
+title = "Users with password never expires"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "User accounts have the \"Password never expires\" flag set."
+impact = "Their passwords may be years old and reused elsewhere, which makes them good targets for spraying and credential stuffing."
+remediation = [
+  "Remove the flag from human accounts and rely on a strong password policy and MFA.",
+  "Move service accounts to gMSAs.",
+]
+frameworks = [
+  "CIS Controls 5.2",
+]
+cvss = "AV:N/AC:H/PR:N/UI:N/S:U/C:L/I:L/A:N"
+mitre = ["T1078.002"]
+
+[[check.detail.references]]
+title = "Get-ADUser"
+url = "https://learn.microsoft.com/powershell/module/activedirectory/get-aduser"
+
+[[check]]
+id = "AD-PWD-013"
+title = "Users with blank passwords (where detectable via PASSWD_NOTREQD + pwdLastSet=0)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Enabled accounts have PASSWD_NOTREQD and have never had a password set, so their password is most likely empty."
+impact = "Anyone can sign in as these accounts with no password wherever they are allowed to log on."
+remediation = [
+  "Disable the accounts or set a strong password and clear PASSWD_NOTREQD.",
+]
+verify = "Get-ADUser -LDAPFilter '(&(userAccountControl:1.2.840.113556.1.4.803:=32)(pwdLastSet=0))'"
+mitre = ["T1078"]
+
+[[check]]
+id = "AD-PWD-014"
+title = "Accounts never logged on but enabled"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Enabled accounts were created more than 30 days ago and have never logged on."
+impact = "Unused accounts often keep their initial password and nobody notices when they are used."
+remediation = [
+  "Disable accounts that are not needed; follow up with the owners of the rest.",
+]
+verify = "Get-ADUser -Filter 'Enabled -eq $true' -Properties LastLogonTimestamp, whenCreated | Where-Object { -not $_.LastLogonTimestamp }"
+mitre = ["T1078"]
+
+[[check]]
+id = "AD-PWD-015"
+title = "Passwords not changed in > 1 year"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Enabled accounts have passwords that have not changed for more than a year."
+impact = "Old passwords are more likely to have leaked or to be crackable from old captures or backups."
+remediation = [
+  "Have the owners change these passwords, or reset them. Service accounts should move to gMSAs.",
+]
+verify = "Get-ADUser -Filter 'Enabled -eq $true' -Properties PasswordLastSet | Where-Object PasswordLastSet -lt (Get-Date).AddDays(-365)"
+mitre = ["T1078"]
+
+[[check]]
+id = "AD-PWD-016"
+title = "Users who must change password at next logon but never did"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Enabled accounts are set to change their password at next logon but have not done so more than 30 days after creation."
+impact = "Their initial password, often shared by the helpdesk or reused across new accounts, is still valid."
+remediation = [
+  "Disable the accounts until their owners need them, or reset them with a unique password.",
+]
+verify = "Get-ADUser -LDAPFilter '(&(pwdLastSet=0)(!(userAccountControl:1.2.840.113556.1.4.803:=2)))'"
+mitre = ["T1078"]
+
+[[check]]
+id = "AD-PWD-019"
+title = "Passwords stored in description, info or comment attributes"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Account descriptions contain words that suggest a password. Descriptions are readable by every domain user. The values are not copied into this report."
+impact = "Any user can read the description and sign in as the account if it holds a working password."
+remediation = [
+  "Remove the passwords from the descriptions.",
+  "Change the passwords of the listed accounts, since they must be treated as exposed.",
+]
+verify = "Get-ADObject -LDAPFilter '(|(description=*pass*)(description=*pwd*))' -Properties description"
+mitre = ["T1552"]
+
+[[check]]
+id = "AD-PWD-020"
+title = "Passwords in readable attributes (userPassword and similar)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Accounts have a value in userPassword, unixUserPassword, msSFU30Password or os400Password. These attributes can hold a password in clear or weakly protected form and LDAP can return them. Only which accounts have a value is recorded, never the value."
+impact = "Depending on the permissions on the attribute, other users can read the stored password and sign in as the account, or use it on the Unix or other systems that synced it."
+attack = [
+  "Signs in as a domain user and searches LDAP for accounts with userPassword or a similar attribute.",
+  "Reads the value where permissions allow it.",
+  "Signs in as the account with the recovered password.",
+]
+remediation = [
+  "Clear the attribute on each listed account.",
+  "Change the password of each listed account, since it must be treated as exposed.",
+  "Find the tool or sync that wrote the value and stop it.",
+]
+frameworks = [
+  "NIST 800-53 IA-5",
+]
+verify = '''
+Get-ADObject -LDAPFilter '(|(userPassword=*)(unixUserPassword=*)(msSFU30Password=*)(os400Password=*))' |
+  Select-Object Name, DistinguishedName'''
+cvss = "AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N"
+mitre = ["T1552"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1552: Unsecured Credentials"
+url = "https://attack.mitre.org/techniques/T1552/"
+
+[[check]]
+id = "AD-PWD-021"
+title = "Microsoft Entra Password Protection for on-prem deployed (DC agent present)"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "On each domain controller, the Microsoft Entra Password Protection DC agent service (AzureADPasswordProtectionDCAgent) must be running. A DC where the agent is installed but its service is stopped, or where it is not installed, is listed."
+impact = "Without the agent on every DC, password changes handled by that DC are not checked against the banned-password list, so users can set common or breached passwords."
+remediation = [
+  "Install the Microsoft Entra Password Protection proxy and the DC agent on every domain controller.",
+  "Start the service on DCs where it is installed but stopped.",
+  "Run it in audit mode first, then switch to enforced.",
+]
+frameworks = [
+  "NIST 800-53 IA-5(1)",
+]
+verify = '''
+Get-ADDomainController -Filter * | ForEach-Object {
+  Get-Service -ComputerName $_.HostName -Name AzureADPasswordProtectionDCAgent -ErrorAction SilentlyContinue |
+    Select-Object MachineName, Status }'''
+mitre = ["T1110.003"]
+
+[[check.detail.references]]
+title = "Eliminate bad passwords using Microsoft Entra Password Protection"
+url = "https://learn.microsoft.com/entra/identity/authentication/concept-password-ban-bad"
+
+[[check.detail.references]]
+title = "Enforce on-premises Microsoft Entra Password Protection for AD DS"
+url = "https://learn.microsoft.com/entra/identity/authentication/concept-password-ban-bad-on-premises"
+
+[[check]]
+id = "AD-PWD-022"
+title = "Smart-card-required accounts with password hash not rotated"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Enabled user accounts have Smart card is required for interactive logon set, the domain does not rotate their hidden password (msDS-ExpirePasswordsOnSmartCardOnlyAccounts is off), and their password was last set more than a year ago or never."
+impact = "A smart-card-only account still has an NT hash, set once when the flag was turned on. If that hash is stolen it keeps working for NTLM and Kerberos until it changes, with no smart card needed."
+attack = [
+  "Takes the NT hash of a smart-card-only account from the memory of a computer it used.",
+  "Uses the hash to authenticate as the account (pass the hash), with no smart card.",
+]
+remediation = [
+  "Turn on msDS-ExpirePasswordsOnSmartCardOnlyAccounts on the domain (needs domain functional level 2016).",
+  "Until then, clear and set the smart card flag again on each listed account to generate a new random password.",
+]
+frameworks = [
+  "NIST 800-53 IA-5",
+]
+verify = '''
+Get-ADObject (Get-ADDomain).DistinguishedName -Properties msDS-ExpirePasswordsOnSmartCardOnlyAccounts
+Get-ADUser -Filter 'SmartcardLogonRequired -eq $true -and Enabled -eq $true' -Properties PasswordLastSet |
+  Select-Object Name, PasswordLastSet'''
+mitre = ["T1550"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1550: Use Alternate Authentication Material"
+url = "https://attack.mitre.org/techniques/T1550/"

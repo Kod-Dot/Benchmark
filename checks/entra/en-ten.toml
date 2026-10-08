@@ -1,0 +1,409 @@
+# EN-TEN: Tenant configuration
+
+area = "EN-TEN"
+
+[[check]]
+id = "EN-TEN-001"
+title = "Tenant inventory: licenses (P1/P2/E5), verified domains, data location"
+status = "implemented"
+severity = "info"
+
+[check.detail]
+description = "Inventory of the tenant: the Entra ID licence level derived from subscribed SKUs (Free, P1 or P2), the verified domains, and the country or data location of the organization."
+remediation = [
+  "No action is needed. Use the licence level to judge which later findings can be fixed: Conditional Access needs P1, and Identity Protection risk policies and PIM need P2.",
+]
+verify = "Get-MgSubscribedSku | Select-Object SkuPartNumber, ConsumedUnits, CapabilityStatus"
+
+[[check.detail.references]]
+title = "Add your custom domain name to your tenant"
+url = "https://learn.microsoft.com/entra/fundamentals/add-custom-domain"
+
+[[check]]
+id = "EN-TEN-002"
+title = "Security Defaults vs. Conditional Access state (one of them must be on)"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "Neither Security Defaults nor Conditional Access policies that require MFA are enabled, so the tenant has no baseline MFA requirement."
+impact = "A stolen or sprayed password is enough to sign in to any account, including administrators."
+remediation = [
+  "Enable Conditional Access policies that require MFA for all users and admins, or turn on Security Defaults if the tenant has no Entra ID P1 licences.",
+]
+frameworks = [
+  "CIS Microsoft 365 5.2.2.1",
+]
+cvss = "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N"
+mitre = ["T1078.004", "T1110.003"]
+
+[[check.detail.references]]
+title = "Security defaults in Microsoft Entra ID"
+url = "https://learn.microsoft.com/entra/fundamentals/security-defaults"
+
+[[check]]
+id = "EN-TEN-003"
+title = "Users can register applications"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "The default user role allows any user to register applications (allowedToCreateApps is true). Every member can create app registrations and service principals that they own."
+impact = "An attacker with a normal user account can create an application that looks internal and use it for consent phishing, or as a persistent identity with its own credentials that survives a password reset of the user."
+attack = [
+  "Signs in with a compromised standard user account.",
+  "Registers an application with a trustworthy name and adds a client secret.",
+  "Sends consent links to other users, or keeps using the app credentials for access after the user account is cleaned up.",
+]
+remediation = [
+  "In the Entra admin center, go to Identity > Users > User settings and set \"Users can register applications\" to No.",
+  "Assign the Application Developer role, or a custom role, to the people who need to create applications.",
+  "Review existing app registrations owned by regular users and remove those that are not needed.",
+]
+verify = "(Get-MgPolicyAuthorizationPolicy).DefaultUserRolePermissions | Select-Object AllowedToCreateApps"
+cvss = "AV:N/AC:L/PR:L/UI:R/S:U/C:L/I:L/A:N"
+frameworks = [
+  "CIS Microsoft 365 5.1.2.2",
+]
+
+[[check.detail.references]]
+title = "Default user permissions"
+url = "https://learn.microsoft.com/entra/fundamentals/users-default-permissions"
+
+[[check.detail.references]]
+title = "Delegate application management administrator permissions"
+url = "https://learn.microsoft.com/entra/identity/role-based-access-control/delegate-app-roles"
+
+[[check]]
+id = "EN-TEN-004"
+title = "Users can create tenants"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "The default user role allows any user to create new Entra tenants (allowedToCreateTenants is true). The user who creates a tenant becomes its Global Administrator."
+impact = "Users can create tenants outside the control and monitoring of the organization, which can be used to move data out or to host look-alike resources for phishing."
+attack = [
+  "Signs in with a compromised or insider user account.",
+  "Creates a new tenant and becomes its Global Administrator.",
+  "Uses the unmanaged tenant to stage data or to run phishing infrastructure under a name tied to the organization.",
+]
+remediation = [
+  "In the Entra admin center, go to Identity > Users > User settings and set \"Restrict non-admin users from creating tenants\" to Yes.",
+  "Assign the Tenant Creator role to the few people who need to create tenants.",
+]
+verify = "(Get-MgPolicyAuthorizationPolicy).DefaultUserRolePermissions | Select-Object AllowedToCreateTenants"
+cvss = "AV:N/AC:L/PR:L/UI:N/S:U/C:L/I:L/A:N"
+frameworks = [
+  "CIS Microsoft 365 5.1.2.3",
+]
+
+[[check.detail.references]]
+title = "Default user permissions"
+url = "https://learn.microsoft.com/entra/fundamentals/users-default-permissions"
+
+[[check]]
+id = "EN-TEN-005"
+title = "Users can create security groups / Microsoft 365 groups"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "The default user role allows any user to create security groups (allowedToCreateSecurityGroups is true)."
+impact = "Groups are created without review, which leads to sprawl and makes it harder to see who has access to what. A user who creates a group becomes its owner and controls its membership."
+remediation = [
+  "In the Entra admin center, go to Groups > All groups > General and set \"Users can create security groups in Azure portals, API or PowerShell\" to No.",
+  "Let group administrators or a self-service request process create security groups instead.",
+]
+verify = "(Get-MgPolicyAuthorizationPolicy).DefaultUserRolePermissions | Select-Object AllowedToCreateSecurityGroups"
+
+[[check.detail.references]]
+title = "Default user permissions"
+url = "https://learn.microsoft.com/entra/fundamentals/users-default-permissions"
+
+[[check]]
+id = "EN-TEN-006"
+title = "Guest user access restriction level"
+status = "implemented"
+mitre = ["T1087.004", "T1069.003"]
+severity = "medium"
+
+[check.detail]
+description = "Guest user access is not set to the most restrictive level. Guests can read properties and memberships of directory objects beyond their own. The finding is more serious when guests have the same access as members."
+impact = "A compromised or malicious guest account can enumerate users, groups and memberships of the tenant and use them to plan phishing or privilege escalation."
+attack = [
+  "Signs in as a guest, using a compromised partner account or a self-invited guest.",
+  "Lists users, groups and group memberships through Microsoft Graph.",
+  "Uses the list to pick targets such as administrators and members of sensitive groups.",
+]
+remediation = [
+  "In the Entra admin center, go to Identity > External Identities > External collaboration settings.",
+  "Under Guest user access, select \"Guest user access is restricted to properties and memberships of their own directory objects (most restrictive)\".",
+  "Check that guest-facing apps such as Teams still work as expected after the change.",
+]
+verify = "Get-MgPolicyAuthorizationPolicy | Select-Object GuestUserRoleId"
+cvss = "AV:N/AC:L/PR:L/UI:N/S:U/C:L/I:N/A:N"
+frameworks = [
+  "CIS Microsoft 365 5.1.6.2",
+]
+
+[[check.detail.references]]
+title = "Restrict guest user access permissions"
+url = "https://learn.microsoft.com/entra/identity/users/users-restrict-guest-permissions"
+
+[[check.detail.references]]
+title = "Configure external collaboration settings"
+url = "https://learn.microsoft.com/entra/external-id/external-collaboration-settings-configure"
+
+[[check]]
+id = "EN-TEN-007"
+title = "Guest invite settings (who can invite)"
+status = "implemented"
+mitre = ["T1136.003"]
+severity = "medium"
+
+[check.detail]
+description = "Guest invitations are allowed from everyone (allowInvitesFrom is everyone). Any member and any existing guest can invite new guest users into the tenant."
+impact = "One compromised account, including a guest, can bring in additional external accounts that the attacker controls and that keep access after the first account is removed."
+attack = [
+  "Signs in with a compromised member or guest account.",
+  "Invites an external account the attacker controls.",
+  "Uses the new guest account as a separate foothold that is not tied to the original account.",
+]
+remediation = [
+  "In the Entra admin center, go to Identity > External Identities > External collaboration settings.",
+  "Under Guest invite settings, select \"Only users assigned to specific admin roles can invite guest users\" or \"Member users and users assigned to specific admin roles can invite guest users\".",
+  "Assign the Guest Inviter role to the people who need to invite guests.",
+]
+verify = "Get-MgPolicyAuthorizationPolicy | Select-Object AllowInvitesFrom"
+cvss = "AV:N/AC:L/PR:L/UI:N/S:U/C:L/I:L/A:N"
+frameworks = [
+  "CIS Microsoft 365 5.1.6.3",
+]
+
+[[check.detail.references]]
+title = "Configure external collaboration settings"
+url = "https://learn.microsoft.com/entra/external-id/external-collaboration-settings-configure"
+
+[[check]]
+id = "EN-TEN-008"
+title = "External collaboration allow/deny domain list"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Guest invitations have no allowed or blocked domain list, or everyone (including guests) can invite guests."
+impact = "Users can invite anyone, from any domain, into Teams and sites."
+remediation = [
+  "Allow invitations only to partner domains, or block personal mail domains, and limit inviting to designated roles.",
+]
+verify = "Entra admin center > External Identities > External collaboration settings"
+
+[[check.detail.references]]
+title = "External collaboration settings"
+url = "https://learn.microsoft.com/entra/external-id/external-collaboration-settings-configure"
+
+[[check]]
+id = "EN-TEN-009"
+title = "Cross-tenant access settings (inbound/outbound defaults and partner overrides)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "The default cross-tenant access settings allow B2B direct connect inbound for all users and applications, or automatically redeem invitations for all organizations. These defaults apply to every external tenant that has no partner-specific configuration."
+impact = "Users from any external tenant can reach shared resources such as Teams shared channels, or be added without a consent prompt, so access is not limited to known partners."
+attack = [
+  "Uses an account in a tenant the attacker controls.",
+  "Connects to the organization through B2B direct connect or an auto-redeemed invitation, without a consent prompt the user would notice.",
+  "Reads data in shared channels or resources the external user is added to.",
+]
+remediation = [
+  "In the Entra admin center, go to Identity > External Identities > Cross-tenant access settings > Default settings.",
+  "Under Inbound access settings, set B2B direct connect to block for all users and applications.",
+  "Clear \"Automatically redeem invitations\" in the default trust settings, and allow direct connect and automatic redemption only on the Organizational settings tab for named partner tenants.",
+]
+verify = "Get-MgPolicyCrossTenantAccessPolicyDefault | Select-Object B2BDirectConnectInbound, AutomaticUserConsentSettings"
+cvss = "AV:N/AC:H/PR:L/UI:N/S:U/C:L/I:L/A:N"
+mitre = ["T1078.004", "T1199"]
+
+[[check.detail.references]]
+title = "Cross-tenant access overview"
+url = "https://learn.microsoft.com/entra/external-id/cross-tenant-access-overview"
+
+[[check.detail.references]]
+title = "Configure cross-tenant access settings for B2B collaboration"
+url = "https://learn.microsoft.com/entra/external-id/cross-tenant-access-settings-b2b-collaboration"
+
+[[check.detail.references]]
+title = "Set up B2B direct connect with an external organization"
+url = "https://learn.microsoft.com/entra/external-id/cross-tenant-access-settings-b2b-direct-connect"
+
+[[check]]
+id = "EN-TEN-010"
+title = "B2B direct connect and cross-tenant sync configuration"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "B2B direct connect is allowed by default for all external tenants, or for a partner, and partners with automatic redemption inbound (needed for cross-tenant sync) are listed."
+impact = "Direct connect lets users from other tenants into shared Teams channels without a guest account; inbound sync lets a partner tenant create users in this one."
+remediation = [
+  "Block B2B direct connect in the default settings and allow it per partner.",
+  "Allow inbound cross-tenant sync only for partners that are meant to provision users.",
+]
+verify = "Invoke-MgGraphRequest GET v1.0/policies/crossTenantAccessPolicy/default"
+mitre = ["T1199"]
+
+[[check.detail.references]]
+title = "Cross-tenant access overview"
+url = "https://learn.microsoft.com/entra/external-id/cross-tenant-access-overview"
+
+[[check]]
+id = "EN-TEN-011"
+title = "Users can read other users (default directory permissions)"
+status = "implemented"
+mitre = ["T1087.004", "T1069.003"]
+severity = "low"
+
+[check.detail]
+description = "The default user role allows users to read other users (allowedToReadOtherUsers is true). Any member can list every user in the directory."
+impact = "A compromised account can collect the full user list, including administrators and service accounts, to plan password spraying and phishing. Turning the setting off has side effects: some apps and tools that look up users, such as people pickers, can stop working, so test before changing it."
+remediation = [
+  "Decide whether the directory needs to be hidden from regular users; most tenants keep this setting on because many Microsoft 365 features rely on it.",
+  "If you turn it off, set allowedToReadOtherUsers to false on the authorization policy with Microsoft Graph and test Outlook, Teams and line-of-business apps first.",
+]
+verify = "(Get-MgPolicyAuthorizationPolicy).DefaultUserRolePermissions | Select-Object AllowedToReadOtherUsers"
+
+[[check.detail.references]]
+title = "Default user permissions"
+url = "https://learn.microsoft.com/entra/fundamentals/users-default-permissions"
+
+[[check]]
+id = "EN-TEN-012"
+title = "Restrict access to Entra admin portal for non-admins"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Non-admin users are not restricted from the Microsoft Entra admin center."
+impact = "Any user can browse users, groups, apps and settings in the portal, which helps an attacker map the tenant (the APIs stay reachable either way)."
+remediation = [
+  "Turn on Restrict access to Microsoft Entra admin center under User settings.",
+]
+verify = "Entra admin center > Users > User settings"
+
+[[check.detail.references]]
+title = "Default user permissions"
+url = "https://learn.microsoft.com/entra/fundamentals/users-default-permissions"
+
+[[check]]
+id = "EN-TEN-013"
+title = "LinkedIn account connection / third-party integrations"
+status = "planned"
+
+[[check]]
+id = "EN-TEN-014"
+title = "Self-service sign-up (viral tenants) and email-verified users"
+status = "implemented"
+mitre = ["T1136.003"]
+severity = "low"
+
+[check.detail]
+description = "Self-service sign-up is allowed: allowedToSignUpEmailBasedSubscriptions or allowEmailVerifiedUsersToJoinOrganization is true. People with an email address in a verified domain can sign up for services and join the tenant without an administrator."
+impact = "Users are created outside the normal joiner process, and the organization ends up with accounts and subscriptions it does not manage or review."
+remediation = [
+  "Set allowedToSignUpEmailBasedSubscriptions and allowEmailVerifiedUsersToJoinOrganization to false, for example with Update-MgPolicyAuthorizationPolicy.",
+  "Review users created through self-service sign-up and remove those that are not needed.",
+]
+verify = "Get-MgPolicyAuthorizationPolicy | Select-Object AllowedToSignUpEmailBasedSubscriptions, AllowEmailVerifiedUsersToJoinOrganization"
+
+[[check.detail.references]]
+title = "Self-service sign up for email-verified users"
+url = "https://learn.microsoft.com/entra/identity/users/directory-self-service-signup"
+
+[[check]]
+id = "EN-TEN-015"
+title = "Technical and security contact set"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "The organization has no security compliance notification email and no technical notification email set."
+impact = "Microsoft security and service notices about the tenant, such as notices about compromised accounts or required changes, do not reach a monitored mailbox."
+remediation = [
+  "In the Entra admin center, go to Identity > Overview > Properties and set the Technical contact to a monitored shared mailbox.",
+  "Set the security compliance notification email to the security team's mailbox, for example with Update-MgOrganization -SecurityComplianceNotificationMails.",
+]
+verify = "Get-MgOrganization | Select-Object TechnicalNotificationMails, SecurityComplianceNotificationMails"
+
+[[check.detail.references]]
+title = "organization resource type (Microsoft Graph)"
+url = "https://learn.microsoft.com/graph/api/resources/organization"
+
+[[check]]
+id = "EN-TEN-016"
+title = "Company branding and sign-in page tampering (informational)"
+status = "implemented"
+severity = "info"
+
+[check.detail]
+description = "The company branding has custom links (password reset, privacy, terms of use) that point outside the tenant's verified domains, or sign-in page text with a link."
+impact = "An attacker with admin rights can point the official sign-in page's help links at a phishing site, which users trust because it is on login.microsoftonline.com."
+remediation = [
+  "Check each custom link and remove those that are not the organization's own.",
+]
+verify = "Get-MgOrganizationBranding -OrganizationId <id>"
+mitre = ["T1566.002"]
+
+[[check.detail.references]]
+title = "Customize company branding"
+url = "https://learn.microsoft.com/entra/fundamentals/how-to-customize-branding"
+
+[[check]]
+id = "EN-TEN-017"
+title = "Unverified or stale custom domains"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "One or more custom domains were added to the tenant but never verified (isVerified is false)."
+impact = "Unverified domains cannot be used for sign-in, but they show stale or abandoned projects and can block the same domain from being added to the correct tenant."
+remediation = [
+  "In the Entra admin center, go to Identity > Settings > Domain names.",
+  "Verify each domain that is still needed by adding the DNS record shown, and delete the domains that are not.",
+]
+verify = "Get-MgDomain | Where-Object { -not $_.IsVerified } | Select-Object Id, IsVerified"
+
+[[check.detail.references]]
+title = "Add your custom domain name to your tenant"
+url = "https://learn.microsoft.com/entra/fundamentals/add-custom-domain"
+
+[[check]]
+id = "EN-TEN-018"
+title = "Federated domains inventory (links to hybrid ADFS)"
+status = "implemented"
+mitre = ["T1606.002", "T1484.002"]
+severity = "low"
+
+[check.detail]
+description = "The tenant has federated domains. Sign-in for users in these domains depends on an on-premises federation service such as AD FS, and the finding lists the domains."
+impact = "Whoever holds the token-signing key of the federation service can forge sign-ins for any user in a federated domain, and an outage of the federation service stops cloud sign-in for those users."
+attack = [
+  "Compromises the federation server or its token-signing key.",
+  "Forges a SAML token for any user in the federated domain, including administrators.",
+  "Signs in to Entra ID and Microsoft 365 as that user without a password.",
+]
+remediation = [
+  "Confirm each federated domain is still expected and owned by the organization.",
+  "Plan a move to password hash synchronization or pass-through authentication with cloud authentication, using staged rollout to test, and then convert the domains to managed.",
+  "Until then, treat the federation servers and their signing keys as Tier 0.",
+]
+verify = "Get-MgDomain | Where-Object AuthenticationType -eq 'Federated' | Select-Object Id, AuthenticationType"
+
+[[check.detail.references]]
+title = "What is federation with Microsoft Entra ID?"
+url = "https://learn.microsoft.com/entra/identity/hybrid/connect/whatis-fed"
+
+[[check.detail.references]]
+title = "Protect Microsoft 365 from on-premises attacks"
+url = "https://learn.microsoft.com/entra/architecture/protect-m365-from-on-premises-attacks"

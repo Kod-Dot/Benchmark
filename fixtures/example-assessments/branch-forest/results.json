@@ -1,0 +1,398 @@
+{
+  "checks": [
+    {
+      "id": "AD-PRIV-021",
+      "status": "failed",
+      "affected_count": 1,
+      "affected_unit": "account",
+      "affected": [
+        {
+          "name": "krbtgt",
+          "kind": "user",
+          "location": "CN=krbtgt,CN=Users,DC=branch,DC=example,DC=com"
+        }
+      ]
+    },
+    {
+      "id": "AD-DC-011",
+      "status": "failed",
+      "affected_count": 1,
+      "affected_unit": "domain controller",
+      "affected": [
+        {
+          "name": "BR-DC01",
+          "kind": "computer"
+        }
+      ]
+    },
+    {
+      "id": "AD-ACC-001",
+      "status": "failed",
+      "affected_count": 1,
+      "affected_unit": "user",
+      "affected": [
+        {
+          "name": "kiosk01",
+          "kind": "user"
+        }
+      ]
+    },
+    {
+      "id": "AD-ACC-002",
+      "status": "passed"
+    },
+    {
+      "id": "AD-ACC-006",
+      "status": "passed"
+    },
+    {
+      "id": "AD-ACC-010",
+      "status": "passed"
+    },
+    {
+      "id": "AD-ACC-014",
+      "status": "passed"
+    },
+    {
+      "id": "AD-ACC-018",
+      "status": "passed"
+    },
+    {
+      "id": "AD-ACL-004",
+      "status": "passed"
+    },
+    {
+      "id": "AD-ACL-008",
+      "status": "passed"
+    },
+    {
+      "id": "AD-ACL-012",
+      "status": "passed"
+    },
+    {
+      "id": "AD-ACL-016",
+      "status": "passed"
+    },
+    {
+      "id": "AD-ACL-020",
+      "status": "passed"
+    },
+    {
+      "id": "AD-ACL-024",
+      "status": "passed"
+    },
+    {
+      "id": "AD-ACL-028",
+      "status": "passed"
+    },
+    {
+      "id": "AD-APP-004",
+      "status": "passed"
+    },
+    {
+      "id": "AD-APP-008",
+      "status": "passed"
+    },
+    {
+      "id": "AD-AUD-004",
+      "status": "passed"
+    },
+    {
+      "id": "AD-AUD-008",
+      "status": "passed"
+    },
+    {
+      "id": "AD-AUD-012",
+      "status": "passed"
+    },
+    {
+      "id": "AD-BKP-004",
+      "status": "passed"
+    },
+    {
+      "id": "AD-BKP-008",
+      "status": "passed"
+    },
+    {
+      "id": "AD-CMP-004",
+      "status": "passed"
+    },
+    {
+      "id": "AD-CMP-008",
+      "status": "passed"
+    },
+    {
+      "id": "AD-DC-002",
+      "status": "passed"
+    },
+    {
+      "id": "AD-DC-006",
+      "status": "passed"
+    },
+    {
+      "id": "AD-DC-010",
+      "status": "passed"
+    },
+    {
+      "id": "AD-DC-015",
+      "status": "passed"
+    },
+    {
+      "id": "AD-DC-019",
+      "status": "passed"
+    },
+    {
+      "id": "AD-DC-023",
+      "status": "passed"
+    },
+    {
+      "id": "AD-DC-027",
+      "status": "passed"
+    },
+    {
+      "id": "AD-DC-031",
+      "status": "passed"
+    },
+    {
+      "id": "AD-DNS-003",
+      "status": "passed"
+    },
+    {
+      "id": "AD-DNS-007",
+      "status": "passed"
+    },
+    {
+      "id": "AD-DNS-011",
+      "status": "passed"
+    },
+    {
+      "id": "AD-FND-001",
+      "status": "passed"
+    },
+    {
+      "id": "AD-FND-005",
+      "status": "passed"
+    },
+    {
+      "id": "AD-FND-009",
+      "status": "passed"
+    },
+    {
+      "id": "AD-FND-013",
+      "status": "passed"
+    },
+    {
+      "id": "AD-FND-017",
+      "status": "passed"
+    },
+    {
+      "id": "AD-GPO-003",
+      "status": "passed"
+    },
+    {
+      "id": "AD-GPO-007",
+      "status": "passed"
+    },
+    {
+      "id": "AD-GPO-011",
+      "status": "passed"
+    },
+    {
+      "id": "AD-GPO-015",
+      "status": "passed"
+    },
+    {
+      "id": "AD-GPO-019",
+      "status": "passed"
+    },
+    {
+      "id": "AD-GPO-023",
+      "status": "passed"
+    },
+    {
+      "id": "AD-GPO-027",
+      "status": "passed"
+    },
+    {
+      "id": "AD-IOC-001",
+      "status": "passed"
+    },
+    {
+      "id": "AD-IOC-005",
+      "status": "passed"
+    },
+    {
+      "id": "AD-IOC-009",
+      "status": "passed"
+    },
+    {
+      "id": "AD-IOC-013",
+      "status": "passed"
+    },
+    {
+      "id": "AD-KRB-003",
+      "status": "passed"
+    },
+    {
+      "id": "AD-KRB-007",
+      "status": "passed"
+    },
+    {
+      "id": "AD-KRB-011",
+      "status": "passed"
+    },
+    {
+      "id": "AD-KRB-015",
+      "status": "passed"
+    },
+    {
+      "id": "AD-KRB-019",
+      "status": "passed"
+    },
+    {
+      "id": "AD-LAPS-003",
+      "status": "passed"
+    },
+    {
+      "id": "AD-LAPS-007",
+      "status": "passed"
+    },
+    {
+      "id": "AD-LEG-003",
+      "status": "passed"
+    },
+    {
+      "id": "AD-LEG-007",
+      "status": "passed"
+    },
+    {
+      "id": "AD-LEG-011",
+      "status": "passed"
+    },
+    {
+      "id": "AD-OU-003",
+      "status": "passed"
+    },
+    {
+      "id": "AD-OU-007",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PKI-003",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PKI-007",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PKI-011",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PKI-015",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PKI-019",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PKI-023",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PRIV-003",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PRIV-007",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PRIV-011",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PRIV-015",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PRIV-019",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PRIV-024",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PRIV-028",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PWD-002",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PWD-006",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PWD-010",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PWD-014",
+      "status": "passed"
+    },
+    {
+      "id": "AD-PWD-022",
+      "status": "passed"
+    },
+    {
+      "id": "AD-REP-004",
+      "status": "passed"
+    },
+    {
+      "id": "AD-REP-008",
+      "status": "passed"
+    },
+    {
+      "id": "AD-REP-012",
+      "status": "passed"
+    },
+    {
+      "id": "AD-REP-016",
+      "status": "passed"
+    },
+    {
+      "id": "AD-SCH-004",
+      "status": "passed"
+    },
+    {
+      "id": "AD-SVC-002",
+      "status": "passed"
+    },
+    {
+      "id": "AD-SVC-006",
+      "status": "passed"
+    },
+    {
+      "id": "AD-SVC-010",
+      "status": "passed"
+    },
+    {
+      "id": "AD-TRU-004",
+      "status": "passed"
+    },
+    {
+      "id": "AD-TRU-008",
+      "status": "passed"
+    },
+    {
+      "id": "AD-TRU-012",
+      "status": "passed"
+    }
+  ],
+  "paths": []
+}

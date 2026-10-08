@@ -1,0 +1,352 @@
+# AD-SVC: Service accounts
+
+area = "AD-SVC"
+
+[[check]]
+id = "AD-SVC-001"
+title = "gMSA adoption versus regular user service accounts"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Lists every enabled user account that has a service principal name (krbtgt excluded), which is how services that run as ordinary user accounts appear in the directory, and counts the group managed service accounts (gMSAs) in the domain. Each listed account is a candidate for moving to a gMSA."
+impact = "A user service account has a password that a person chose and rarely changes, and anyone in the domain can request a Kerberos ticket for its SPN and try to crack that password offline. A gMSA has a random 120-character password that the domain changes automatically, so it cannot be cracked or leaked from a script."
+attack = [
+  "Signs in as any domain user and lists accounts with SPNs.",
+  "Requests service tickets for them and cracks the passwords offline (Kerberoasting).",
+  "Uses the recovered service account password wherever the account has rights.",
+]
+remediation = [
+  "For each listed account, check whether the service supports gMSAs (Windows services, scheduled tasks, IIS application pools and SQL Server do).",
+  "Create a gMSA, allow only the servers that run the service to retrieve its password, and move the service and its SPNs to it.",
+  "Disable the old user account once the service runs under the gMSA.",
+]
+frameworks = [
+  "CIS Controls 5.5",
+  "NIST 800-53 IA-5",
+]
+verify = '''
+Get-ADUser -LDAPFilter '(&(servicePrincipalName=*)(!(userAccountControl:1.2.840.113556.1.4.803:=2)))' -Properties servicePrincipalName |
+  Where-Object SamAccountName -ne 'krbtgt' | Select-Object Name, servicePrincipalName
+Get-ADServiceAccount -Filter * | Select-Object Name, ObjectClass'''
+mitre = ["T1558.003"]
+
+[[check.detail.references]]
+title = "Group Managed Service Accounts overview"
+url = "https://learn.microsoft.com/windows-server/security/group-managed-service-accounts/group-managed-service-accounts-overview"
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1558.003: Kerberoasting"
+url = "https://attack.mitre.org/techniques/T1558/003/"
+
+[[check]]
+id = "AD-SVC-002"
+title = "gMSA PrincipalsAllowedToRetrieveManagedPassword too broad"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "A group managed service account lets broad principals retrieve its password (msDS-GroupMSAMembership, shown as PrincipalsAllowedToRetrieveManagedPassword): Everyone, Authenticated Users, Anonymous Logon, Domain Users or Domain Computers, or any group with more than 50 members counted recursively. Only the servers that run the service should be able to retrieve it."
+impact = "Every principal allowed to retrieve the password can read it in clear form from a DC and sign in as the gMSA. With a broad group, any user or computer in that group gets the gMSA's rights, which are often administrative on the servers that run the service."
+attack = [
+  "Takes control of any member of the allowed group, such as an ordinary user or workstation.",
+  "Reads the gMSA's msDS-ManagedPassword attribute from a DC.",
+  "Signs in as the gMSA with its password hash and uses its rights.",
+]
+remediation = [
+  "Set PrincipalsAllowedToRetrieveManagedPassword to the computer accounts that run the service, or a small group containing only them.",
+  "After narrowing it, check where the gMSA has rights and whether the password may already have been read; if so, replace the gMSA.",
+]
+frameworks = [
+  "NIST 800-53 AC-6",
+  "NIST 800-53 IA-5",
+]
+verify = '''
+Get-ADServiceAccount -Filter * -Properties PrincipalsAllowedToRetrieveManagedPassword |
+  Where-Object ObjectClass -eq 'msDS-GroupManagedServiceAccount' |
+  Select-Object Name, PrincipalsAllowedToRetrieveManagedPassword'''
+cvss = "AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:N"
+mitre = ["T1552", "T1078.002"]
+
+[[check.detail.references]]
+title = "Group Managed Service Accounts overview"
+url = "https://learn.microsoft.com/windows-server/security/group-managed-service-accounts/group-managed-service-accounts-overview"
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1552: Unsecured Credentials"
+url = "https://attack.mitre.org/techniques/T1552/"
+
+[[check]]
+id = "AD-SVC-003"
+title = "KDS root key present"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Checks that at least one KDS root key (msKds-ProvRootKey under CN=Master Root Keys in the configuration partition) exists, and shows how many there are and when the newest was created. Without a KDS root key no group managed service account can be created, so services keep running as user accounts with passwords."
+impact = "Without a KDS root key the domain cannot use gMSAs, which leaves services on user accounts whose passwords can be cracked through Kerberoasting or leak from scripts and configuration files."
+remediation = [
+  "Create a KDS root key with Add-KdsRootKey as an Enterprise Admin or Domain Admin in the forest root domain.",
+  "Wait for it to replicate to all DCs before creating gMSAs (by default it becomes usable 10 hours after creation).",
+  "Then move user service accounts to gMSAs (see AD-SVC-001).",
+]
+frameworks = [
+  "NIST 800-53 IA-5",
+]
+verify = '''
+$cfg = (Get-ADRootDSE).configurationNamingContext
+Get-ADObject -SearchBase "CN=Master Root Keys,CN=Group Key Distribution Service,CN=Services,$cfg" -LDAPFilter '(objectClass=msKds-ProvRootKey)' -Properties whenCreated |
+  Select-Object Name, whenCreated'''
+mitre = ["T1558.003"]
+
+[[check.detail.references]]
+title = "Create the Key Distribution Services KDS root key"
+url = "https://learn.microsoft.com/windows-server/security/group-managed-service-accounts/create-the-key-distribution-services-kds-root-key"
+
+[[check.detail.references]]
+title = "Group Managed Service Accounts overview"
+url = "https://learn.microsoft.com/windows-server/security/group-managed-service-accounts/group-managed-service-accounts-overview"
+
+[[check]]
+id = "AD-SVC-004"
+title = "dMSA (delegated MSA, Server 2025) configuration and BadSuccessor exposure (who can create dMSAs in which OUs)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Lists OUs, containers and the domain head where a principal other than the built-in admin groups, domain controllers and Tier 0 can create a delegated managed service account (dMSA): it owns the object, or holds Full Control, Modify permissions, Take ownership, or Create child for all object types or for the msDS-DelegatedManagedServiceAccount class. Entries that only apply to child objects are ignored. dMSAs exist only once a Windows Server 2025 domain controller is in the domain, so the check fails only when such a DC is found (identified by its operatingSystem). Without one it passes and lists, as evidence, the OUs to fix before the first Windows Server 2025 DC is added."
+impact = "Whoever can create a dMSA controls its attributes, including the link that names the account it supersedes (BadSuccessor). On an unpatched Windows Server 2025 DC this lets the creator obtain tickets carrying the privileges and keys of any account, including Domain Admins and krbtgt, so create-child rights on a single OU become domain compromise."
+attack = [
+  "Takes control of a principal that can create objects in an OU, for example a helpdesk delegate.",
+  "Creates a dMSA in that OU and sets it as the successor of a Domain Admin account.",
+  "Requests a Kerberos ticket as the dMSA, which a Windows Server 2025 DC issues with the Domain Admin's privileges.",
+]
+remediation = [
+  "Install the security update for CVE-2025-53779 on every Windows Server 2025 domain controller.",
+  "On each listed OU, remove Create child for all objects and for dMSAs, Full Control, Modify permissions and Take ownership from principals that are not Tier 0 admins; delegate creation of specific object classes instead.",
+  "Make sure non-admins do not own OUs or containers; change the owner to Domain Admins.",
+  "Fix the listed OUs before adding the first Windows Server 2025 DC.",
+]
+frameworks = [
+  "NIST 800-53 AC-6",
+  "NIST 800-53 SI-2",
+]
+verify = '''
+Get-ADDomainController -Filter * | Select-Object Name, OperatingSystem
+Get-ADOrganizationalUnit -Filter * | ForEach-Object {
+  $ou = $_.DistinguishedName
+  (Get-Acl "AD:$ou").Access | Where-Object {
+    $_.AccessControlType -eq 'Allow' -and (
+      $_.ActiveDirectoryRights -match 'GenericAll|WriteDacl|WriteOwner' -or
+      ($_.ActiveDirectoryRights -match 'CreateChild' -and $_.ObjectType -in [guid]::Empty, [guid]'0feb936f-47b3-49f2-9386-1dedc2c23765'))
+  } | Select-Object @{ n = 'OU'; e = { $ou } }, IdentityReference, ActiveDirectoryRights, ObjectType
+}'''
+cvss = "AV:N/AC:L/PR:L/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1068", "T1098", "T1078.002"]
+
+[[check.detail.references]]
+title = "Delegated Managed Service Accounts overview"
+url = "https://learn.microsoft.com/windows-server/identity/ad-ds/manage/delegated-managed-service-accounts/delegated-managed-service-accounts-overview"
+
+[[check.detail.references]]
+title = "CVE-2025-53779: Windows Kerberos elevation of privilege vulnerability"
+url = "https://msrc.microsoft.com/update-guide/vulnerability/CVE-2025-53779"
+
+[[check.detail.references]]
+title = "Delegating administration by using OU objects"
+url = "https://learn.microsoft.com/windows-server/identity/ad-ds/plan/delegating-administration-by-using-ou-objects"
+
+[[check]]
+id = "AD-SVC-005"
+title = "Service accounts allowed to log on interactively"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Enabled service accounts (users with an SPN) are not denied local or Remote Desktop sign-in by any GPO."
+impact = "Service account passwords are often known to several people and rarely changed. If they can sign in interactively, they can be used to log on to servers and leave credentials there."
+remediation = [
+  "Put service accounts in a group and deny it \"Log on locally\" and \"Log on through Remote Desktop Services\" in a GPO that applies to servers.",
+  "Move services to group managed service accounts.",
+]
+verify = "secedit /export /cfg C:\\Temp\\gpo.inf /areas USER_RIGHTS; Select-String 'SeDeny(Remote)?InteractiveLogonRight' C:\\Temp\\gpo.inf"
+mitre = ["T1078.002"]
+
+[[check]]
+id = "AD-SVC-006"
+title = "Service accounts with password never expires and old passwords"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "An enabled user account with a service principal name (krbtgt excluded) has Password never expires set and its password was last changed more than 365 days ago, or never."
+impact = "Anyone in the domain can request a service ticket for the account and crack its password offline. An old password has had more time to be cracked, reused or written down, and every person who knew it over the years still does."
+attack = [
+  "Signs in as any domain user and requests service tickets for accounts with SPNs.",
+  "Cracks the old password offline (Kerberoasting) or finds it in old scripts and documents.",
+  "Signs in as the service account wherever it has rights.",
+]
+remediation = [
+  "Move the service to a gMSA, which changes its password automatically.",
+  "Where that is not possible, set a long random password (at least 25 characters) and change it at least yearly.",
+  "Record who owns each service account so the change can be coordinated with the service.",
+]
+frameworks = [
+  "CIS Controls 5.2",
+  "NIST 800-53 IA-5",
+]
+verify = '''
+Get-ADUser -LDAPFilter '(&(servicePrincipalName=*)(!(userAccountControl:1.2.840.113556.1.4.803:=2))(userAccountControl:1.2.840.113556.1.4.803:=65536))' -Properties PasswordLastSet |
+  Where-Object { $_.SamAccountName -ne 'krbtgt' -and (-not $_.PasswordLastSet -or $_.PasswordLastSet -lt (Get-Date).AddDays(-365)) } |
+  Select-Object Name, PasswordLastSet'''
+cvss = "AV:N/AC:H/PR:L/UI:N/S:U/C:H/I:H/A:N"
+mitre = ["T1558.003", "T1110"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1558.003: Kerberoasting"
+url = "https://attack.mitre.org/techniques/T1558/003/"
+
+[[check.detail.references]]
+title = "Group Managed Service Accounts overview"
+url = "https://learn.microsoft.com/windows-server/security/group-managed-service-accounts/group-managed-service-accounts-overview"
+
+[[check]]
+id = "AD-SVC-007"
+title = "Service accounts with SPNs and RC4 enabled"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "An enabled user account with a service principal name (krbtgt excluded) allows RC4 for Kerberos: msDS-SupportedEncryptionTypes is not set (tickets for it then default to RC4), allows RC4 only, or allows RC4 alongside AES."
+impact = "A service ticket encrypted with RC4 is derived from the account's NT hash and can be cracked offline far faster than an AES ticket. Accounts that allow RC4 are the easiest Kerberoasting targets."
+attack = [
+  "Signs in as any domain user and requests an RC4 service ticket for the account's SPN.",
+  "Cracks the ticket offline to recover the service account's password.",
+  "Signs in as the service account wherever it has rights.",
+]
+remediation = [
+  "Set msDS-SupportedEncryptionTypes on each listed account to AES only (0x18), after confirming the service and its clients support AES.",
+  "Change the account's password after enabling AES so that AES keys exist.",
+  "Prefer moving the service to a gMSA.",
+]
+frameworks = [
+  "NIST 800-53 SC-13",
+  "NIST 800-53 IA-5",
+]
+verify = '''
+Get-ADUser -LDAPFilter '(&(servicePrincipalName=*)(!(userAccountControl:1.2.840.113556.1.4.803:=2)))' -Properties msDS-SupportedEncryptionTypes |
+  Where-Object { $_.SamAccountName -ne 'krbtgt' -and (-not $_.'msDS-SupportedEncryptionTypes' -or ($_.'msDS-SupportedEncryptionTypes' -band 4)) } |
+  Select-Object Name, msDS-SupportedEncryptionTypes'''
+cvss = "AV:N/AC:H/PR:L/UI:N/S:U/C:H/I:H/A:N"
+mitre = ["T1558.003"]
+
+[[check.detail.references]]
+title = "Detect and remediate RC4 usage in Kerberos"
+url = "https://learn.microsoft.com/windows-server/security/kerberos/detect-remediate-rc4-kerberos"
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1558.003: Kerberoasting"
+url = "https://attack.mitre.org/techniques/T1558/003/"
+
+[[check]]
+id = "AD-SVC-008"
+title = "Service accounts in privileged groups"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "An enabled user account with a service principal name (krbtgt excluded) is a direct or nested member of an admin group: Domain Admins, Enterprise Admins, Schema Admins, Key Admins, Enterprise Key Admins, Administrators, Account Operators, Server Operators, Print Operators, Backup Operators or DnsAdmins."
+impact = "Any domain user can request a ticket for the account's SPN and crack its password offline. Cracking it gives admin rights on the domain directly, without any other step."
+attack = [
+  "Signs in as any domain user and lists accounts with SPNs in admin groups.",
+  "Requests a service ticket for the account and cracks it offline (Kerberoasting).",
+  "Signs in as the service account with its admin rights.",
+]
+remediation = [
+  "Remove the service account from admin groups and grant only the rights the service needs on the systems it runs on.",
+  "If it must stay privileged, move it to a gMSA or give it a long random password, and allow only AES for it.",
+  "Remove SPNs from accounts that no longer run a service.",
+]
+frameworks = [
+  "ANSSI vuln1_spn_priv",
+  "NIST 800-53 AC-6",
+]
+verify = '''
+'Domain Admins', 'Enterprise Admins', 'Schema Admins', 'Administrators', 'Account Operators', 'Backup Operators' |
+  ForEach-Object { Get-ADGroupMember $_ -Recursive } | Where-Object objectClass -eq 'user' |
+  Sort-Object distinguishedName -Unique | Get-ADUser -Properties servicePrincipalName |
+  Where-Object { $_.Enabled -and $_.servicePrincipalName -and $_.SamAccountName -ne 'krbtgt' } |
+  Select-Object Name, servicePrincipalName'''
+cvss = "AV:N/AC:H/PR:L/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1558.003", "T1078.002"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1558.003: Kerberoasting"
+url = "https://attack.mitre.org/techniques/T1558/003/"
+
+[[check.detail.references]]
+title = "Implementing least-privilege administrative models"
+url = "https://learn.microsoft.com/windows-server/identity/ad-ds/plan/security-best-practices/implementing-least-privilege-administrative-models"
+
+[[check]]
+id = "AD-SVC-009"
+title = "Standalone managed service accounts not linked to a computer"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Counts the standalone managed service accounts (sMSAs, class msDS-ManagedServiceAccount) and flags each one that is not linked to any computer (msDS-HostServiceAccountBL is empty). An sMSA is used on exactly one computer; one without a link is unused or its host was removed."
+impact = "Unused service accounts stay enabled with whatever rights they were given. Nobody notices if they are misused, and their rights make reviews harder."
+remediation = [
+  "For each listed sMSA, confirm with the service owner whether it is still needed.",
+  "Remove sMSAs that are no longer used.",
+  "Where an sMSA is still needed, link it to its computer again, or move the service to a gMSA.",
+]
+frameworks = [
+  "NIST 800-53 AC-2",
+  "NIST 800-53 CM-8",
+]
+verify = '''
+Get-ADServiceAccount -Filter * -Properties msDS-HostServiceAccountBL |
+  Where-Object { $_.ObjectClass -eq 'msDS-ManagedServiceAccount' -and -not $_.'msDS-HostServiceAccountBL' } |
+  Select-Object Name, DistinguishedName'''
+mitre = ["T1078.002"]
+
+[[check.detail.references]]
+title = "Group Managed Service Accounts overview"
+url = "https://learn.microsoft.com/windows-server/security/group-managed-service-accounts/group-managed-service-accounts-overview"
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1078.002: Valid Accounts: Domain Accounts"
+url = "https://attack.mitre.org/techniques/T1078/002/"
+
+[[check]]
+id = "AD-SVC-010"
+title = "Service account naming and ownership documented (description/manager populated)"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "An enabled user account with a service principal name (krbtgt excluded) has neither a description nor a manager set. Either one is enough to pass; the check does not judge account names."
+impact = "Without a recorded purpose or owner nobody can say whether the account is still needed, who may change its password, or what breaks if it is disabled. Such accounts keep their rights and old passwords for years."
+remediation = [
+  "For each listed account, find the service and the person responsible for it.",
+  "Record the purpose in description and the owner in manager.",
+  "Disable accounts for which no service or owner can be found, after a period of monitoring.",
+]
+frameworks = [
+  "CIS Controls 5.5",
+  "NIST 800-53 AC-2",
+]
+verify = '''
+Get-ADUser -LDAPFilter '(&(servicePrincipalName=*)(!(userAccountControl:1.2.840.113556.1.4.803:=2))(!(description=*))(!(manager=*)))' |
+  Where-Object SamAccountName -ne 'krbtgt' | Select-Object Name, DistinguishedName'''
+mitre = ["T1078.002"]
+
+[[check.detail.references]]
+title = "Implementing least-privilege administrative models"
+url = "https://learn.microsoft.com/windows-server/identity/ad-ds/plan/security-best-practices/implementing-least-privilege-administrative-models"
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1078.002: Valid Accounts: Domain Accounts"
+url = "https://attack.mitre.org/techniques/T1078/002/"

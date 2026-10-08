@@ -1,0 +1,507 @@
+/* Printable reports. On screen the report sits on an A4-wide sheet; printed
+   (Edge or Chrome headless, or the reader's own browser) it fills A4 pages
+   with the classification, report name and page numbers in the margins. */
+
+html,
+body,
+#app {
+  height: auto;
+}
+
+body {
+  background: var(--bg);
+  font-size: 10.5pt;
+  line-height: 1.5;
+}
+
+* {
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+
+/* Paper is white: the app's panel tones are re-pointed inside the sheet */
+.doc {
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --surface-alt: #eef0f4;
+  max-width: 210mm;
+  margin: 24px auto;
+  padding: 18mm 16mm;
+  background: var(--surface);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.08);
+  display: flex;
+  flex-direction: column;
+}
+
+.small {
+  font-size: 9pt;
+}
+
+.mono {
+  font-size: 8.5pt;
+}
+
+a {
+  color: var(--accent-ink);
+}
+
+/* Cover */
+.cover {
+  min-height: 240mm;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  break-after: page;
+}
+
+.cover-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.logo {
+  max-height: 56px;
+  max-width: 240px;
+  object-fit: contain;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.brand .icon {
+  color: var(--accent-ink);
+}
+
+.classification {
+  padding: 4px 10px;
+  border: 1.5px solid var(--sev-critical);
+  border-radius: 4px;
+  color: var(--sev-critical);
+  font-size: 9pt;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.cover-title {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-left: 18px;
+  border-left: 4px solid var(--accent);
+}
+
+.overline {
+  font-size: 9.5pt;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--accent-ink);
+}
+
+.cover-title h1 {
+  font-size: 34pt;
+  line-height: 1.1;
+}
+
+.scope {
+  font-family: var(--font-display);
+  font-size: 16pt;
+}
+
+.cover-facts {
+  margin-top: auto;
+}
+
+.cover-note {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 9pt;
+  color: var(--text-muted);
+}
+
+/* Sections */
+.sec {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 30px;
+}
+
+.sec > h2 {
+  font-size: 17pt;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border-strong);
+  break-after: avoid;
+}
+
+.sub {
+  margin-top: 6px;
+  break-after: avoid;
+}
+
+.avoid {
+  break-inside: avoid;
+}
+
+.lead {
+  font-size: 12pt;
+}
+
+.glance {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+}
+
+.glance-text {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ring {
+  width: 150px;
+  height: 150px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+
+.ring > div {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.ring-value {
+  font-family: var(--font-display);
+  font-size: 42px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.sevrow {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  break-inside: avoid;
+}
+
+.sevcell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px 14px;
+  border-right: 1px solid var(--border);
+}
+
+.sevcell:last-child {
+  border-right: none;
+}
+
+.big {
+  font-family: var(--font-display);
+  font-size: 22pt;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.maturity {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.maturity li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-top: 4px solid var(--border);
+  background: var(--surface-alt);
+  color: var(--text-muted);
+}
+
+.maturity li.on {
+  border-top-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+/* Open tables read better on paper and split cleanly across pages. */
+.t {
+  border: none;
+  border-radius: 0;
+  overflow: visible;
+  border-top: 1px solid var(--border-strong);
+}
+
+.t tbody tr:last-child td {
+  border-bottom: 1px solid var(--border);
+}
+
+.t th,
+.t td {
+  padding-left: 10px;
+  padding-right: 10px;
+}
+
+.t td {
+  height: auto;
+  padding-top: 7px;
+  padding-bottom: 7px;
+}
+
+.t tr {
+  break-inside: avoid;
+}
+
+.t thead {
+  display: table-header-group;
+}
+
+.t.compact td {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+.wrap {
+  word-break: break-all;
+}
+
+.scorebar {
+  display: grid;
+  grid-template-columns: 1fr 30px;
+  align-items: center;
+  gap: 10px;
+  text-align: right;
+}
+
+.phases {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+  break-inside: avoid;
+}
+
+.phase {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 3px solid var(--accent);
+}
+
+.plain-list {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Contents */
+
+.toc ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.toc a {
+  display: flex;
+  gap: 14px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.toc a span {
+  width: 20px;
+  color: var(--text-muted);
+}
+
+/* Findings */
+.finding {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 18px;
+  margin-top: 6px;
+  border-top: 1px solid var(--border);
+}
+
+.finding:first-of-type {
+  border-top: none;
+  padding-top: 0;
+}
+
+.finding-h {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  break-after: avoid;
+  break-inside: avoid;
+}
+
+.finding-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+
+.finding-title {
+  font-family: var(--font-display);
+  font-size: 14pt;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text);
+}
+
+.finding h4 {
+  margin: 6px 0 0;
+  font-size: 10pt;
+  font-weight: 600;
+  break-after: avoid;
+}
+
+.steps {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.refs {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.refs a {
+  word-break: break-all;
+}
+
+.path {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  break-inside: avoid;
+}
+
+.path-steps {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.via {
+  display: block;
+  color: var(--text-muted);
+}
+
+.endnote {
+  margin-top: 24px;
+}
+
+@page {
+  size: A4;
+  margin: 16mm 14mm 18mm;
+
+  @bottom-right {
+    content: 'Page ' counter(page) ' of ' counter(pages);
+    font-family: 'Urbanist Variable', 'Segoe UI', sans-serif;
+    font-size: 8pt;
+    color: #6b6a65;
+  }
+
+  @bottom-left {
+    font-family: 'Urbanist Variable', 'Segoe UI', sans-serif;
+    font-size: 8pt;
+    color: #6b6a65;
+  }
+
+  @top-left {
+    font-family: 'Urbanist Variable', 'Segoe UI', sans-serif;
+    font-size: 8pt;
+    color: #6b6a65;
+  }
+
+  @top-right {
+    font-family: 'Urbanist Variable', 'Segoe UI', sans-serif;
+    font-size: 8pt;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    color: #b42318;
+  }
+}
+
+@media print {
+  body {
+    background: none;
+  }
+
+  .doc {
+    max-width: none;
+    margin: 0;
+    padding: 0;
+    box-shadow: none;
+  }
+
+  .cover {
+    min-height: 255mm;
+  }
+
+  .doc :is(#findings, #paths, #plan, #passed) {
+    break-before: page;
+  }
+
+  .t tbody tr:hover td {
+    background: none;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+}
+
+.cell-label {
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.quick {
+  color: var(--ok);
+  font-weight: 600;
+}

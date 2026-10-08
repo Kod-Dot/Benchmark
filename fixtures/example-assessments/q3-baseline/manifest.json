@@ -1,0 +1,13 @@
+{
+  "name": "Q3 baseline",
+  "tool_version": "0.1.0",
+  "catalog_version": "2026.10",
+  "scope": {
+    "domains": [
+      "corp.example.com"
+    ],
+    "tenant": "example.onmicrosoft.com"
+  },
+  "started_at": "2026-07-02T09:10:00Z",
+  "finished_at": "2026-07-02T09:24:51Z"
+}

@@ -1,0 +1,608 @@
+# AD-DC: Domain controller health and hardening
+
+area = "AD-DC"
+
+[[check]]
+id = "AD-DC-001"
+title = "DC operating system version and support lifecycle"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "One or more domain controllers run a Windows Server version whose extended support has ended or ends within a year. The build number comes from each DC's computer object."
+impact = "Unsupported versions get no security updates, so every new vulnerability on them stays open. A single unpatched DC exposes the whole domain."
+remediation = [
+  "Plan the replacement of each listed DC with a supported Windows Server version.",
+  "Promote the new DCs, move FSMO roles if needed, then demote and remove the old ones.",
+]
+verify = "Get-ADDomainController -Filter * | Select-Object Name, OperatingSystem, OperatingSystemVersion"
+
+[[check.detail.references]]
+title = "Windows Server release information and lifecycle"
+url = "https://learn.microsoft.com/windows/release-health/windows-server-release-info"
+
+[[check]]
+id = "AD-DC-002"
+title = "DC patch level (last installed hotfix date, missing critical cumulative updates)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "No update has been installed on the DC in the last 60 days, by the install date of its newest hotfix."
+impact = "Domain controllers missing monthly updates stay exposed to published, often actively exploited, vulnerabilities such as remote code execution in Netlogon, Kerberos or the print spooler."
+remediation = [
+  "Install the latest cumulative update on each listed DC.",
+  "Include DCs in the monthly patch cycle with a staggered reboot schedule.",
+]
+verify = "Get-HotFix -ComputerName <dc> | Sort-Object InstalledOn -Descending | Select-Object -First 5"
+mitre = ["T1210"]
+
+[[check]]
+id = "AD-DC-003"
+title = "DCs not in the Domain Controllers OU"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "A domain controller's computer object is outside the Domain Controllers OU, where the Default Domain Controllers Policy and DC-specific settings are linked."
+impact = "The DC misses the user rights, audit and security settings meant for DCs, and may receive policies meant for ordinary servers instead."
+remediation = [
+  "Move the computer object back to the Domain Controllers OU.",
+  "Check which GPOs then apply with gpresult /h on the DC.",
+]
+verify = "Get-ADDomainController -Filter * | Select-Object Name, ComputerObjectDN"
+
+[[check.detail.references]]
+title = "Default Domain Controllers Policy and the Domain Controllers OU"
+url = "https://learn.microsoft.com/windows-server/identity/ad-ds/plan/security-best-practices/securing-domain-controllers-against-attack"
+
+[[check]]
+id = "AD-DC-004"
+title = "DC computer objects with unexpected owners"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "A DC computer object is owned by a principal other than Domain Admins, Enterprise Admins or Administrators. The owner can always change the object's permissions."
+impact = "The owner can grant itself full control over the DC object, for example to configure resource-based constrained delegation or shadow credentials, and so take over the DC."
+remediation = [
+  "Set the owner of each listed DC object to Domain Admins.",
+  "Review how the object came to be owned by that principal, for example a pre-staged account.",
+]
+verify = "(Get-Acl \"AD:$((Get-ADComputer <dc>).DistinguishedName)\").Owner"
+mitre = ["T1222.001"]
+
+[[check.detail.references]]
+title = "Owner rights on computer objects"
+url = "https://learn.microsoft.com/windows-server/identity/ad-ds/plan/security-best-practices/reducing-the-active-directory-attack-surface"
+
+[[check]]
+id = "AD-DC-005"
+title = "DC uptime (very long uptime means missed reboots for patches)"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "The domain controller has not restarted for more than 60 days."
+impact = "Most cumulative updates only take effect after a restart, so a long uptime usually means installed updates are not active yet."
+remediation = [
+  "Restart the listed DCs in a maintenance window, one at a time.",
+  "Make the restart part of the monthly patch process.",
+]
+verify = "(Get-CimInstance Win32_OperatingSystem -ComputerName <dc>).LastBootUpTime"
+
+[[check]]
+id = "AD-DC-006"
+title = "Print Spooler service running on DCs (PrinterBug / PrintNightmare)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "The Print Spooler service runs on domain controllers. Any authenticated user can ask the spooler to connect back to a host of their choice, which makes the domain controller authenticate to that host."
+impact = "Combined with unconstrained delegation or NTLM relay to certificate services, this coerced authentication leads to domain compromise. The spooler also has a history of remote code execution flaws (PrintNightmare)."
+remediation = [
+  "Stop the Print Spooler service on every domain controller and set its startup type to Disabled, by Group Policy on the Domain Controllers OU.",
+]
+frameworks = [
+  "ANSSI vuln2_spooler",
+  "CIS Windows Server 5.x",
+]
+verify = '''
+Get-Service -ComputerName (Get-ADDomainController -Filter *).HostName -Name Spooler | Select-Object MachineName, Status, StartType'''
+cvss = "AV:N/AC:H/PR:L/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1187"]
+
+[[check.detail.references]]
+title = "Security assessment: domain controllers with Print Spooler service available"
+url = "https://learn.microsoft.com/defender-for-identity/security-assessment-print-spooler"
+
+[[check]]
+id = "AD-DC-007"
+title = "Unneeded roles and features on DCs (IIS, file server shares, Hyper-V, etc.)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Roles or features not needed for a domain controller are installed, such as IIS, AD CS, Hyper-V, DHCP or WSUS."
+impact = "Every extra role adds services, listening ports and administrators to a Tier 0 machine. A vulnerability or misconfiguration in any of them leads straight to domain compromise."
+remediation = [
+  "Move each listed role to a dedicated member server.",
+  "Remove it from the DC with Uninstall-WindowsFeature.",
+]
+verify = "Get-WindowsFeature -ComputerName <dc> | Where-Object Installed"
+
+[[check]]
+id = "AD-DC-008"
+title = "Third-party agents and software installed on DCs (inventory)"
+status = "implemented"
+severity = "info"
+
+[check.detail]
+description = "Inventory of software from publishers other than Microsoft installed on each domain controller."
+impact = "Every agent on a DC runs with the DC's privileges, so a flaw or a compromised update in it compromises the domain. DCs should run as little extra software as possible."
+remediation = [
+  "Remove software that does not need to run on DCs.",
+  "Treat the vendors and update channels of what remains as Tier 0.",
+]
+verify = "Get-ItemProperty HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\* | Select-Object DisplayName, Publisher, DisplayVersion"
+mitre = ["T1543.003"]
+
+[[check]]
+id = "AD-DC-009"
+title = "SMBv1 enabled on DCs"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "The SMBv1 server protocol is enabled on a domain controller."
+impact = "SMBv1 has no modern protections and was the vector for EternalBlue and WannaCry. It also allows downgrade and relay attacks."
+remediation = [
+  "Find any SMBv1 clients with AD-LEG-003 first.",
+  "Disable SMBv1: Set-SmbServerConfiguration -EnableSMB1Protocol $false, or remove the FS-SMB1 feature.",
+]
+verify = "Get-SmbServerConfiguration | Select-Object EnableSMB1Protocol"
+mitre = ["T1210"]
+
+[[check.detail.references]]
+title = "Stop using SMB1"
+url = "https://learn.microsoft.com/windows-server/storage/file-server/troubleshoot/detect-enable-and-disable-smbv1-v2-v3"
+
+[[check]]
+id = "AD-DC-010"
+title = "SMB signing not required on DCs"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "The domain controller does not require SMB signing."
+impact = "Without signing, an attacker in the network path can relay or tamper with SMB sessions to the DC, for example to read or change SYSVOL content."
+remediation = [
+  "Enable \"Microsoft network server: Digitally sign communications (always)\" in the Default Domain Controllers Policy.",
+]
+verify = "Get-SmbServerConfiguration | Select-Object RequireSecuritySignature"
+mitre = ["T1557.001"]
+
+[[check.detail.references]]
+title = "Overview of Server Message Block signing"
+url = "https://learn.microsoft.com/troubleshoot/windows-server/networking/overview-server-message-block-signing"
+
+[[check]]
+id = "AD-DC-011"
+title = "LDAP signing not required"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Domain controllers do not require LDAP signing. Simple binds and unsigned SASL binds are accepted."
+impact = "An attacker who can relay NTLM authentication to a domain controller over LDAP can make changes as the relayed account, for example adding themselves to a group or setting resource-based delegation."
+remediation = [
+  "Audit unsigned binds first: event 2889 on each DC with LDAP Interface Events logging at 2.",
+  "Set Domain controller: LDAP server signing requirements to Require signing, and enable LDAP channel binding.",
+]
+frameworks = [
+  "CIS Windows Server 2.3.5.2",
+  "ANSSI vuln2_ldap_signing",
+]
+cvss = "AV:A/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:N"
+mitre = ["T1557"]
+
+[[check.detail.references]]
+title = "How to enable LDAP signing in Windows Server"
+url = "https://learn.microsoft.com/troubleshoot/windows-server/active-directory/enable-ldap-signing-in-windows-server"
+
+[[check]]
+id = "AD-DC-012"
+title = "LDAP channel binding not enforced"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "The DC does not always enforce LDAP channel binding (LdapEnforceChannelBinding is not 2)."
+impact = "Without channel binding, NTLM authentication can be relayed to LDAPS, which bypasses LDAP signing."
+remediation = [
+  "Find clients without channel binding with AD-LEG-005.",
+  "Set \"Domain controller: LDAP server channel binding token requirements\" to Always.",
+]
+verify = "Get-ItemProperty HKLM:\\SYSTEM\\CurrentControlSet\\Services\\NTDS\\Parameters -Name LdapEnforceChannelBinding"
+mitre = ["T1557"]
+
+[[check.detail.references]]
+title = "2020, 2023 and 2024 LDAP channel binding and LDAP signing requirements (ADV190023)"
+url = "https://support.microsoft.com/topic/2020-2023-and-2024-ldap-channel-binding-and-ldap-signing-requirements-for-windows-kb4520412-ef185fb8-00f7-167d-744c-f299a66fc00a"
+
+[[check]]
+id = "AD-DC-013"
+title = "LDAPS certificate present, valid and not expiring soon"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "The DC has no valid server certificate for its own name, or it expires within 30 days, so LDAPS is unavailable or about to break."
+impact = "Without LDAPS, applications fall back to clear-text or unsigned LDAP. An expiring certificate breaks every LDAPS client when it lapses."
+remediation = [
+  "Enroll a Kerberos Authentication or Domain Controller Authentication certificate for each listed DC, with auto-renewal.",
+  "Monitor certificate expiry on DCs.",
+]
+verify = "Get-ChildItem Cert:\\LocalMachine\\My | Select-Object Subject, DnsNameList, NotAfter"
+
+[[check.detail.references]]
+title = "LDAP over SSL (LDAPS) certificate"
+url = "https://learn.microsoft.com/troubleshoot/windows-server/active-directory/enable-ldap-over-ssl-3rd-certification-authority"
+
+[[check]]
+id = "AD-DC-014"
+title = "NTLM restrictions and NTLM auditing policy on DCs"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "NTLM authentication on the DC is neither audited nor restricted."
+impact = "Without auditing, nobody can see which applications still use NTLM, so NTLM (and the relay and cracking attacks it allows) can never be safely reduced."
+remediation = [
+  "Set \"Network security: Restrict NTLM: Audit NTLM authentication in this domain\" to Enable all in the Default Domain Controllers Policy.",
+  "Review the NTLM operational log, then restrict NTLM where possible.",
+]
+verify = "Get-ItemProperty HKLM:\\SYSTEM\\CurrentControlSet\\Services\\Netlogon\\Parameters -Name AuditNTLMInDomain"
+mitre = ["T1557"]
+
+[[check.detail.references]]
+title = "Network security: Restrict NTLM"
+url = "https://learn.microsoft.com/windows/security/threat-protection/security-policy-settings/network-security-restrict-ntlm-ntlm-authentication-in-this-domain"
+
+[[check]]
+id = "AD-DC-015"
+title = "LM hash storage (NoLMHash) not set"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "NoLMHash is 0, so the DC stores LAN Manager hashes of new passwords."
+impact = "LM hashes can be cracked in minutes. Anyone who obtains the directory database recovers the plain-text passwords."
+remediation = [
+  "Set \"Network security: Do not store LAN Manager hash value on next password change\" to Enabled.",
+  "Have users change their passwords so old LM hashes are removed.",
+]
+verify = "Get-ItemProperty HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Lsa -Name NoLMHash"
+mitre = ["T1003"]
+
+[[check.detail.references]]
+title = "Do not store LAN Manager hash value on next password change"
+url = "https://learn.microsoft.com/windows/security/threat-protection/security-policy-settings/network-security-do-not-store-lan-manager-hash-value-on-next-password-change"
+
+[[check]]
+id = "AD-DC-016"
+title = "LmCompatibilityLevel below 5"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "LmCompatibilityLevel is below 5, so the DC still accepts LM or NTLMv1 authentication."
+impact = "NTLMv1 responses can be turned into the account's NT hash, which works like the password. A DC accepting NTLMv1 makes this possible for any account, including the DC's own."
+remediation = [
+  "Find remaining NTLMv1 clients with AD-LEG-001.",
+  "Set \"Network security: LAN Manager authentication level\" to \"Send NTLMv2 response only. Refuse LM & NTLM\" (5) for DCs.",
+]
+verify = "Get-ItemProperty HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Lsa -Name LmCompatibilityLevel"
+mitre = ["T1557.001", "T1110"]
+
+[[check.detail.references]]
+title = "Network security: LAN Manager authentication level"
+url = "https://learn.microsoft.com/windows/security/threat-protection/security-policy-settings/network-security-lan-manager-authentication-level"
+
+[[check]]
+id = "AD-DC-017"
+title = "Null session / anonymous enumeration (RestrictAnonymous, RestrictAnonymousSAM)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Anonymous users can list accounts on the DC (RestrictAnonymousSAM 0), or anonymous sessions get Everyone's permissions (EveryoneIncludesAnonymous 1)."
+impact = "Unauthenticated attackers can enumerate users and groups, which helps password spraying and targeting."
+remediation = [
+  "Set \"Network access: Do not allow anonymous enumeration of SAM accounts\" to Enabled.",
+  "Set \"Network access: Let Everyone permissions apply to anonymous users\" to Disabled.",
+]
+verify = "Get-ItemProperty HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Lsa -Name RestrictAnonymousSAM, EveryoneIncludesAnonymous"
+mitre = ["T1087.002"]
+
+[[check.detail.references]]
+title = "Network access: Do not allow anonymous enumeration of SAM accounts"
+url = "https://learn.microsoft.com/windows/security/threat-protection/security-policy-settings/network-access-do-not-allow-anonymous-enumeration-of-sam-accounts"
+
+[[check]]
+id = "AD-DC-018"
+title = "Netlogon secure channel enforcement (ZeroLogon FullSecureChannelProtection)"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "Accounts are allowed vulnerable Netlogon secure channel connections (VulnerableChannelAllowList), or secure channel enforcement is turned off."
+impact = "Vulnerable Netlogon connections allow ZeroLogon (CVE-2020-1472): an unauthenticated attacker can reset a DC's machine password and take over the domain."
+remediation = [
+  "Remove the \"Allow vulnerable Netlogon secure channel connections\" policy.",
+  "Update or retire the devices that needed the exception (see AD-LEG-007).",
+]
+verify = "Get-ItemProperty HKLM:\\SYSTEM\\CurrentControlSet\\Services\\Netlogon\\Parameters -Name VulnerableChannelAllowList"
+mitre = ["T1210"]
+
+[[check.detail.references]]
+title = "How to manage the changes in Netlogon secure channel connections (CVE-2020-1472)"
+url = "https://support.microsoft.com/topic/how-to-manage-the-changes-in-netlogon-secure-channel-connections-associated-with-cve-2020-1472-f7e8cc17-0309-1d6a-304e-5ba73cd1a11e"
+
+[[check]]
+id = "AD-DC-019"
+title = "Kerberos PAC validation and KDC hardening registry values (CVE-2022-37967, -26923 enforcement)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "The KDC accepts weak certificate mappings: StrongCertificateBindingEnforcement is 0 or 1."
+impact = "Weak mappings let an attacker who can request or edit a certificate authenticate as another account (Certifried, CVE-2022-26923 and related AD CS abuse)."
+remediation = [
+  "Fix the accounts listed by KDC events 39-41 (see AD-LEG-008).",
+  "Set StrongCertificateBindingEnforcement to 2, or remove it once all DCs have current updates.",
+]
+verify = "Get-ItemProperty HKLM:\\SYSTEM\\CurrentControlSet\\Services\\Kdc -Name StrongCertificateBindingEnforcement"
+mitre = ["T1649"]
+
+[[check.detail.references]]
+title = "KB5014754: Certificate-based authentication changes on Windows domain controllers"
+url = "https://support.microsoft.com/topic/kb5014754-certificate-based-authentication-changes-on-windows-domain-controllers-ad2c23b0-15d8-4340-a468-4d4f3b188f16"
+
+[[check]]
+id = "AD-DC-020"
+title = "DSRM admin logon behavior and DSRM password age"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "DsrmAdminLogonBehavior lets the local Directory Services Restore Mode administrator sign in while the DC runs normally (1) or even over the network (2)."
+impact = "The DSRM password is rarely changed. With value 2 its hash works as a persistent local administrator backdoor on the DC."
+remediation = [
+  "Remove DsrmAdminLogonBehavior or set it to 0.",
+  "Reset the DSRM password on each DC with ntdsutil.",
+]
+verify = "Get-ItemProperty HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Lsa -Name DsrmAdminLogonBehavior"
+mitre = ["T1078.003"]
+
+[[check.detail.references]]
+title = "DSRM administrator logon behavior"
+url = "https://learn.microsoft.com/archive/blogs/askds/ds-restore-mode-password-maintenance"
+
+[[check]]
+id = "AD-DC-021"
+title = "Windows Firewall disabled on any profile"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Windows Firewall is off for at least one profile on a domain controller."
+impact = "Every service on the DC is reachable from every network, including management interfaces that should be limited to admin hosts."
+remediation = [
+  "Turn the firewall on for all profiles with the Default Domain Controllers Policy.",
+  "Allow only the ports DCs need, and limit management ports to admin networks.",
+]
+verify = "Get-NetFirewallProfile | Select-Object Name, Enabled"
+mitre = ["T1562.004"]
+
+[[check.detail.references]]
+title = "Windows Firewall best practices"
+url = "https://learn.microsoft.com/windows/security/operating-system-security/network-security/windows-firewall/best-practices-configuring"
+
+[[check]]
+id = "AD-DC-022"
+title = "RDP exposure and NLA on DCs"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Remote Desktop is enabled on the DC without Network Level Authentication."
+impact = "Without NLA, the logon screen and the RDP stack are exposed before authentication, which has allowed remote code execution (BlueKeep) and credential theft."
+remediation = [
+  "Require Network Level Authentication for Remote Desktop on DCs.",
+  "Limit RDP to privileged access workstations through the firewall.",
+]
+verify = "(Get-CimInstance -Namespace root\\cimv2\\TerminalServices -ClassName Win32_TSGeneralSetting).UserAuthenticationRequired"
+mitre = ["T1021.001"]
+
+[[check.detail.references]]
+title = "Configure Network Level Authentication for Remote Desktop"
+url = "https://learn.microsoft.com/windows-server/remote/remote-desktop-services/clients/remote-desktop-allow-access"
+
+[[check]]
+id = "AD-DC-023"
+title = "WinRM/PowerShell remoting configuration on DCs"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "The WinRM service policy allows unencrypted traffic or Basic authentication on the DC."
+impact = "Basic authentication sends reusable credentials, and unencrypted WinRM exposes the session to anyone on the network path."
+remediation = [
+  "Set \"Allow unencrypted traffic\" and \"Allow Basic authentication\" for the WinRM service to Disabled.",
+]
+verify = "Get-ChildItem WSMan:\\localhost\\Service\\Auth; Get-Item WSMan:\\localhost\\Service\\AllowUnencrypted"
+mitre = ["T1557"]
+
+[[check.detail.references]]
+title = "Installation and configuration for Windows Remote Management"
+url = "https://learn.microsoft.com/windows/win32/winrm/installation-and-configuration-for-windows-remote-management"
+
+[[check]]
+id = "AD-DC-024"
+title = "Credential Guard / LSA protection (RunAsPPL) on DCs"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "LSA protection (RunAsPPL) is off on the DC, so LSASS is not a protected process."
+impact = "Any code running as administrator or SYSTEM can read LSASS memory and take the credentials of everyone who signed in to the DC."
+remediation = [
+  "Enable \"Configure LSASS to run as a protected process\" and test drivers and security products first.",
+  "Consider Credential Guard where hardware allows.",
+]
+verify = "Get-ItemProperty HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Lsa -Name RunAsPPL"
+mitre = ["T1003.001"]
+
+[[check.detail.references]]
+title = "Configuring additional LSA protection"
+url = "https://learn.microsoft.com/windows-server/security/credentials-protection-and-management/configuring-additional-lsa-protection"
+
+[[check]]
+id = "AD-DC-025"
+title = "WDigest UseLogonCredential enabled"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "WDigest UseLogonCredential is 1, so Windows keeps clear-text passwords of signed-in users in memory."
+impact = "Anyone able to read LSASS memory on the DC gets plain-text passwords, including those of administrators."
+remediation = [
+  "Set UseLogonCredential to 0 (or delete it) under HKLM\\SYSTEM\\CurrentControlSet\\Control\\SecurityProviders\\WDigest.",
+  "Investigate who set it: it is a known attacker technique.",
+]
+verify = "Get-ItemProperty HKLM:\\SYSTEM\\CurrentControlSet\\Control\\SecurityProviders\\WDigest -Name UseLogonCredential"
+mitre = ["T1003.001", "T1112"]
+
+[[check.detail.references]]
+title = "Microsoft Security Advisory 2871997"
+url = "https://learn.microsoft.com/security-updates/securityadvisories/2014/2871997"
+
+[[check]]
+id = "AD-DC-026"
+title = "Cached logons count on DCs"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Domain controllers cache more than 4 previous logons (CachedLogonsCount)."
+impact = "Cached logon verifiers stay on disk and can be cracked offline by anyone who gets SYSTEM on the DC or a copy of its disk."
+remediation = [
+  "Set \"Interactive logon: Number of previous logons to cache\" to 4 or fewer (0 on DCs) in the Default Domain Controllers Policy.",
+]
+verify = "Get-ItemProperty 'HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon' -Name CachedLogonsCount"
+mitre = ["T1003"]
+
+[[check]]
+id = "AD-DC-027"
+title = "Antivirus/EDR presence and exclusions on DCs (inventory)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Domain controllers run no antivirus or EDR agent, or Microsoft Defender has broad exclusions (drive roots, system folders, script or executable extensions, PowerShell)."
+impact = "Without protection, tools such as Mimikatz run unnoticed on the DC. Broad exclusions give attackers a place where the protection does not look."
+remediation = [
+  "Run an EDR agent and antivirus on every DC.",
+  "Keep only the exclusions Microsoft documents for AD DS (NTDS database, logs and SYSVOL folders).",
+]
+verify = "Get-MpComputerStatus | Select-Object AMServiceEnabled, RealTimeProtectionEnabled; (Get-MpPreference).ExclusionPath"
+mitre = ["T1562.004"]
+
+[[check]]
+id = "AD-DC-028"
+title = "Time source: PDC emulator syncs to a reliable external source; others sync from domain hierarchy"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Domain time is not configured as recommended: the PDC emulator should sync from a reliable external NTP source, and every other DC from the domain hierarchy."
+impact = "Kerberos fails when clocks differ by more than 5 minutes, and wrong time spoils every log timeline used in an investigation."
+remediation = [
+  "On the PDC emulator: w32tm /config /manualpeerlist:<ntp servers> /syncfromflags:manual /reliable:yes /update.",
+  "On other DCs: w32tm /config /syncfromflags:domhier /update.",
+]
+verify = "w32tm /query /configuration /computer:<dc>"
+
+[[check.detail.references]]
+title = "Windows Time service for Active Directory"
+url = "https://learn.microsoft.com/windows-server/networking/windows-time-service/how-the-windows-time-service-works"
+
+[[check]]
+id = "AD-DC-029"
+title = "DC clock skew between DCs"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "A DC's clock differs from the PDC emulator (or the other DCs) by more than 2 minutes."
+impact = "Kerberos rejects tickets when clocks drift past 5 minutes, which causes sign-in failures; drifting clocks also make event correlation unreliable."
+remediation = [
+  "Check the time configuration of the listed DCs (AD-DC-028) and resync with w32tm /resync /rediscover.",
+]
+verify = "w32tm /monitor /domain:<domain>"
+
+[[check.detail.references]]
+title = "Maximum tolerance for computer clock synchronization"
+url = "https://learn.microsoft.com/windows/security/threat-protection/security-policy-settings/maximum-tolerance-for-computer-clock-synchronization"
+
+[[check]]
+id = "AD-DC-030"
+title = "Disk space on NTDS, logs and SYSVOL volumes"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "A volume holding the NTDS database, its logs or SYSVOL has less than 10% or 5 GB free."
+impact = "When the database volume fills, AD DS stops accepting changes and can shut down, which affects authentication across the domain."
+remediation = [
+  "Free or add space on the listed volumes.",
+  "Monitor free space on DC volumes.",
+]
+verify = "Get-CimInstance Win32_LogicalDisk -ComputerName <dc> -Filter 'DriveType=3'"
+
+[[check.detail.references]]
+title = "Capacity planning for Active Directory Domain Services"
+url = "https://learn.microsoft.com/windows-server/administration/performance-tuning/role/active-directory-server/capacity-planning-for-active-directory-domain-services"
+
+[[check]]
+id = "AD-DC-031"
+title = "NTDS.dit and log file location on separate volume (informational)"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "The AD database (NTDS.dit) or its logs are on the system volume (C:)."
+impact = "On the system volume the database competes with the OS for space and I/O, and a full system drive stops AD DS. Separating them is the documented layout."
+remediation = [
+  "Move the database and logs to a separate volume with ntdsutil (files, move db / move logs) during maintenance.",
+]
+verify = "Get-ItemProperty HKLM:\\SYSTEM\\CurrentControlSet\\Services\\NTDS\\Parameters | Select-Object 'DSA Database file', 'Database log files path'"
+mitre = ["T1490"]
+
+[[check]]
+id = "AD-DC-032"
+title = "Read-Only DCs: Password Replication Policy (allowed/denied lists, privileged accounts cached on RODCs)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Read-only domain controllers allow caching of Tier 0 passwords (through their Allowed RODC Password Replication list) or have already cached them."
+impact = "An RODC is usually placed where physical security is weaker. If Tier 0 passwords are cached on it, stealing the RODC gives domain admin credentials."
+remediation = [
+  "Remove privileged groups from msDS-RevealOnDemandGroup and add them to the Denied list.",
+  "Reset the passwords of Tier 0 accounts the RODC has cached.",
+]
+verify = "Get-ADDomainControllerPasswordReplicationPolicy -Identity <RODC> -Allowed; Get-ADDomainControllerPasswordReplicationPolicyUsage -Identity <RODC> -RevealedAccounts"
+cvss = "AV:P/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1003"]

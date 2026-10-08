@@ -1,0 +1,13 @@
+{
+  "name": "Branch forest",
+  "tool_version": "0.1.0",
+  "catalog_version": "2026.10",
+  "scope": {
+    "domains": [
+      "branch.example.com"
+    ],
+    "tenant": null
+  },
+  "started_at": "2026-06-18T16:45:00Z",
+  "finished_at": "2026-06-18T16:52:10Z"
+}

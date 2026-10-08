@@ -1,0 +1,271 @@
+# EP-T0: Tier 0 servers beyond DCs
+
+area = "EP-T0"
+
+[[check]]
+id = "EP-T0-001"
+title = "AD CS servers hardened like DCs (all F1 checks enforced at higher severity)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "A server that runs an enterprise certificate authority lacks hardening a domain controller has: LSA protection, Credential Guard, LAPS, required SMB signing, SMBv1, Print Spooler and WebClient turned off, an EDR agent, or recent updates. The check runs on the CA servers read as endpoints."
+impact = "An enterprise CA issues certificates that sign in as any account, including domain admins. Whoever controls the CA server or its private key controls the domain, so a weaker CA server is a shorter path to the domain than a DC."
+attack = [
+  "Gains local administrator rights on the CA server through a gap a DC would not have.",
+  "Exports the CA private key or issues certificates directly.",
+  "Forges a certificate for a domain admin and signs in with it.",
+]
+remediation = [
+  "Apply the same security baseline and Group Policy to CA servers as to domain controllers, and place them in a Tier 0 OU.",
+  "Turn on LSA protection and Credential Guard, require SMB signing, remove SMBv1 and stop Print Spooler and WebClient.",
+  "Install an EDR agent, keep updates current and manage the local administrator password with LAPS.",
+  "Protect the CA private key with an HSM where possible.",
+]
+frameworks = [
+  "Microsoft enterprise access model",
+  "NIST 800-53 CM-6",
+]
+verify = '''
+Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Control\Lsa -Name RunAsPPL; Get-SmbServerConfiguration | Select-Object EnableSMB1Protocol, RequireSecuritySignature; Get-Service Spooler, WebClient'''
+cvss = "AV:N/AC:H/PR:L/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1649", "T1003.001", "T1068"]
+
+[[check.detail.references]]
+title = "Enterprise access model"
+url = "https://learn.microsoft.com/security/privileged-access-workstations/privileged-access-access-model"
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1649: Steal or Forge Authentication Certificates"
+url = "https://attack.mitre.org/techniques/T1649/"
+
+[[check]]
+id = "EP-T0-002"
+title = "Entra Connect server hardening and local admins"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "The Entra Connect Sync server, identified from the MSOL_ account's description or from the installed software, lacks DC-level hardening or has local administrators other than the built-in Administrator, Domain Admins and Enterprise Admins."
+impact = "The sync server holds credentials that can reset passwords and read password hashes in the domain and write to the tenant. Anyone who administers it can take over both the domain and Entra ID."
+attack = [
+  "Gains local administrator rights on the sync server.",
+  "Extracts the credentials of the sync accounts from the Entra Connect configuration.",
+  "Uses the on-premises account to replicate password hashes, or the cloud account to change synced users in Entra ID.",
+]
+remediation = [
+  "Treat the Entra Connect server as Tier 0: place it in a Tier 0 OU, apply the domain controller baseline and allow sign-in only from privileged access workstations.",
+  "Remove local administrators other than the built-in Administrator, Domain Admins and Enterprise Admins.",
+  "Turn on LSA protection and Credential Guard, install an EDR agent and keep updates current.",
+]
+frameworks = [
+  "Microsoft enterprise access model",
+  "NIST 800-53 AC-6",
+]
+verify = '''
+Get-LocalGroupMember -SID S-1-5-32-544 | Select-Object Name, ObjectClass, PrincipalSource'''
+cvss = "AV:N/AC:H/PR:L/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1003.006", "T1078.002", "T1098"]
+
+[[check.detail.references]]
+title = "Microsoft Entra Connect: Prerequisites (hardening the server)"
+url = "https://learn.microsoft.com/entra/identity/hybrid/connect/how-to-connect-install-prerequisites"
+
+[[check.detail.references]]
+title = "Enterprise access model"
+url = "https://learn.microsoft.com/security/privileged-access-workstations/privileged-access-access-model"
+
+[[check]]
+id = "EP-T0-003"
+title = "ADFS / WAP servers hardening"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "An AD FS server, identified by the AD FS service, lacks DC-level hardening or has local administrators other than the built-in Administrator, Domain Admins and Enterprise Admins."
+impact = "The AD FS token-signing key signs tokens that cloud and on-premises applications accept for any user. Whoever administers an AD FS server can export the key and sign in anywhere as anyone."
+attack = [
+  "Gains local administrator rights on an AD FS server.",
+  "Exports the token-signing certificate and key.",
+  "Forges SAML tokens for any user, including global admins.",
+]
+remediation = [
+  "Treat AD FS servers as Tier 0: Tier 0 OU, domain controller baseline and sign-in only from privileged access workstations.",
+  "Remove local administrators other than the built-in Administrator, Domain Admins and Enterprise Admins.",
+  "Move applications to Entra ID authentication and retire AD FS where possible.",
+]
+frameworks = [
+  "Microsoft enterprise access model",
+  "NIST 800-53 AC-6",
+]
+verify = '''
+Get-Service adfssrv; Get-LocalGroupMember -SID S-1-5-32-544 | Select-Object Name, ObjectClass'''
+cvss = "AV:N/AC:H/PR:L/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1606.002", "T1078.004"]
+
+[[check.detail.references]]
+title = "AD FS best practices for securing"
+url = "https://learn.microsoft.com/windows-server/identity/ad-fs/deployment/best-practices-securing-ad-fs"
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1606.002: Forge Web Credentials: SAML Tokens"
+url = "https://attack.mitre.org/techniques/T1606/002/"
+
+[[check]]
+id = "EP-T0-004"
+title = "PAM / PAW / jump servers: who can log on, internet access"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Jump servers and privileged access workstations (found by name) have local administrators outside Tier 0."
+impact = "Tier 0 admins enter their credentials on these machines. Anyone else who administers them can capture those credentials."
+remediation = [
+  "Limit local administrators of jump servers and PAWs to Tier 0 accounts.",
+]
+verify = "Invoke-Command -ComputerName <jump server> { Get-LocalGroupMember -SID S-1-5-32-544 }"
+mitre = ["T1078.002"]
+
+[[check]]
+id = "EP-T0-005"
+title = "Backup servers with DC backups: who has admin"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Backup servers (found by installed backup software) have local administrators outside Tier 0."
+impact = "A backup server holds copies of the DCs. Its administrators can restore or read the AD database and extract every password hash."
+remediation = [
+  "Treat backup servers as Tier 0 and limit their administrators accordingly.",
+]
+verify = "Invoke-Command -ComputerName <backup server> { Get-LocalGroupMember -SID S-1-5-32-544 }"
+mitre = ["T1003"]
+
+[[check]]
+id = "EP-T0-006"
+title = "Hypervisor hosts running virtual DCs: who has admin (vCenter/Hyper-V)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Hyper-V hosts and virtualization management servers have local administrators outside Tier 0."
+impact = "Hypervisor administrators can copy a virtual DC's disk and extract every password hash."
+remediation = [
+  "Treat hosts that run DCs, and their management servers, as Tier 0.",
+]
+verify = "Invoke-Command -ComputerName <host> { Get-LocalGroupMember -SID S-1-5-32-544 }"
+mitre = ["T1003"]
+
+[[check]]
+id = "EP-T0-007"
+title = "SCCM site servers with control over DCs"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "A domain controller runs the Configuration Manager client (CcmExec). Configuration Manager administrators and the site servers can deploy software and scripts to it as SYSTEM."
+impact = "Every Configuration Manager administrator, and anyone who controls a site server, can run code on the domain controller. Unless the whole Configuration Manager hierarchy is run as Tier 0, it is a path to the domain."
+attack = [
+  "Gains administrator rights in Configuration Manager or on a site server.",
+  "Deploys a script or application to the collection that holds the domain controllers.",
+  "The script runs as SYSTEM on the DC and takes over the domain.",
+]
+remediation = [
+  "Remove the Configuration Manager client from domain controllers and patch them another way, or",
+  "Run a separate Configuration Manager site, administered only by Tier 0 admins, for Tier 0 servers.",
+  "Limit Configuration Manager role-based administration so no one outside Tier 0 can target domain controllers.",
+]
+frameworks = [
+  "Microsoft enterprise access model",
+  "NIST 800-53 AC-6",
+]
+verify = '''
+Get-Service CcmExec -ErrorAction SilentlyContinue'''
+cvss = "AV:N/AC:H/PR:H/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1569.002", "T1078.002"]
+
+[[check.detail.references]]
+title = "Enterprise access model"
+url = "https://learn.microsoft.com/security/privileged-access-workstations/privileged-access-access-model"
+
+[[check]]
+id = "EP-T0-008"
+title = "Monitoring/agent servers that can run code on DCs (SCOM, Ansible, Puppet, RMM tools)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "A domain controller runs a monitoring, automation or remote management agent (for example a System Center Operations Manager agent, Puppet, Tanium, ScreenConnect, TeamViewer or AnyDesk). The agent lets the system that controls it run commands on the DC."
+impact = "Whoever administers the agent's server or cloud console can run code on the domain controller. Unless that system is run as Tier 0, it is a path to the domain, and remote access tools are a common entry point for intruders."
+attack = [
+  "Compromises the agent's management server or console account.",
+  "Pushes a task or opens a remote session on the domain controller.",
+  "Runs commands on the DC and takes over the domain.",
+]
+remediation = [
+  "Remove remote access tools from domain controllers.",
+  "For monitoring and automation, use a separate instance administered only by Tier 0 admins, or a read-only collection method.",
+  "Review who can administer each listed product.",
+]
+frameworks = [
+  "Microsoft enterprise access model",
+  "NIST 800-53 CM-7",
+]
+verify = '''
+Get-Service | Where-Object { $_.Name -match 'HealthService|puppet|Tanium|ScreenConnect|TeamViewer|AnyDesk|LTService|NinjaRMM|Kaseya|Atera' }'''
+cvss = "AV:N/AC:H/PR:H/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1569.002", "T1199"]
+
+[[check.detail.references]]
+title = "Enterprise access model"
+url = "https://learn.microsoft.com/security/privileged-access-workstations/privileged-access-access-model"
+
+[[check]]
+id = "EP-T0-009"
+title = "Tier 0 servers reachable from user VLANs (network exposure, informational)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "A domain controller or Tier 0 server has a Windows Firewall inbound allow rule for RDP, WinRM, SMB, RPC or SSH that accepts any remote address. Only the host firewall is read; network firewalls between VLANs are not visible."
+impact = "Management services are reachable from user networks, so a compromised workstation can attack Tier 0 directly."
+remediation = [
+  "Limit management rules on Tier 0 servers to admin workstation and jump server addresses.",
+]
+verify = "Get-NetFirewallRule -Enabled True -Direction Inbound | Get-NetFirewallAddressFilter"
+
+[[check.detail.references]]
+title = "Securing domain controllers"
+url = "https://learn.microsoft.com/windows-server/identity/ad-ds/plan/security-best-practices/securing-domain-controllers-against-attack"
+
+[[check]]
+id = "EP-T0-010"
+title = "Tier 0 servers with internet browsing or email clients installed"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "A domain controller, or a CA, Entra Connect or AD FS server read as an endpoint, has a web browser or an email client installed."
+impact = "Browsing or reading mail on a Tier 0 server exposes it, and the privileged account using it, to phishing and drive-by exploits. One malicious page or attachment opened there runs with Tier 0 rights."
+attack = [
+  "Sends a phishing email or lures an admin to a malicious site.",
+  "The admin opens it on the Tier 0 server.",
+  "The exploit runs as the admin on the server and takes over the domain.",
+]
+remediation = [
+  "Uninstall browsers and email clients from Tier 0 servers.",
+  "Do admin work from a privileged access workstation without email or general web access.",
+  "Block outbound internet access from Tier 0 servers except for required update services.",
+]
+frameworks = [
+  "Microsoft enterprise access model",
+  "CIS Controls v8",
+]
+verify = '''
+Get-ItemProperty HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*, HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\* | Where-Object { $_.DisplayName -match 'Chrome|Firefox|Brave|Opera|Thunderbird|Outlook|Microsoft 365 Apps|Office' } | Select-Object DisplayName'''
+cvss = "AV:N/AC:H/PR:N/UI:R/S:C/C:H/I:H/A:H"
+mitre = ["T1566.002", "T1078.002"]
+
+[[check.detail.references]]
+title = "Enterprise access model"
+url = "https://learn.microsoft.com/security/privileged-access-workstations/privileged-access-access-model"

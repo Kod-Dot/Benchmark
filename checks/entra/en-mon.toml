@@ -1,0 +1,236 @@
+# EN-MON: Logging, monitoring and Identity Protection
+
+area = "EN-MON"
+
+[[check]]
+id = "EN-MON-001"
+title = "Diagnostic settings export sign-in and audit logs to Log Analytics / SIEM"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "No diagnostic setting sends both Entra sign-in logs and audit logs to Log Analytics, an Event Hub or a storage account."
+impact = "Entra keeps logs for 30 days at most; without export there is no history for an investigation and no SIEM alerting on identity events."
+remediation = [
+  "Create a diagnostic setting under Entra > Monitoring > Diagnostic settings that sends SignInLogs, NonInteractiveUserSignInLogs, ServicePrincipalSignInLogs and AuditLogs to Log Analytics or a SIEM.",
+]
+verify = "Invoke-AzRestMethod -Path '/providers/microsoft.aadiam/diagnosticSettings?api-version=2017-04-01'"
+mitre = ["T1562"]
+
+[[check.detail.references]]
+title = "Integrate Microsoft Entra logs with Azure Monitor"
+url = "https://learn.microsoft.com/entra/identity/monitoring-health/howto-integrate-activity-logs-with-azure-monitor-logs"
+
+[[check]]
+id = "EN-MON-002"
+title = "Log retention period"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Entra logs are not exported, so they are kept only 30 days (7 without Entra ID P1), or they are sent only to a storage account with a retention policy under 90 days."
+impact = "Compromises are often found months later; by then the sign-ins and changes that show how they happened are gone."
+remediation = [
+  "Export the logs and keep them at least 90 days, ideally a year, in Log Analytics or the SIEM.",
+]
+verify = "Invoke-AzRestMethod -Path '/providers/microsoft.aadiam/diagnosticSettings?api-version=2017-04-01'"
+
+[[check.detail.references]]
+title = "Data retention in Microsoft Entra"
+url = "https://learn.microsoft.com/entra/identity/monitoring-health/reference-reports-data-retention"
+
+[[check]]
+id = "EN-MON-003"
+title = "Identity Protection risk detections in last 30 days summary"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Summarizes Identity Protection risk detections of the last 30 days by type, and lists the high-risk ones."
+impact = "High-risk detections usually mean a password or token is in an attacker's hands."
+remediation = [
+  "Investigate each high-risk detection, reset the password and revoke sessions where it is confirmed.",
+  "Use risk-based Conditional Access to require MFA or a password change automatically.",
+]
+verify = "Get-MgRiskDetection -Filter \"detectedDateTime ge <date>\""
+mitre = ["T1078.004"]
+
+[[check.detail.references]]
+title = "What is risk? (Identity Protection)"
+url = "https://learn.microsoft.com/entra/id-protection/concept-identity-protection-risks"
+
+[[check]]
+id = "EN-MON-004"
+title = "Unresolved risky sign-ins"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Risk detections from the last 30 days are still at risk: neither remediated nor dismissed."
+impact = "Nobody has acted on a sign-in or account that Identity Protection considers compromised."
+remediation = [
+  "Review each detection and confirm compromise or dismiss it; reset passwords and revoke sessions where needed.",
+]
+verify = "Get-MgRiskDetection -Filter \"riskState eq 'atRisk'\""
+mitre = ["T1078.004"]
+
+[[check.detail.references]]
+title = "What is risk? (Identity Protection)"
+url = "https://learn.microsoft.com/entra/id-protection/concept-identity-protection-risks"
+
+[[check]]
+id = "EN-MON-005"
+title = "Sign-ins from unexpected countries (summary)"
+status = "implemented"
+severity = "info"
+
+[check.detail]
+description = "Summarizes a sample of successful sign-ins by country and lists countries with under 1% of them."
+impact = "Sign-ins from countries where the organization does not work are a common sign of stolen credentials."
+remediation = [
+  "Review the rare countries; investigate accounts that should not be there.",
+  "Consider a Conditional Access policy that blocks countries the organization never signs in from.",
+]
+verify = "Sign-in logs grouped by location."
+mitre = ["T1078.004"]
+
+[[check]]
+id = "EN-MON-006"
+title = "Legacy auth sign-in volume by protocol and app"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "One or more legacy authentication protocols had successful sign-ins in the last 30 days of sign-in logs. The finding summarizes legacy sign-ins per protocol (Exchange ActiveSync, IMAP4, POP3, authenticated SMTP, MAPI over HTTP, Outlook Anywhere, Exchange Web Services, Autodiscover, Offline Address Book, Exchange Online PowerShell and other clients) with successful and failed counts."
+impact = "Every protocol with successful sign-ins is a way into the tenant that skips MFA. Many failed sign-ins on a protocol often mean it is being used for password spraying."
+attack = [
+  "Picks a protocol that still accepts sign-ins, such as IMAP4 or authenticated SMTP.",
+  "Tries common passwords against many accounts over that protocol without being asked for MFA.",
+  "Uses the accounts that work to read mail or send phishing from inside the organization.",
+]
+remediation = [
+  "For each protocol with successful sign-ins, find the users and clients behind them (see EN-ID-011) and move them to modern authentication.",
+  "Block legacy authentication for all users with a Conditional Access policy.",
+  "Turn off protocols that nobody needs in Exchange Online.",
+]
+verify = "$since = (Get-Date).AddDays(-30).ToString('yyyy-MM-ddTHH:mm:ssZ'); Get-MgAuditLogSignIn -All -Filter \"createdDateTime ge $since\" | Where-Object { $_.ClientAppUsed -notin 'Browser','Mobile Apps and Desktop clients' } | Group-Object ClientAppUsed, { if ($_.Status.ErrorCode -eq 0) { 'Success' } else { 'Failure' } } | Select-Object Name, Count"
+cvss = "AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:L/A:N"
+mitre = ["T1078.004", "T1110.003"]
+
+[[check.detail.references]]
+title = "Block legacy authentication with Conditional Access"
+url = "https://learn.microsoft.com/entra/identity/conditional-access/policy-block-legacy-authentication"
+
+[[check.detail.references]]
+title = "Sign-in logs in Microsoft Entra ID"
+url = "https://learn.microsoft.com/entra/identity/monitoring-health/concept-sign-ins"
+
+[[check]]
+id = "EN-MON-007"
+title = "Failed MFA and blocked sign-in trends"
+status = "implemented"
+severity = "info"
+
+[check.detail]
+description = "Shows failed MFA prompts (error 500121) and sign-ins blocked by Conditional Access (error 53003) per week over 30 days."
+impact = "A sudden rise is often the first sign of a password spray or MFA fatigue campaign."
+remediation = [
+  "Investigate weeks with spikes and the accounts behind them.",
+  "Send these events to the SIEM and alert on spikes.",
+]
+verify = "Sign-in logs filtered on error codes 500121 and 53003."
+mitre = ["T1621", "T1110"]
+
+[[check]]
+id = "EN-MON-008"
+title = "Microsoft Defender for Cloud Apps / Defender XDR connection (informational)"
+status = "implemented"
+severity = "info"
+
+[check.detail]
+description = "Lists the Microsoft Defender products in the tenant's licences (Defender for Office 365, Endpoint, Identity, Cloud Apps and XDR)."
+impact = "Without Defender XDR, Entra sign-in risk is not correlated with mail, endpoint and cloud app activity, and many attack paths go unseen."
+remediation = [
+  "License and turn on the Defender products that fit the estate, and connect them in the Defender portal.",
+]
+verify = "Get-MgSubscribedSku | Select-Object -ExpandProperty ServicePlans"
+
+[[check.detail.references]]
+title = "Microsoft Defender XDR"
+url = "https://learn.microsoft.com/defender-xdr/microsoft-365-defender"
+
+[[check]]
+id = "EN-MON-009"
+title = "Alerts for break-glass account sign-ins"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "A break-glass account has no enabled Azure Monitor log alert rule whose query mentions it. If no break-glass account is found, that is reported instead."
+impact = "Break-glass accounts bypass Conditional Access; a sign-in by one that nobody notices could be an attacker using the most powerful account in the tenant."
+remediation = [
+  "Create a log alert on SigninLogs for each break-glass account, sent to the security team.",
+]
+verify = "Get-AzScheduledQueryRule | Select-Object Name, Enabled, CriteriaAllOf"
+
+[[check.detail.references]]
+title = "Monitor emergency access accounts"
+url = "https://learn.microsoft.com/entra/identity/role-based-access-control/security-emergency-access#monitor-sign-in-and-audit-logs"
+
+[[check]]
+id = "EN-MON-010"
+title = "Audit of recent changes to CA, roles, app credentials, and federation settings"
+status = "implemented"
+severity = "info"
+
+[check.detail]
+description = "Inventory of changes recorded in the last 30 days of the audit log to directory roles, applications and their credentials, policies (including Conditional Access) and directory settings, with the number of events per activity. This check always reports; it is a summary for review, not a failure."
+impact = "These are the changes an attacker makes to keep or widen access. An unexpected activity or an unusual count is worth a closer look in the audit log."
+remediation = [
+  "Review the activities with the identity team and match the counts against planned changes and change tickets.",
+  "Open the audit log for any activity nobody expected and check who made the change and on which object.",
+  "Send the audit log to a SIEM or Log Analytics workspace with alerts for role, credential and Conditional Access changes, because the built-in log is kept for only 30 days.",
+]
+verify = "$since = (Get-Date).AddDays(-30).ToString('yyyy-MM-ddTHH:mm:ssZ'); Get-MgAuditLogDirectoryAudit -All -Filter \"activityDateTime ge $since\" | Where-Object { $_.Category -in 'RoleManagement','ApplicationManagement','Policy','DirectoryManagement' } | Group-Object Category, ActivityDisplayName | Sort-Object Count -Descending | Select-Object Name, Count"
+mitre = ["T1098", "T1098.001", "T1098.003", "T1556", "T1484.002"]
+
+[[check.detail.references]]
+title = "Audit logs in Microsoft Entra ID"
+url = "https://learn.microsoft.com/entra/identity/monitoring-health/concept-audit-logs"
+
+[[check]]
+id = "EN-MON-011"
+title = "Service health / Entra Connect Health agents reporting"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "An Entra Connect Health service (sync, AD FS, AD DS) reports unhealthy, or directory sync is on with no Connect Health agent for the sync service."
+impact = "Sync and federation problems, including attacks on AD FS, go unnoticed."
+remediation = [
+  "Install the Connect Health agents on sync and AD FS servers and resolve open alerts.",
+]
+verify = "Entra admin center > Hybrid management > Entra Connect > Connect Health"
+
+[[check.detail.references]]
+title = "Microsoft Entra Connect Health"
+url = "https://learn.microsoft.com/entra/identity/hybrid/connect/whatis-azure-ad-connect"
+
+[[check]]
+id = "EN-MON-012"
+title = "Secure Score identity controls status (pulled from Graph Secure Score)"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "The Microsoft Secure Score of the tenant is below 50 percent of the maximum score. The finding shows the current and the maximum score."
+impact = "A low score means many of the recommended security controls for identities, devices and apps are not in place."
+remediation = [
+  "In the Microsoft Defender portal, open Secure score and review the Recommended actions list, starting with the identity actions that have the highest score impact.",
+  "Implement the actions that fit the organization and mark the others as accepted risk or resolved through a third party, with a reason.",
+]
+verify = "Get-MgSecuritySecureScore -Top 1 | Select-Object CreatedDateTime, CurrentScore, MaxScore"
+
+[[check.detail.references]]
+title = "Identity Secure Score"
+url = "https://learn.microsoft.com/entra/identity/monitoring-health/concept-identity-secure-score"

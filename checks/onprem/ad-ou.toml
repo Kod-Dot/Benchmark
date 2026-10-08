@@ -1,0 +1,194 @@
+# AD-OU: OU structure and administrative model
+
+area = "AD-OU"
+
+[[check]]
+id = "AD-OU-001"
+title = "OU structure inventory and depth"
+status = "implemented"
+severity = "info"
+
+[check.detail]
+description = "Inventory of OUs with their depth. OUs nested more than 10 levels deep are listed."
+impact = "Deep structures make policy inheritance and delegation hard to follow, and slow Group Policy processing."
+remediation = [
+  "Flatten the OU structure and use groups and filters instead of deep nesting.",
+]
+verify = "Get-ADOrganizationalUnit -Filter * | Select-Object DistinguishedName"
+mitre = ["T1484.001"]
+
+[[check]]
+id = "AD-OU-002"
+title = "Objects in default Users/Computers containers"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "A user or computer account sits directly in the default CN=Users or CN=Computers container of the domain. Built-in accounts with a relative ID below 1000, such as Administrator, Guest and krbtgt, are not counted. Groups are not considered."
+impact = "Group Policy cannot be linked to these containers, so accounts there receive only domain-wide policy and none of the settings, restrictions or delegation applied to OUs. They are also easily missed when admin rights are delegated per OU."
+remediation = [
+  "Move each listed account to the OU that matches its role, so the right GPOs and delegation apply.",
+  "Check that the account still works after the move, since new GPOs will apply to it.",
+  "Redirect where new accounts are created so the containers stay empty (see AD-OU-003).",
+]
+frameworks = [
+  "NIST 800-53 CM-6",
+]
+verify = '''
+$d = (Get-ADDomain).DistinguishedName
+"CN=Users,$d", "CN=Computers,$d" | ForEach-Object {
+  Get-ADObject -SearchBase $_ -SearchScope OneLevel -LDAPFilter '(objectClass=user)' -Properties objectSid |
+    Where-Object { [int]($_.objectSid.Value -split '-')[-1] -ge 1000 } | Select-Object Name, DistinguishedName
+}'''
+
+[[check.detail.references]]
+title = "Redirecting the users and computers containers in Active Directory domains"
+url = "https://learn.microsoft.com/troubleshoot/windows-server/active-directory/redirect-users-computers-containers"
+
+[[check.detail.references]]
+title = "Delegating administration by using OU objects"
+url = "https://learn.microsoft.com/windows-server/identity/ad-ds/plan/delegating-administration-by-using-ou-objects"
+
+[[check]]
+id = "AD-OU-003"
+title = "Default container redirection (redircmp/redirusr)"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Reads wellKnownObjects on the domain head to see where new users and new computers are created when no location is given (for example when a computer joins the domain without a pre-created account). The check flags each of the two that still points to the default CN=Users or CN=Computers container. It is not assessed when the domain head or its wellKnownObjects attribute was not collected."
+impact = "New accounts land in a container where no OU Group Policy applies and no OU delegation exists, so newly joined computers run without the baseline settings until someone moves them."
+remediation = [
+  "Create OUs for new users and new computers with the baseline GPOs linked.",
+  "Run redirusr and redircmp on a DC with the distinguished names of those OUs.",
+  "Move accounts already in the default containers (see AD-OU-002).",
+]
+frameworks = [
+  "NIST 800-53 CM-6",
+]
+verify = '''
+Get-ADDomain | Select-Object UsersContainer, ComputersContainer'''
+
+[[check.detail.references]]
+title = "Redirecting the users and computers containers in Active Directory domains"
+url = "https://learn.microsoft.com/troubleshoot/windows-server/active-directory/redirect-users-computers-containers"
+
+[[check.detail.references]]
+title = "Well-Known-Objects attribute (Active Directory schema)"
+url = "https://learn.microsoft.com/windows/win32/adschema/a-wellknownobjects"
+
+[[check]]
+id = "AD-OU-004"
+title = "OUs not protected from accidental deletion"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "An OU's permissions lack the entry that Protect object from accidental deletion adds: a deny for Everyone on Delete and Delete subtree. The check counts only OUs whose security descriptor was read, and is not assessed when none was."
+impact = "An admin can delete the OU with everything in it in a single step, by mistake or through a script error. Restoring it needs the AD Recycle Bin or an authoritative restore, and services stop until it is done."
+remediation = [
+  "Turn on Protect object from accidental deletion for each listed OU, for example with Set-ADOrganizationalUnit -ProtectedFromAccidentalDeletion $true.",
+  "Enable the AD Recycle Bin so that deleted objects can be restored with their attributes.",
+]
+frameworks = [
+  "NIST 800-53 CP-9",
+  "NIST 800-53 CM-5",
+]
+verify = '''
+Get-ADOrganizationalUnit -Filter * -Properties ProtectedFromAccidentalDeletion |
+  Where-Object { -not $_.ProtectedFromAccidentalDeletion } | Select-Object Name, DistinguishedName'''
+
+[[check.detail.references]]
+title = "Set-ADOrganizationalUnit"
+url = "https://learn.microsoft.com/powershell/module/activedirectory/set-adorganizationalunit"
+
+[[check.detail.references]]
+title = "Delegating administration by using OU objects"
+url = "https://learn.microsoft.com/windows-server/identity/ad-ds/plan/delegating-administration-by-using-ou-objects"
+
+[[check]]
+id = "AD-OU-005"
+title = "Tiered administration model evidence (Tier 0/1/2 OUs, admin account separation)"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Whether the directory shows a tiered administration structure: OUs named for tiers (Tier 0, T1...) or for admin accounts."
+impact = "Without separate tiers, admin accounts and the systems they manage share policies and permissions, so a compromise of a workstation admin can reach domain controllers."
+remediation = [
+  "Create separate OUs for Tier 0, Tier 1 and Tier 2 admin accounts, groups and assets, with tier-specific Group Policy and delegations.",
+]
+verify = "Get-ADOrganizationalUnit -Filter * | Where-Object Name -match 'tier|admin'"
+mitre = ["T1078.002"]
+
+[[check]]
+id = "AD-OU-006"
+title = "Privileged Access Workstations defined and enforced via logon restrictions"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Enabled privileged accounts have neither a workstation restriction (userWorkstations) nor an authentication policy or silo."
+impact = "Without a restriction, a privileged account can sign in from any workstation, where its credentials can be stolen."
+remediation = [
+  "Assign privileged accounts to an authentication policy silo that limits sign-in to privileged access workstations.",
+  "As a minimum, set the Log On To list on each account.",
+]
+verify = "Get-ADUser -Filter 'AdminCount -eq 1' -Properties userWorkstations, msDS-AssignedAuthNPolicySilo"
+mitre = ["T1078.002"]
+
+[[check]]
+id = "AD-OU-007"
+title = "Privileged accounts with a mail address (admin and daily-use account not separated)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "An enabled user account that is a direct or nested member of an admin group (Domain Admins, Enterprise Admins, Schema Admins, Key Admins, Enterprise Key Admins, Administrators, Account Operators, Server Operators, Print Operators, Backup Operators or DnsAdmins) has a mail address. The built-in Administrator (RID 500) is not counted. A mail address suggests the account is also the person's everyday account for email and browsing."
+impact = "An account used for email and web browsing is exposed to phishing and malicious content every day. If it is also an admin account, one malicious attachment or link runs with domain admin rights."
+attack = [
+  "Sends a phishing email to the admin's mailbox.",
+  "The admin opens it while signed in with the same account, and the attacker's code runs with the admin's rights.",
+  "Uses those rights on the domain.",
+]
+remediation = [
+  "Give each administrator a separate admin account without a mailbox and use it only for administration, from a privileged access workstation.",
+  "Remove the listed accounts from admin groups once the separate accounts exist, or remove their mail address and mailbox if they are already admin-only.",
+]
+frameworks = [
+  "CIS Controls 5.4",
+  "NIST 800-53 AC-6",
+]
+verify = '''
+'Domain Admins', 'Enterprise Admins', 'Schema Admins', 'Administrators', 'Account Operators', 'Backup Operators' |
+  ForEach-Object { Get-ADGroupMember $_ -Recursive } | Where-Object objectClass -eq 'user' |
+  Sort-Object distinguishedName -Unique | Get-ADUser -Properties mail |
+  Where-Object { $_.Enabled -and $_.mail -and $_.SID.Value -notmatch '-500$' } | Select-Object Name, mail'''
+cvss = "AV:N/AC:H/PR:N/UI:R/S:C/C:H/I:H/A:H"
+mitre = ["T1078.002", "T1566.002"]
+
+[[check.detail.references]]
+title = "Privileged access: accounts"
+url = "https://learn.microsoft.com/security/privileged-access-workstations/privileged-access-accounts"
+
+[[check.detail.references]]
+title = "Implementing least-privilege administrative models"
+url = "https://learn.microsoft.com/windows-server/identity/ad-ds/plan/security-best-practices/implementing-least-privilege-administrative-models"
+
+[[check]]
+id = "AD-OU-008"
+title = "Delegated admin groups with members outside the expected OU"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "A group with control rights on an OU has enabled user members whose accounts live outside the group's own top-level OU (for example in CN=Users)."
+impact = "Delegated admin rights end up on everyday accounts that are not managed, protected or reviewed like admin accounts."
+remediation = [
+  "Put only dedicated admin accounts, kept in the admin OU structure, in delegated admin groups.",
+]
+verify = "Get-ADGroupMember <group> | Select-Object DistinguishedName"
+
+[[check.detail.references]]
+title = "Delegating administration by using OU objects"
+url = "https://learn.microsoft.com/windows-server/identity/ad-ds/plan/delegating-administration-by-using-ou-objects"

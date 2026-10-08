@@ -1,0 +1,218 @@
+# AD-TRU: Trusts
+
+area = "AD-TRU"
+
+[[check]]
+id = "AD-TRU-001"
+title = "Trust inventory (type, direction, transitivity)"
+status = "implemented"
+severity = "info"
+
+[check.detail]
+description = "Inventory of the trusts of this domain, with their type and direction."
+impact = "Every trust extends who can authenticate to this domain. Undocumented trusts are often forgotten after mergers or migrations."
+remediation = [
+  "Confirm each trust has an owner and a reason; remove trusts that are no longer needed.",
+]
+verify = "Get-ADTrust -Filter *"
+mitre = ["T1482"]
+
+[[check]]
+id = "AD-TRU-002"
+title = "SID filtering (quarantine) disabled on external trusts"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "External trusts do not have SID filtering (quarantine) enabled."
+impact = "An administrator in the trusted domain can add SIDs from this domain, such as Domain Admins, to a user's SID history and gain those rights here."
+remediation = [
+  "Enable SID filtering: netdom trust <this domain> /domain:<trusted domain> /quarantine:yes.",
+]
+verify = "Get-ADTrust -Filter * | Select-Object Name, SIDFilteringQuarantined"
+mitre = ["T1134.005", "T1482"]
+
+[[check]]
+id = "AD-TRU-003"
+title = "SID history enabled on forest trusts (TREAT_AS_EXTERNAL / EnableSIDHistory)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Forest trusts accept SID history from the other forest (TREAT_AS_EXTERNAL is set)."
+impact = "Users from the trusted forest can carry SIDs with privileges in this forest in their SID history."
+remediation = [
+  "Disable SID history across the trust: netdom trust <this domain> /domain:<other forest> /enablesidhistory:no.",
+]
+verify = "Get-ADTrust -Filter * | Select-Object Name, SIDFilteringForestAware, TrustAttributes"
+mitre = ["T1134.005"]
+
+[[check]]
+id = "AD-TRU-004"
+title = "Selective authentication not used on external/forest trusts"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Trusts to other forests or external domains use forest-wide authentication instead of selective authentication."
+impact = "Every user in the trusted domain can authenticate to every computer in this one, which widens the attack surface considerably."
+remediation = [
+  "Switch to selective authentication and grant \"Allowed to authenticate\" only on the computers that need it.",
+]
+verify = "Get-ADTrust -Filter * | Select-Object Name, SelectiveAuthentication"
+mitre = ["T1482"]
+
+[[check]]
+id = "AD-TRU-005"
+title = "Trusts with RC4 only / no AES"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "A trust has no supported encryption types set (msDS-SupportedEncryptionTypes empty or 0), or the value does not include AES. Kerberos referral tickets across the trust are then encrypted with RC4."
+impact = "RC4 referral tickets are encrypted with a key derived from the trust password using a weak algorithm. RC4 is being removed from Windows, so these trusts may also stop working after future updates."
+remediation = [
+  "In Active Directory Domains and Trusts, open the trust properties and select \"The other domain supports Kerberos AES Encryption\", on both sides of the trust.",
+  "Test authentication across the trust after the change.",
+]
+frameworks = [
+  "NIST 800-53 SC-13",
+]
+verify = "Get-ADObject -LDAPFilter '(objectClass=trustedDomain)' -Properties trustPartner, msDS-SupportedEncryptionTypes | Select-Object trustPartner, msDS-SupportedEncryptionTypes"
+mitre = ["T1558"]
+
+[[check.detail.references]]
+title = "Detect and remediate RC4 usage in Kerberos"
+url = "https://learn.microsoft.com/windows-server/security/kerberos/detect-remediate-rc4-kerberos"
+
+[[check.detail.references]]
+title = "Network security: Configure encryption types allowed for Kerberos"
+url = "https://learn.microsoft.com/windows/security/threat-protection/security-policy-settings/network-security-configure-encryption-types-allowed-for-kerberos"
+
+[[check]]
+id = "AD-TRU-006"
+title = "Trust password (trust key) age"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Trust objects have not changed for more than 90 days. The trust password normally changes every 30 days, so the trust may be broken or the other domain gone."
+impact = "Broken or orphaned trusts are clutter at best; if the other domain name is reused, they become a way in."
+remediation = [
+  "Verify the trust (netdom trust /verify) and remove it if the other domain no longer exists.",
+]
+verify = "Get-ADObject -LDAPFilter '(objectClass=trustedDomain)' -Properties whenChanged"
+mitre = ["T1482"]
+
+[[check]]
+id = "AD-TRU-007"
+title = "Trusts to domains that no longer exist or are unreachable"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Trusted domains whose DCs cannot be found in DNS from a domain controller."
+impact = "A trust to a domain that no longer exists keeps an authentication path open. If the domain name is registered again, its new owner may be trusted."
+remediation = [
+  "Remove trusts to domains that were decommissioned.",
+  "Fix DNS forwarding for trusts that are still needed.",
+]
+verify = "Get-ADTrust -Filter * | ForEach-Object { Resolve-DnsName \"_ldap._tcp.dc._msdcs.$($_.Target)\" -Type SRV }"
+mitre = ["T1482"]
+
+[[check]]
+id = "AD-TRU-008"
+title = "Two-way trusts to other forests or external domains"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "A trust to another forest or an external domain is two-way. Trusts inside the forest and Kerberos realm trusts are not listed."
+impact = "Users of the other side can authenticate to resources here, and a compromise of the other forest or domain becomes a starting point for attacks against this one."
+remediation = [
+  "Confirm with the owners whether access is needed in both directions.",
+  "Make the trust one-way where only one side needs access, and use selective authentication (AD-TRU-004).",
+]
+verify = "Get-ADTrust -Filter * | Select-Object Name, Direction, ForestTransitive, IntraForest, TrustType"
+mitre = ["T1482", "T1199"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1482: Domain Trust Discovery"
+url = "https://attack.mitre.org/techniques/T1482/"
+
+[[check]]
+id = "AD-TRU-009"
+title = "TGT delegation across trusts enabled"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "TGT delegation is enabled across a forest trust."
+impact = "Services in the other forest with unconstrained delegation receive the TGTs of users from this forest, and can impersonate them here."
+remediation = [
+  "Disable TGT delegation across the trust: netdom trust <this domain> /domain:<other forest> /EnableTGTDelegation:No.",
+]
+verify = "Get-ADTrust -Filter * | Select-Object Name, TGTDelegation"
+mitre = ["T1558"]
+
+[[check]]
+id = "AD-TRU-010"
+title = "MIT/realm trusts inventory"
+status = "implemented"
+severity = "info"
+
+[check.detail]
+description = "Inventory of Kerberos realm (MIT) trusts, with their direction and supported encryption types. This check always passes."
+impact = "Realm trusts link this domain to Kerberos realms outside Active Directory, often on Unix systems. They are easy to forget and are managed outside the usual AD tools."
+remediation = [
+  "Confirm each realm trust has an owner and a reason, and remove those no longer needed.",
+  "Make sure realm trusts use AES encryption types.",
+]
+frameworks = [
+  "NIST 800-53 CM-8",
+]
+verify = "Get-ADObject -LDAPFilter '(&(objectClass=trustedDomain)(trustType=3))' -Properties trustPartner, trustDirection, msDS-SupportedEncryptionTypes"
+mitre = ["T1482"]
+
+[[check]]
+id = "AD-TRU-011"
+title = "Shortcut trusts inventory"
+status = "implemented"
+severity = "info"
+
+[check.detail]
+description = "Inventory of shortcut trusts between domains of the same forest."
+impact = "Shortcut trusts change authentication paths. Unneeded ones remain after reorganizations."
+remediation = [
+  "Remove shortcut trusts that are no longer needed.",
+]
+verify = "Get-ADTrust -Filter 'IntraForest -eq $true'"
+mitre = ["T1482"]
+
+[[check]]
+id = "AD-TRU-012"
+title = "Foreign principals from trusted domains holding privileges here"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "A Tier 0 group of this domain contains, directly or through nested groups, a principal whose SID belongs to another domain. The other domain is named when a trust matches the SID."
+impact = "Whoever controls the other domain can reset the password of that account or impersonate it, and so controls this domain. The security of this domain is no better than that of the other one."
+remediation = [
+  "Remove the foreign principal from the Tier 0 group, directly or from the nested group.",
+  "If administration from the other domain is required, use dedicated admin accounts created in this domain.",
+  "Remove foreign SIDs from domains that no longer exist.",
+]
+frameworks = [
+  "NIST 800-53 AC-2",
+  "NIST 800-53 AC-6",
+]
+verify = '''
+'Administrators', 'Domain Admins', 'Enterprise Admins', 'Schema Admins' | ForEach-Object {
+  Get-ADGroup $_ -Properties member -ErrorAction SilentlyContinue | Select-Object -ExpandProperty member } |
+  Where-Object { $_ -like '*CN=ForeignSecurityPrincipals,*' }'''
+mitre = ["T1199", "T1078.002"]
+
+[[check.detail.references]]
+title = "Appendix B: Privileged Accounts and Groups in Active Directory"
+url = "https://learn.microsoft.com/windows-server/identity/ad-ds/plan/security-best-practices/appendix-b--privileged-accounts-and-groups-in-active-directory"

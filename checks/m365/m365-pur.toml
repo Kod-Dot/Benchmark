@@ -1,0 +1,257 @@
+# M365-PUR: Purview, audit and data protection
+
+area = "M365-PUR"
+
+[[check]]
+id = "M365-PUR-001"
+title = "Unified audit log enabled and retention (Audit Standard vs Premium)"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "Shows whether the unified audit log records activity, and with which retention (Audit Standard or Premium, and audit retention policies)."
+impact = "Without the audit log there is no record of who read, shared or changed what, and an investigation has nothing to go on."
+remediation = [
+  "Turn on the unified audit log (Set-AdminAuditLogConfig -UnifiedAuditLogIngestionEnabled $true).",
+  "Use Audit Premium or retention policies to keep logs at least a year.",
+]
+verify = "Get-AdminAuditLogConfig | Select-Object UnifiedAuditLogIngestionEnabled"
+mitre = ["T1562"]
+
+[[check.detail.references]]
+title = "Turn auditing on or off"
+url = "https://learn.microsoft.com/purview/audit-log-enable-disable"
+
+[[check]]
+id = "M365-PUR-002"
+title = "Audit log search role holders"
+status = "implemented"
+severity = "info"
+
+[check.detail]
+description = "Lists the role groups that can search the audit log and their members."
+impact = "Audit search shows every user's activity; it should be held by few, known people."
+remediation = [
+  "Review the members and remove those who do not need audit search.",
+]
+verify = "Get-RoleGroup | Where-Object { $_.Roles -match 'Audit Logs' } | ForEach-Object { Get-RoleGroupMember $_.Identity }"
+
+[[check.detail.references]]
+title = "Microsoft Purview documentation"
+url = "https://learn.microsoft.com/purview/"
+
+[[check]]
+id = "M365-PUR-003"
+title = "Sensitivity labels published and default labeling"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "No sensitivity labels are published, or no label policy sets a default label."
+impact = "Content is not classified, so DLP, encryption and access rules that rely on labels do not apply."
+remediation = [
+  "Publish a label taxonomy and set a default label for documents and email.",
+]
+verify = "Get-Label; Get-LabelPolicy | Select-Object Name, Settings"
+
+[[check.detail.references]]
+title = "Sensitivity labels"
+url = "https://learn.microsoft.com/purview/sensitivity-labels"
+
+[[check]]
+id = "M365-PUR-004"
+title = "Auto-labeling policies"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "There is no auto-labeling policy, or auto-labeling policies are still in simulation."
+impact = "Sensitive content is labelled only when users remember to."
+remediation = [
+  "Review the simulation results and turn the auto-labeling policies on.",
+]
+verify = "Get-AutoSensitivityLabelPolicy | Select-Object Name, Mode"
+
+[[check.detail.references]]
+title = "Auto-labeling"
+url = "https://learn.microsoft.com/purview/apply-sensitivity-label-automatically"
+
+[[check]]
+id = "M365-PUR-005"
+title = "DLP policies for Exchange, SharePoint, OneDrive, Teams and endpoints"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "No enforced DLP policy covers one or more of Exchange, SharePoint, OneDrive, Teams and endpoints."
+impact = "Sensitive data can leave through the uncovered channels without being blocked or reported."
+remediation = [
+  "Extend enforced DLP policies to every workload.",
+]
+verify = "Get-DlpCompliancePolicy | Select-Object Name, Mode, Workload"
+
+[[check.detail.references]]
+title = "Data loss prevention"
+url = "https://learn.microsoft.com/purview/dlp-learn-about-dlp"
+
+[[check]]
+id = "M365-PUR-006"
+title = "DLP policies in test mode for a long time"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "A DLP policy has been in test mode for more than 30 days."
+impact = "A policy in test mode only reports; nothing is blocked, often long after it was meant to be enforced."
+remediation = [
+  "Review the policy's matches and turn it on.",
+]
+verify = "Get-DlpCompliancePolicy | Select-Object Name, Mode, WhenChangedUTC"
+
+[[check.detail.references]]
+title = "DLP policy deployment"
+url = "https://learn.microsoft.com/purview/dlp-create-deploy-policy"
+
+[[check]]
+id = "M365-PUR-007"
+title = "Retention policies for key workloads"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "No enabled retention policy covers one or more of Exchange mailboxes, SharePoint sites, OneDrive accounts, Teams channel messages and Teams chats."
+impact = "Content in uncovered workloads can be deleted for good by users or attackers, and is not kept for legal needs."
+remediation = [
+  "Create retention policies for every workload, following the organization's retention schedule.",
+]
+verify = "Get-RetentionCompliancePolicy | Select-Object Name, ExchangeLocation, SharePointLocation, OneDriveLocation, TeamsChannelLocation, TeamsChatLocation"
+
+[[check.detail.references]]
+title = "Retention policies"
+url = "https://learn.microsoft.com/purview/retention"
+
+[[check]]
+id = "M365-PUR-008"
+title = "eDiscovery admin and eDiscovery Manager role holders"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Lists eDiscovery Administrators, and flags more than five eDiscovery Managers."
+impact = "eDiscovery roles can search and export every mailbox and site; administrators see every case."
+remediation = [
+  "Keep eDiscovery roles to a few named people and review them regularly.",
+]
+verify = "Get-eDiscoveryCaseAdmin; Get-RoleGroupMember eDiscoveryManager"
+
+[[check.detail.references]]
+title = "eDiscovery permissions"
+url = "https://learn.microsoft.com/purview/ediscovery-assign-permissions"
+
+[[check]]
+id = "M365-PUR-009"
+title = "Insider risk management configured (informational)"
+status = "implemented"
+severity = "info"
+
+[check.detail]
+description = "Shows whether insider risk management policies are configured."
+impact = "Without them, data theft by departing or disgruntled insiders is not correlated or flagged."
+remediation = [
+  "Consider insider risk policies for data theft by departing users.",
+]
+verify = "Get-InsiderRiskPolicy"
+
+[[check.detail.references]]
+title = "Insider risk management"
+url = "https://learn.microsoft.com/purview/insider-risk-management"
+
+[[check]]
+id = "M365-PUR-010"
+title = "Communication compliance (informational)"
+status = "implemented"
+severity = "info"
+
+[check.detail]
+description = "Shows whether communication compliance policies are configured."
+impact = "Regulated organizations may need to monitor communications for policy violations."
+remediation = [
+  "Configure communication compliance where regulation or policy requires it.",
+]
+verify = "Get-SupervisoryReviewPolicyV2"
+
+[[check.detail.references]]
+title = "Communication compliance"
+url = "https://learn.microsoft.com/purview/communication-compliance"
+
+[[check]]
+id = "M365-PUR-011"
+title = "Customer Key / double key encryption (informational)"
+status = "implemented"
+severity = "info"
+
+[check.detail]
+description = "Shows whether Customer Key or Double Key Encryption is licensed."
+impact = "Highly sensitive data may need encryption keys that Microsoft does not hold."
+remediation = [
+  "Assess whether Customer Key or Double Key Encryption fits the data's classification.",
+]
+verify = "Get-MgSubscribedSku | Select-Object -ExpandProperty ServicePlans"
+
+[[check.detail.references]]
+title = "Customer Key"
+url = "https://learn.microsoft.com/purview/customer-key-overview"
+
+[[check]]
+id = "M365-PUR-012"
+title = "Alert policies enabled (default high-severity alerts)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "A default (system) high-severity alert policy is turned off."
+impact = "Microsoft's built-in alerts for events such as admin privilege elevation and malware campaigns no longer fire."
+remediation = [
+  "Turn the default alert policies back on and route them to the security team.",
+]
+verify = "Get-ProtectionAlert | Where-Object { $_.IsSystemRule -and $_.Disabled }"
+
+[[check.detail.references]]
+title = "Alert policies"
+url = "https://learn.microsoft.com/purview/alert-policies"
+
+[[check]]
+id = "M365-PUR-013"
+title = "Information barriers (informational)"
+status = "implemented"
+severity = "info"
+
+[check.detail]
+description = "Shows whether information barrier policies are configured."
+impact = "Regulated firms may need to prevent some groups from communicating or sharing."
+remediation = [
+  "Configure information barriers where regulation requires it.",
+]
+verify = "Get-InformationBarrierPolicy"
+
+[[check.detail.references]]
+title = "Information barriers"
+url = "https://learn.microsoft.com/purview/information-barriers"
+
+[[check]]
+id = "M365-PUR-014"
+title = "Content search permissions too broad"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Role groups with the Compliance Search role have members while no search permissions filter limits what they can search."
+impact = "Holders can search every mailbox, site and chat in the organization."
+remediation = [
+  "Limit content search with compliance security filters, or reduce who holds the role.",
+]
+verify = "Get-ComplianceSecurityFilter; Get-RoleGroup | Where-Object Roles -match 'Compliance Search'"
+
+[[check.detail.references]]
+title = "Permissions filtering for content search"
+url = "https://learn.microsoft.com/purview/ediscovery-permissions-filtering-for-content-search"

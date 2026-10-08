@@ -1,0 +1,584 @@
+# AD-PRIV: Privileged groups and Tier 0
+
+area = "AD-PRIV"
+
+[[check]]
+id = "AD-PRIV-001"
+title = "Membership of Enterprise Admins (should be empty day to day)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Enterprise Admins has members. The group has full control over every domain in the forest and is only needed for forest-wide changes."
+impact = "Each permanent member is an account whose compromise gives control of the whole forest, not just one domain."
+remediation = [
+  "Remove all members from Enterprise Admins.",
+  "Add a named admin account only for the duration of a forest-level change, or use Privileged Access Management for time-bound membership.",
+]
+verify = "Get-ADGroupMember 'Enterprise Admins' -Recursive"
+mitre = ["T1078.002"]
+
+[[check.detail.references]]
+title = "Implementing least-privilege administrative models"
+url = "https://learn.microsoft.com/windows-server/identity/ad-ds/plan/security-best-practices/implementing-least-privilege-administrative-models"
+
+[[check.detail.references]]
+title = "Appendix C: Protected accounts and groups in Active Directory"
+url = "https://learn.microsoft.com/windows-server/identity/ad-ds/plan/security-best-practices/appendix-c--protected-accounts-and-groups-in-active-directory"
+
+[[check]]
+id = "AD-PRIV-002"
+title = "Membership of Schema Admins (should be empty)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Schema Admins has members. The group can change the schema, which is rarely needed."
+impact = "A compromised member can add or change schema classes and attributes forest-wide, for example to plant persistence that is hard to find and cannot be removed."
+remediation = [
+  "Remove all members from Schema Admins.",
+  "Add a member only for the duration of a planned schema update.",
+]
+verify = "Get-ADGroupMember 'Schema Admins' -Recursive"
+mitre = ["T1078.002"]
+
+[[check.detail.references]]
+title = "Implementing least-privilege administrative models"
+url = "https://learn.microsoft.com/windows-server/identity/ad-ds/plan/security-best-practices/implementing-least-privilege-administrative-models"
+
+[[check]]
+id = "AD-PRIV-003"
+title = "Domain Admins count above threshold"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Domain Admins has more members than the threshold (default 5). Each member is a full domain administrator."
+impact = "Every extra admin account is another credential that leads straight to domain compromise if it is phished, reused or left signed in on a less trusted computer."
+remediation = [
+  "Review each member with its owner; move day-to-day tasks to delegated groups with narrower rights.",
+  "Keep Domain Admins for break-glass and forest-level tasks only.",
+]
+frameworks = [
+  "ANSSI vuln3_privileged_members",
+  "CIS Controls 5.4",
+]
+cvss = "AV:N/AC:H/PR:H/UI:N/S:U/C:H/I:H/A:N"
+mitre = ["T1078.002"]
+
+[[check.detail.references]]
+title = "Best practices for securing Active Directory: reducing the attack surface"
+url = "https://learn.microsoft.com/windows-server/identity/ad-ds/plan/security-best-practices/reducing-the-active-directory-attack-surface"
+
+[[check]]
+id = "AD-PRIV-004"
+title = "Built-in Administrators group members"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "The built-in Administrators group has direct members other than Administrator, Domain Admins and Enterprise Admins."
+impact = "Members of this group are administrators on every domain controller and hold full control of the domain. Extra members are often left from old projects."
+remediation = [
+  "Remove members that are not required.",
+  "Grant administration through Domain Admins with a reviewed membership.",
+]
+frameworks = [
+  "NIST 800-53 AC-6",
+]
+verify = "Get-ADGroupMember 'Administrators'"
+mitre = ["T1078.002", "T1069.002"]
+
+[[check]]
+id = "AD-PRIV-005"
+title = "Account Operators, Server Operators, Print Operators, Backup Operators membership (should be empty)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Account Operators, Server Operators, Print Operators or Backup Operators have members. These legacy groups can log on to domain controllers and hold rights that lead to Tier 0."
+impact = "Server Operators can change services on DCs, Backup Operators can read the AD database, Print Operators can load drivers, and Account Operators can change most non-protected accounts and groups. Each is a path to domain compromise."
+remediation = [
+  "Remove all members from the four operator groups.",
+  "Grant the specific rights needed through delegation on OUs instead.",
+]
+verify = "'Account Operators','Server Operators','Print Operators','Backup Operators' | ForEach-Object { Get-ADGroupMember $_ -Recursive }"
+mitre = ["T1078.002", "T1003"]
+
+[[check.detail.references]]
+title = "Appendix C: Protected accounts and groups in Active Directory"
+url = "https://learn.microsoft.com/windows-server/identity/ad-ds/plan/security-best-practices/appendix-c--protected-accounts-and-groups-in-active-directory"
+
+[[check.detail.references]]
+title = "Implementing least-privilege administrative models"
+url = "https://learn.microsoft.com/windows-server/identity/ad-ds/plan/security-best-practices/implementing-least-privilege-administrative-models"
+
+[[check]]
+id = "AD-PRIV-006"
+title = "DnsAdmins membership (DLL load path to SYSTEM on DCs)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "DnsAdmins has members. Members can configure the DNS Server service on domain controllers, including the plug-in DLL it loads."
+impact = "A member can make the DNS service load a DLL of their choice as SYSTEM on a domain controller, which is domain compromise."
+remediation = [
+  "Remove members who do not administer DNS.",
+  "Treat remaining members as Tier 0 and protect them accordingly.",
+  "Apply the Microsoft hardening that restricts the ServerLevelPluginDll setting where available.",
+]
+verify = "Get-ADGroupMember DnsAdmins -Recursive"
+mitre = ["T1078.002"]
+
+[[check.detail.references]]
+title = "Appendix C: Protected accounts and groups in Active Directory"
+url = "https://learn.microsoft.com/windows-server/identity/ad-ds/plan/security-best-practices/appendix-c--protected-accounts-and-groups-in-active-directory"
+
+[[check]]
+id = "AD-PRIV-007"
+title = "Group Policy Creator Owners membership"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Group Policy Creator Owners has members other than Administrator."
+impact = "Members can create GPOs and edit the ones they create. A GPO linked to an OU runs code and sets policy on its computers, so this is a delegation of control that is easy to forget."
+remediation = [
+  "Remove members that do not need to create GPOs.",
+  "Delegate GPO creation on specific OUs with a named group instead.",
+]
+verify = "Get-ADGroupMember 'Group Policy Creator Owners'"
+mitre = ["T1484.001"]
+
+[[check]]
+id = "AD-PRIV-008"
+title = "Cert Publishers and Key Admins / Enterprise Key Admins membership"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Cert Publishers (user members), Key Admins or Enterprise Key Admins have members."
+impact = "Key Admins and Enterprise Key Admins can write msDS-KeyCredentialLink on any account, which allows takeover of that account. Cert Publishers can publish certificates to Active Directory."
+remediation = [
+  "Remove all user members from Key Admins and Enterprise Key Admins unless Windows Hello for Business needs them.",
+  "Keep only certification authority computers in Cert Publishers.",
+]
+verify = "'Cert Publishers','Key Admins','Enterprise Key Admins' | ForEach-Object { Get-ADGroupMember $_ }"
+mitre = ["T1078.002", "T1098"]
+
+[[check]]
+id = "AD-PRIV-009"
+title = "Hyper-V admins / virtualization admins with access to virtual DCs"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Accounts outside Tier 0 are members of Hyper-V Administrators or of groups named for VMware, vCenter or Hyper-V administration."
+impact = "Whoever administers the hypervisor can copy or mount a virtual DC's disk and extract every password hash."
+remediation = [
+  "Treat virtualization administrators as Tier 0, or move DCs to a virtualization platform only Tier 0 administers.",
+]
+verify = "Get-ADGroupMember 'Hyper-V Administrators' -Recursive"
+mitre = ["T1003"]
+
+[[check]]
+id = "AD-PRIV-010"
+title = "Nested group membership depth into privileged groups (full recursive expansion)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Groups are nested three or more levels deep into privileged groups."
+impact = "Deep nesting hides who is privileged: members of the inner groups hold admin rights without appearing in any review of the privileged group."
+remediation = [
+  "Flatten the nesting: add the people who need the access to the privileged group directly, or remove the access.",
+]
+verify = "Get-ADGroupMember 'Domain Admins' -Recursive"
+mitre = ["T1069.002"]
+
+[[check]]
+id = "AD-PRIV-011"
+title = "Disabled or stale accounts still in privileged groups"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Disabled accounts, or enabled accounts that have not signed in for 90 days, are still members of privileged groups."
+impact = "A stale privileged account is unmonitored. If it is re-enabled or its password is known, it gives admin rights without anyone noticing."
+remediation = [
+  "Remove the accounts from privileged groups.",
+  "Delete them after the retention period if they are no longer needed.",
+]
+frameworks = [
+  "CIS Controls 5.3",
+]
+cvss = "AV:N/AC:H/PR:H/UI:N/S:U/C:L/I:L/A:N"
+mitre = ["T1078"]
+
+[[check.detail.references]]
+title = "Securing privileged access"
+url = "https://learn.microsoft.com/security/privileged-access-workstations/overview"
+
+[[check]]
+id = "AD-PRIV-012"
+title = "Service accounts in privileged groups"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Enabled accounts with a service principal name are members of a privileged group, directly or through nesting."
+impact = "Any domain user can request a ticket for the SPN and crack the account's password offline. A cracked password here gives privileged access."
+remediation = [
+  "Remove service accounts from privileged groups and give them only the rights the service needs.",
+  "Move the service to a group managed service account.",
+  "Where the privilege is unavoidable, use a long random password.",
+]
+verify = "Get-ADUser -Filter 'AdminCount -eq 1 -and ServicePrincipalName -like \"*\"' -Properties ServicePrincipalName"
+cvss = "AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H"
+mitre = ["T1558.003", "T1078.002"]
+
+[[check]]
+id = "AD-PRIV-013"
+title = "Privileged accounts with password never expires"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Privileged accounts have \"Password never expires\" set."
+impact = "A password that never changes stays valid after it leaks, for example through phishing, a reused password or an old backup."
+remediation = [
+  "Clear \"Password never expires\" on admin accounts, or manage their passwords with a privileged access management tool.",
+  "Prefer smart cards or Windows Hello for Business for admin sign-in.",
+]
+verify = "Get-ADUser -LDAPFilter '(&(adminCount=1)(userAccountControl:1.2.840.113556.1.4.803:=65536))'"
+mitre = ["T1078.002"]
+
+[[check.detail.references]]
+title = "Best practices for securing Active Directory"
+url = "https://learn.microsoft.com/windows-server/identity/ad-ds/plan/security-best-practices/best-practices-for-securing-active-directory"
+
+[[check]]
+id = "AD-PRIV-014"
+title = "Privileged accounts with old passwords (> 1 year)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Privileged accounts have passwords older than one year."
+impact = "Old admin passwords are more likely to have leaked, been reused or be crackable from old captures."
+remediation = [
+  "Change the passwords of the listed accounts.",
+  "Set a rotation process for admin accounts that are not protected by smart cards or a PAM tool.",
+]
+verify = "Get-ADUser -Filter 'adminCount -eq 1' -Properties PasswordLastSet | Sort-Object PasswordLastSet"
+mitre = ["T1078.002"]
+
+[[check.detail.references]]
+title = "Best practices for securing Active Directory"
+url = "https://learn.microsoft.com/windows-server/identity/ad-ds/plan/security-best-practices/best-practices-for-securing-active-directory"
+
+[[check]]
+id = "AD-PRIV-015"
+title = "Privileged accounts not in Protected Users"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Privileged accounts are not members of the Protected Users group, which turns off NTLM, DES and RC4 for them, stops credential caching and prevents delegation."
+impact = "Their credentials can be cached on computers they sign in to and used with weaker protocols, which makes them easier to steal and reuse."
+remediation = [
+  "Add admin user accounts to Protected Users after confirming they do not need NTLM or delegation.",
+  "Do not add service accounts or computer accounts.",
+]
+frameworks = [
+  "ANSSI vuln3_protected_users",
+]
+cvss = "AV:N/AC:H/PR:L/UI:R/S:U/C:H/I:H/A:N"
+mitre = ["T1550"]
+
+[[check.detail.references]]
+title = "Protected Users security group"
+url = "https://learn.microsoft.com/windows-server/security/credentials-protection-and-management/protected-users-security-group"
+
+[[check]]
+id = "AD-PRIV-016"
+title = "Privileged accounts without \"Account is sensitive and cannot be delegated\""
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Privileged accounts do not have \"Account is sensitive and cannot be delegated\" set."
+impact = "A computer or service trusted for delegation can act as these admins on other systems after they sign in to it."
+remediation = [
+  "Set \"Account is sensitive and cannot be delegated\" on every admin account, or add them to Protected Users.",
+]
+frameworks = [
+  "ANSSI vuln2_delegation_sensitive",
+]
+cvss = "AV:N/AC:H/PR:L/UI:R/S:U/C:H/I:H/A:N"
+mitre = ["T1550.003"]
+
+[[check.detail.references]]
+title = "Kerberos delegation overview"
+url = "https://learn.microsoft.com/windows-server/security/kerberos/kerberos-constrained-delegation-overview"
+
+[[check]]
+id = "AD-PRIV-017"
+title = "Privileged accounts with SPNs (kerberoastable admins)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Privileged accounts have service principal names. Any domain user can request a Kerberos service ticket for an account with an SPN, and part of that ticket is encrypted with the account's password."
+impact = "The ticket can be cracked offline without any failed sign-ins. If the password is weak or old, the attacker gets a privileged account."
+attack = [
+  "Requests service tickets for privileged accounts with SPNs.",
+  "Cracks the tickets offline.",
+  "Signs in with the recovered password.",
+]
+remediation = [
+  "Remove SPNs from admin accounts; run services under dedicated service accounts or gMSAs instead.",
+  "Where an SPN must stay, use a long random password and AES-only encryption.",
+]
+frameworks = [
+  "ANSSI vuln1_spn_priv",
+]
+verify = '''
+Get-ADUser -Filter {adminCount -eq 1 -and ServicePrincipalName -like "*"} -Properties ServicePrincipalName | Select-Object Name, ServicePrincipalName'''
+cvss = "AV:N/AC:H/PR:L/UI:N/S:U/C:H/I:H/A:N"
+mitre = ["T1558.003"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1558.003: Kerberoasting"
+url = "https://attack.mitre.org/techniques/T1558/003/"
+
+[[check]]
+id = "AD-PRIV-018"
+title = "Privileged accounts with mailboxes / email (phishing exposure)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Enabled privileged accounts have an email address or an Exchange mailbox."
+impact = "Mail reaches the privileged account, so a phishing message or a malicious attachment opened with it runs with admin rights."
+remediation = [
+  "Remove mailboxes and email addresses from admin accounts.",
+  "Use a separate, unprivileged account for email and browsing.",
+]
+verify = "Get-ADUser -Filter 'AdminCount -eq 1' -Properties mail, proxyAddresses | Where-Object { $_.mail -or $_.proxyAddresses }"
+mitre = ["T1566.002"]
+
+[[check]]
+id = "AD-PRIV-019"
+title = "Built-in Administrator (RID 500) used recently, password age, renamed or not"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "The built-in Administrator (RID 500) is enabled and still named Administrator, has an old password, or was used in the last 30 days."
+impact = "The account cannot be locked out over the network and its name is well known. It should be a rarely used break-glass account with a long password."
+remediation = [
+  "Rename the account and give it a long random password stored in a vault.",
+  "Use named admin accounts for daily work.",
+  "Alert on every sign-in of the account.",
+]
+verify = "Get-ADUser -Filter \"SID -like '*-500'\" -Properties PasswordLastSet, LastLogonDate | Select-Object Name, Enabled, PasswordLastSet, LastLogonDate"
+mitre = ["T1078.002"]
+
+[[check]]
+id = "AD-PRIV-020"
+title = "Guest account enabled"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "The built-in Guest account is enabled."
+impact = "Guest allows access without a known password where it is accepted, and is a well-known account name to target."
+remediation = [
+  "Disable the Guest account.",
+]
+verify = "Get-ADUser -Identity \"$((Get-ADDomain).DomainSID)-501\" | Select-Object Name, Enabled"
+mitre = ["T1078"]
+
+[[check.detail.references]]
+title = "Reducing the Active Directory attack surface"
+url = "https://learn.microsoft.com/windows-server/identity/ad-ds/plan/security-best-practices/reducing-the-active-directory-attack-surface"
+
+[[check]]
+id = "AD-PRIV-021"
+title = "krbtgt password age above 180 days"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "The password of the krbtgt account has not been changed for more than 180 days. Every Kerberos ticket in the domain is signed with keys derived from this password."
+impact = "Anyone who obtained the key since the last change, for example from a domain controller backup or an earlier compromise, can still forge tickets for any user (golden ticket)."
+attack = [
+  "Obtains the krbtgt key once, for example by DCSync or from a DC backup.",
+  "Forges a ticket-granting ticket for any account with any group memberships.",
+  "Keeps access for as long as the password stays the same.",
+]
+remediation = [
+  "Reset the krbtgt password twice, waiting for replication and at least the maximum ticket lifetime (10 hours by default) between the two resets.",
+  "Use Microsoft's New-KrbtgtKeys.ps1 script, starting in simulation mode.",
+  "Repeat at least every 180 days.",
+]
+frameworks = [
+  "ANSSI vuln1_krbtgt",
+  "CIS Controls 5.2",
+]
+verify = '''
+Get-ADUser krbtgt -Properties PasswordLastSet | Select-Object PasswordLastSet'''
+cvss = "AV:N/AC:H/PR:H/UI:N/S:C/C:H/I:H/A:N"
+mitre = ["T1558.001"]
+
+[[check.detail.references]]
+title = "AD forest recovery: reset the krbtgt password"
+url = "https://learn.microsoft.com/windows-server/identity/ad-ds/manage/forest-recovery-guide/ad-forest-recovery-reset-the-krbtgt-password"
+
+[[check]]
+id = "AD-PRIV-022"
+title = "Read-only DC krbtgt accounts (krbtgt_xxxxx) password age"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Read-only domain controller krbtgt accounts (krbtgt_<number>) have a password older than 180 days."
+impact = "A stale RODC krbtgt key lets a stolen key be used to forge tickets for the accounts the RODC may cache for as long as the key is not changed."
+remediation = [
+  "Reset the password of each RODC krbtgt account on a schedule.",
+  "Review the Password Replication Policy so few accounts are cached.",
+]
+verify = "Get-ADUser -Filter 'SamAccountName -like \"krbtgt_*\"' -Properties PasswordLastSet"
+mitre = ["T1558.001"]
+
+[[check]]
+id = "AD-PRIV-023"
+title = "AdminSDHolder ACL deviations from default"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "AdminSDHolder has permission entries beyond its defaults, including read-only ones."
+impact = "Every hour, AdminSDHolder's permissions are copied to all protected accounts and groups. Any extra entry, even read access, spreads to all of them and is a known persistence technique."
+remediation = [
+  "Remove the extra entries from CN=AdminSDHolder,CN=System.",
+  "Investigate who added them.",
+]
+verify = "(Get-Acl \"AD:CN=AdminSDHolder,CN=System,$((Get-ADDomain).DistinguishedName)\").Access"
+cvss = "AV:N/AC:L/PR:H/UI:N/S:U/C:H/I:H/A:H"
+mitre = ["T1098", "T1222.001"]
+
+[[check]]
+id = "AD-PRIV-024"
+title = "Accounts with adminCount=1 that are no longer privileged (orphaned protection)"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "User accounts still have adminCount=1 although they are no longer in a protected group. SDProp disabled permission inheritance on them while they were privileged, and it stays disabled."
+impact = "These accounts keep old, hand-made permissions and are left out of OU delegation, which hides who can manage them. They are often forgotten former admins."
+remediation = [
+  "For each listed account: clear adminCount and re-enable permission inheritance.",
+  "Disable or remove accounts of former admins that are no longer needed.",
+]
+verify = "Get-ADUser -LDAPFilter '(adminCount=1)' -Properties MemberOf"
+mitre = ["T1078.002"]
+
+[[check.detail.references]]
+title = "Appendix C: Protected accounts and groups in Active Directory"
+url = "https://learn.microsoft.com/windows-server/identity/ad-ds/plan/security-best-practices/appendix-c--protected-accounts-and-groups-in-active-directory"
+
+[[check]]
+id = "AD-PRIV-025"
+title = "Objects in privileged groups via primaryGroupID (hidden membership)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Accounts are in Domain Admins, Schema Admins or Enterprise Admins through primaryGroupID. That membership does not appear in the group's member list, so most tools miss it."
+impact = "A hidden privileged account is a classic persistence technique and escapes membership reviews."
+remediation = [
+  "Set the primary group of each listed account back to Domain Users (users) or Domain Computers (computers).",
+  "Find out who changed it and when, using replication metadata and security logs.",
+]
+verify = "Get-ADObject -LDAPFilter '(|(primaryGroupID=512)(primaryGroupID=518)(primaryGroupID=519))'"
+mitre = ["T1098", "T1078.002"]
+
+[[check]]
+id = "AD-PRIV-026"
+title = "Foreign security principals in privileged groups"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Foreign security principals from outside the domain, or ones that no longer resolve, are members of privileged groups."
+impact = "Privileged access held by accounts in another domain is only as protected as that domain. Unresolved entries may point at deleted accounts whose SID can be reused."
+remediation = [
+  "Remove principals that are not needed.",
+  "Review the owner and protection of every remaining foreign account.",
+]
+verify = "Get-ADGroup 'Domain Admins' -Properties Member | Select-Object -ExpandProperty Member | Where-Object { $_ -like '*ForeignSecurityPrincipals*' }"
+mitre = ["T1078.002", "T1199"]
+
+[[check]]
+id = "AD-PRIV-027"
+title = "Privileged group membership changes in the last 30 days (from replication metadata)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Members added to or removed from protected (adminCount) groups in the last 30 days, from msDS-ReplValueMetaData."
+impact = "Changes to privileged groups are the most common step in an attack. Each change should match a ticket or request."
+remediation = [
+  "Confirm each change with its owner.",
+  "Alert on privileged group changes (event 4728, 4732, 4756).",
+]
+verify = "Get-ADReplicationAttributeMetadata -Object (Get-ADGroup 'Domain Admins') -Server <DC> -ShowAllLinkedValues | Where-Object AttributeName -eq member"
+mitre = ["T1098"]
+
+[[check]]
+id = "AD-PRIV-028"
+title = "Tier 0 asset inventory (DCs, AD CS, ADFS, Entra Connect, PAM, backup servers) and who can log on to them"
+status = "implemented"
+severity = "info"
+
+[check.detail]
+description = "Inventory of Tier 0 assets found in the directory: domain controllers, enterprise certification authorities, Entra Connect servers (from their sync accounts) and AD FS service accounts."
+impact = "Every Tier 0 asset needs the same protection as a domain controller. Assets missing from the list are often the weakest point."
+remediation = [
+  "Confirm the list, add assets the directory does not show (backup, PAM, hypervisor hosts), and restrict who can sign in to each.",
+]
+verify = "Get-ADDomainController -Filter *; Get-ADObject -SearchBase \"CN=Enrollment Services,CN=Public Key Services,CN=Services,$((Get-ADRootDSE).configurationNamingContext)\" -Filter *"
+mitre = ["T1078.002"]
+
+[[check]]
+id = "AD-PRIV-029"
+title = "Admin accounts used for daily work (logon to workstations, from event telemetry)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Privileged accounts received service tickets for workstations (event 4769): they are used for daily work or to manage workstations."
+impact = "Workstations are the most exposed machines. A privileged credential used there is the most common path to domain compromise."
+remediation = [
+  "Give admins separate accounts for workstation administration and for daily work.",
+  "Restrict Tier 0 accounts with authentication policy silos.",
+]
+verify = "Get-WinEvent -FilterHashtable @{LogName='Security';Id=4769}"
+mitre = ["T1078.002"]
+
+[[check]]
+id = "AD-PRIV-030"
+title = "Break-glass / emergency account presence and monitoring"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Whether a break-glass (emergency) privileged account exists, found by name or description."
+impact = "Without a documented emergency account, recovery from a lost MFA method, a broken trust or a ransomware event can be delayed for hours."
+remediation = [
+  "Create one or two emergency accounts with long random passwords kept offline, exclude them from policies that could lock them out, and alert on every use.",
+]
+verify = "Get-ADUser -Filter 'AdminCount -eq 1' -Properties Description | Where-Object { \"$($_.Name) $($_.Description)\" -match 'break.?glass|emergency' }"
+mitre = ["T1078.002"]

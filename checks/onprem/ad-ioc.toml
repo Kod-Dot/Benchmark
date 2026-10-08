@@ -1,0 +1,476 @@
+# AD-IOC: Persistence and compromise indicators
+
+area = "AD-IOC"
+
+[[check]]
+id = "AD-IOC-001"
+title = "AdminSDHolder object changed recently"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "The AdminSDHolder object (CN=AdminSDHolder,CN=System in the domain) was changed in the last 30 days, judged by its whenChanged attribute. Its permissions are the template that SDProp copies onto every protected account and group (adminCount = 1) about once an hour. whenChanged is kept separately on each DC and moves with any attribute change, not only the permissions, so a recent date says that something changed and needs explaining, not that the permissions are wrong; AD-ACL checks what the permissions are. The check is not assessed when the AdminSDHolder object or its whenChanged value was not collected."
+impact = "An attacker who adds an access control entry to AdminSDHolder regains control of every Domain Admin, Enterprise Admin and other protected account within an hour, even after the entry is removed from those accounts directly. It is a common way to keep domain-wide access after a compromise."
+attack = [
+  "Gains rights to modify AdminSDHolder, for example as a Domain Admin.",
+  "Adds an entry granting a controlled account Full Control on AdminSDHolder.",
+  "Waits for SDProp to copy the entry onto every protected account and group, then uses it to reset passwords or change group membership.",
+]
+remediation = [
+  "Find out who changed AdminSDHolder and why: check the replication metadata to see which attribute changed and on which DC, and the Directory Service Changes audit events (5136) on that DC.",
+  "If the change was not approved, compare the AdminSDHolder permissions with the defaults, remove any added entries and treat the domain as compromised.",
+  "Enable auditing of changes to AdminSDHolder so future changes raise an alert.",
+]
+frameworks = [
+  "NIST 800-53 AU-6",
+  "NIST 800-53 AC-6",
+]
+verify = '''
+$dn = "CN=AdminSDHolder,CN=System,$((Get-ADDomain).DistinguishedName)"
+Get-ADObject $dn -Properties whenChanged | Select-Object Name, whenChanged
+Get-ADReplicationAttributeMetadata -Object $dn -Server (Get-ADDomainController).HostName |
+  Sort-Object LastOriginatingChangeTime -Descending |
+  Select-Object AttributeName, LastOriginatingChangeTime, LastOriginatingChangeDirectoryServerIdentity -First 5'''
+mitre = ["T1098", "T1078.002"]
+
+[[check.detail.references]]
+title = "Appendix C: Protected accounts and groups in Active Directory"
+url = "https://learn.microsoft.com/windows-server/identity/ad-ds/plan/security-best-practices/appendix-c--protected-accounts-and-groups-in-active-directory"
+
+[[check.detail.references]]
+title = "Monitoring Active Directory for signs of compromise"
+url = "https://learn.microsoft.com/windows-server/identity/ad-ds/plan/security-best-practices/monitoring-active-directory-for-signs-of-compromise"
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1098: Account Manipulation"
+url = "https://attack.mitre.org/techniques/T1098/"
+
+[[check]]
+id = "AD-IOC-002"
+title = "Privileged SIDs in SID history"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "A user, computer or group carries in its sIDHistory the SID of a privileged account or group: the built-in Administrators, Account Operators, Server Operators, Print Operators or Backup Operators groups, or any domain's built-in Administrator (RID 500), krbtgt (502), Domain Admins (512), Domain Controllers (516), Schema Admins (518), Enterprise Admins (519), Group Policy Creator Owners (520), Key Admins (526) or Enterprise Key Admins (527). SID history from a migration normally holds ordinary user and group SIDs from the old domain, never these."
+impact = "The SIDs in sIDHistory are added to the account's access token at sign-in, so the object holds the rights of that privileged group without being a visible member of it. Group membership reviews do not show it. Within the forest SID filtering does not remove these SIDs."
+attack = [
+  "Gains Domain Admin once, or replication rights, in the domain.",
+  "Writes the SID of Domain Admins or Enterprise Admins into the sIDHistory of an ordinary account (SID history injection).",
+  "Signs in later as the ordinary account, which now receives admin rights from its token while appearing in no admin group.",
+]
+remediation = [
+  "Confirm with the migration owner whether any listed SID history is expected; privileged SIDs never are.",
+  "Clear the privileged values from sIDHistory on each listed object, then reset its password and investigate how the value was added.",
+  "Once domain migrations are complete, clear SID history that is no longer needed and keep SID filtering enabled on trusts.",
+]
+frameworks = [
+  "ANSSI vuln1_sidhistory_dangerous",
+  "NIST 800-53 AC-6",
+]
+verify = '''
+Get-ADObject -LDAPFilter '(sIDHistory=*)' -Properties sIDHistory |
+  Where-Object { $_.sIDHistory | Where-Object { $_.Value -match '^S-1-5-21-.*-(500|502|512|516|518|519|520|526|527)$' -or $_.Value -match '^S-1-5-32-(544|548|549|550|551)$' } } |
+  Select-Object Name, ObjectClass, sIDHistory'''
+cvss = "AV:N/AC:L/PR:L/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1134.005", "T1098"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1134.005: Access Token Manipulation: SID-History Injection"
+url = "https://attack.mitre.org/techniques/T1134/005/"
+
+[[check.detail.references]]
+title = "SID-History attribute (Active Directory schema)"
+url = "https://learn.microsoft.com/windows/win32/adschema/a-sidhistory"
+
+[[check]]
+id = "AD-IOC-003"
+title = "Accounts with recent changes to servicePrincipalName or msDS-KeyCredentialLink"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "servicePrincipalName or msDS-KeyCredentialLink changed in the last 30 days on user accounts, more than a day after the account was created."
+impact = "Adding an SPN makes an account Kerberoastable (targeted Kerberoasting); adding a key credential gives sign-in as the account (shadow credentials). Both are common attack steps."
+remediation = [
+  "Confirm each change was planned.",
+  "Remove SPNs and key credentials that were not, and reset the account's password.",
+]
+verify = "Get-ADReplicationAttributeMetadata -Object <DN> -Server <DC> | Where-Object AttributeName -in 'servicePrincipalName','msDS-KeyCredentialLink'"
+mitre = ["T1558.003", "T1556"]
+
+[[check]]
+id = "AD-IOC-004"
+title = "Rogue DCs (DCShadow indicators: nTDSDSA objects without matching DC)"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "Every directory service agent (an nTDSDSA object, shown as NTDS Settings under a server in CN=Sites) should belong to a domain controller. The check flags a directory service agent whose server object has no serverReference to a computer account, or links to a computer that does not exist or is not a domain controller (neither SERVER_TRUST_ACCOUNT nor a read-only DC). Agents whose server links to a computer in another domain of the forest are counted but not checked here. The creation date of each flagged agent is shown."
+impact = "A directory service agent without a real domain controller behind it is what a DCShadow attack registers: it lets an attacker push changes into the directory through replication, bypassing the logging that normal changes produce. Leftovers from a failed demotion look the same and also confuse replication."
+attack = [
+  "Gains Domain Admin or equivalent rights.",
+  "Registers a computer as a temporary domain controller by creating a server object and NTDS Settings in the configuration partition (DCShadow).",
+  "Replicates malicious changes, such as SID history or permissions, to the real DCs, then removes the registration.",
+]
+remediation = [
+  "For each listed server, find out whether it is a decommissioned DC; if so, run metadata cleanup for it.",
+  "If it is not a known DC, treat it as a sign of compromise: record its creation time, look for replication changes it originated, and remove it with metadata cleanup.",
+  "Restrict who can create objects under CN=Sites in the configuration partition to Enterprise Admins.",
+]
+frameworks = [
+  "NIST 800-53 SI-4",
+  "NIST 800-53 CM-8",
+]
+verify = '''
+$cfg = (Get-ADRootDSE).configurationNamingContext
+Get-ADObject -SearchBase "CN=Sites,$cfg" -LDAPFilter '(objectClass=nTDSDSA)' -Properties whenCreated | ForEach-Object {
+  $server = Get-ADObject ($_.DistinguishedName -replace '^CN=NTDS Settings,', '') -Properties serverReference
+  [pscustomobject]@{ Server = $server.Name; ServerReference = $server.serverReference; Created = $_.whenCreated }
+}
+Get-ADDomainController -Filter * | Select-Object Name, ComputerObjectDN'''
+mitre = ["T1207"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1207: Rogue Domain Controller"
+url = "https://attack.mitre.org/techniques/T1207/"
+
+[[check.detail.references]]
+title = "Clean up Active Directory Domain Controller server metadata"
+url = "https://learn.microsoft.com/windows-server/identity/ad-ds/deploy/ad-ds-metadata-cleanup"
+
+[[check]]
+id = "AD-IOC-005"
+title = "GPOs modified recently that apply to DCs"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "A Group Policy object linked to the Domain Controllers OU or to the domain head (both apply to every DC) changed in the last 30 days, judged by the whenChanged attribute of its object in CN=Policies. Disabled links are ignored; links on sites are not considered. A recent change is not wrong in itself; it has to be one the administrators know about and approved."
+impact = "A GPO that applies to domain controllers runs with SYSTEM rights on every DC. An unexpected change can add an administrator, start a scheduled task, weaken auditing or deploy a malicious program on all DCs at the next policy refresh."
+attack = [
+  "Gains write access to a GPO linked to the Domain Controllers OU or the domain head, through delegation or a compromised admin.",
+  "Adds an immediate scheduled task, a startup script or a user rights assignment to the GPO.",
+  "Every DC applies the change at its next refresh and runs the attacker's code as SYSTEM.",
+]
+remediation = [
+  "For each listed GPO, confirm the change with its owner and compare the settings with the last known good version or backup.",
+  "If the change was not approved, restore the GPO from backup and investigate who changed it.",
+  "Limit edit rights on GPOs that apply to DCs to Tier 0 admins and enable auditing of changes to Group Policy objects.",
+]
+frameworks = [
+  "NIST 800-53 CM-3",
+  "NIST 800-53 AU-6",
+]
+verify = '''
+$dn = (Get-ADDomain).DistinguishedName
+(Get-GPInheritance -Target "OU=Domain Controllers,$dn").InheritedGpoLinks |
+  ForEach-Object { Get-GPO -Guid $_.GpoId } |
+  Where-Object ModificationTime -gt (Get-Date).AddDays(-30) |
+  Select-Object DisplayName, ModificationTime'''
+mitre = ["T1484.001"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1484.001: Group Policy Modification"
+url = "https://attack.mitre.org/techniques/T1484/001/"
+
+[[check.detail.references]]
+title = "Securing domain controllers against attack"
+url = "https://learn.microsoft.com/windows-server/identity/ad-ds/plan/security-best-practices/securing-domain-controllers-against-attack"
+
+[[check]]
+id = "AD-IOC-006"
+title = "Unexpected LSA security, authentication or notification packages on DCs"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "On each domain controller the Security Packages, Authentication Packages and Notification Packages values under HKLM\\SYSTEM\\CurrentControlSet\\Control\\Lsa list DLLs that LSASS loads. The check flags any entry that is not a Windows default: security packages other than kerberos, msv1_0, schannel, wdigest, tspkg, pku2u, cloudap, negoexts and livessp; authentication packages other than msv1_0; and password notification packages other than scecli and rassfm. Password filters from password-protection products also appear here and must be confirmed. DCs whose registry could not be read over PowerShell remoting are listed as not assessed, and the check is not assessed when no DC could be read."
+impact = "A DLL loaded into LSASS on a DC sees every password and ticket the DC handles. A malicious security support provider records clear-text passwords at sign-in, and a malicious password filter receives every new password in clear text when it is set or changed."
+attack = [
+  "Gains administrator rights on a domain controller.",
+  "Copies a DLL to System32 and adds its name to Security Packages or Notification Packages.",
+  "After the next restart, or immediately if loaded at run time, LSASS passes credentials to the DLL, which stores or sends them out.",
+]
+remediation = [
+  "For each listed package, find the DLL in System32, check its signature and identify which product installed it.",
+  "Remove entries that do not belong to an approved product from the registry value, restart the DC and treat the domain as compromised if the DLL was malicious.",
+  "Enable LSA protection (RunAsPPL) on DCs so that only signed packages can load into LSASS.",
+]
+frameworks = [
+  "NIST 800-53 SI-7",
+  "NIST 800-53 CM-7",
+]
+verify = '''
+Invoke-Command -ComputerName (Get-ADDomainController -Filter *).HostName -ScriptBlock {
+  Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' |
+    Select-Object 'Security Packages', 'Authentication Packages', 'Notification Packages'
+}'''
+mitre = ["T1556", "T1112"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1556: Modify Authentication Process"
+url = "https://attack.mitre.org/techniques/T1556/"
+
+[[check.detail.references]]
+title = "Password filters"
+url = "https://learn.microsoft.com/windows/win32/secmgmt/password-filters"
+
+[[check.detail.references]]
+title = "Configuring additional LSA protection"
+url = "https://learn.microsoft.com/windows-server/security/credentials-protection-and-management/configuring-additional-lsa-protection"
+
+[[check]]
+id = "AD-IOC-007"
+title = "DSRM network logon enabled (DsrmAdminLogonBehavior = 2)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "DsrmAdminLogonBehavior is 2 on a domain controller: the DSRM administrator can sign in over the network while AD DS runs."
+impact = "The DSRM password is a local password set at promotion and rarely changed. With this setting it gives a network logon to the DC, a known persistence technique."
+remediation = [
+  "Set DsrmAdminLogonBehavior to 0 (or delete it).",
+  "Reset the DSRM password with ntdsutil \"set dsrm password\".",
+]
+verify = "Get-ItemProperty HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Lsa -Name DsrmAdminLogonBehavior"
+cvss = "AV:N/AC:L/PR:H/UI:N/S:U/C:H/I:H/A:H"
+mitre = ["T1098", "T1078.003"]
+
+[[check]]
+id = "AD-IOC-008"
+title = "Hidden privileged objects (deny-read ACEs for broad groups)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "A privileged user, group or computer (Tier 0, or adminCount = 1) has a deny entry in its own permissions that stops Everyone, Authenticated Users, Anonymous Logon, Domain Users or Domain Computers from reading it (read property, list contents, list object, read permissions or generic read). Entries that only apply to child objects are ignored. Such an object disappears from normal directory queries and from most audit tools. An object that also denies read to the collecting account is not returned at all, so collect as a Domain Admin."
+impact = "Attackers hide backdoor admin accounts this way so that membership reviews and inventory tools miss them. Admins may also lose sight of an account that holds high privileges."
+attack = [
+  "Gains Domain Admin rights.",
+  "Creates or chooses an account with admin rights and adds deny-read entries for Everyone or Authenticated Users to it.",
+  "Uses the account later while it stays invisible to the defenders' queries.",
+]
+remediation = [
+  "Review each listed object; deny-read entries for broad groups on privileged objects have no legitimate use.",
+  "Remove the deny entries and check whether the object should be privileged at all.",
+  "If the object was hidden deliberately by someone unknown, treat the domain as compromised.",
+]
+frameworks = [
+  "NIST 800-53 AC-6",
+  "NIST 800-53 SI-4",
+]
+verify = '''
+Get-ADObject -LDAPFilter '(adminCount=1)' -Properties nTSecurityDescriptor | ForEach-Object {
+  $deny = $_.nTSecurityDescriptor.Access | Where-Object {
+    $_.AccessControlType -eq 'Deny' -and $_.ActiveDirectoryRights -match 'ReadProperty|ListChildren|ListObject|ReadControl|GenericRead|GenericAll'
+  }
+  if ($deny) { [pscustomobject]@{ Name = $_.Name; DeniedTo = ($deny.IdentityReference -join ', ') } }
+}'''
+mitre = ["T1098", "T1078.002"]
+
+[[check.detail.references]]
+title = "Appendix C: Protected accounts and groups in Active Directory"
+url = "https://learn.microsoft.com/windows-server/identity/ad-ds/plan/security-best-practices/appendix-c--protected-accounts-and-groups-in-active-directory"
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1098: Account Manipulation"
+url = "https://attack.mitre.org/techniques/T1098/"
+
+[[check]]
+id = "AD-IOC-009"
+title = "primaryGroupID set to 512/519 on non-admin accounts"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "User or computer accounts have Domain Admins, Schema Admins or Enterprise Admins as their primary group."
+impact = "Primary group membership does not appear in the group's member list, so the account has the privileges without being listed. This is a persistence technique."
+remediation = [
+  "Set the primary group to Domain Users (513) or Domain Computers (515).",
+  "Review how the account got the change.",
+]
+verify = "Get-ADObject -LDAPFilter '(|(primaryGroupID=512)(primaryGroupID=518)(primaryGroupID=519))' -Properties primaryGroupID"
+mitre = ["T1098", "T1078.002"]
+
+[[check]]
+id = "AD-IOC-010"
+title = "Recently created privileged accounts"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "A user account, enabled or disabled, that is a direct or nested member of an admin group (Domain Admins, Enterprise Admins, Schema Admins, Key Admins, Enterprise Key Admins, Administrators, Account Operators, Server Operators, Print Operators, Backup Operators or DnsAdmins) was created in the last 30 days, judged by whenCreated. A new admin account is often legitimate; it has to be one the administrators know about and approved."
+impact = "Creating a new admin account is a common way for an attacker to keep access after gaining Domain Admin. An unapproved account gives that attacker a separate way back in that survives password resets of the compromised accounts."
+attack = [
+  "Gains rights to create users and change admin group membership.",
+  "Creates a new account with an inconspicuous name and adds it to an admin group, directly or through a nested group.",
+  "Uses the account to return later.",
+]
+remediation = [
+  "Confirm each listed account with the person responsible for admin accounts and check the request or change record.",
+  "Disable and investigate any account that nobody can account for, including who created it (audit event 4720 on the DCs).",
+  "Require a change record for every new admin account and alert on additions to admin groups.",
+]
+frameworks = [
+  "NIST 800-53 AC-2",
+  "NIST 800-53 AU-6",
+]
+verify = '''
+$since = (Get-Date).AddDays(-30)
+'Domain Admins', 'Enterprise Admins', 'Schema Admins', 'Administrators', 'Account Operators', 'Backup Operators' |
+  ForEach-Object { Get-ADGroupMember $_ -Recursive } | Where-Object objectClass -eq 'user' |
+  Sort-Object distinguishedName -Unique | Get-ADUser -Properties whenCreated |
+  Where-Object whenCreated -gt $since | Select-Object Name, whenCreated'''
+mitre = ["T1136.002", "T1098"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1136.002: Create Account: Domain Account"
+url = "https://attack.mitre.org/techniques/T1136/002/"
+
+[[check.detail.references]]
+title = "Monitoring Active Directory for signs of compromise"
+url = "https://learn.microsoft.com/windows-server/identity/ad-ds/plan/security-best-practices/monitoring-active-directory-for-signs-of-compromise"
+
+[[check]]
+id = "AD-IOC-011"
+title = "Delegation to krbtgt (constrained delegation to krbtgt/* or RBCD on krbtgt)"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "A user or computer account lists a krbtgt service (krbtgt/...) in msDS-AllowedToDelegateTo, or the krbtgt account itself has resource-based constrained delegation set (msDS-AllowedToActOnBehalfOfOtherIdentity). No legitimate service delegates to krbtgt."
+impact = "Delegation to krbtgt lets the account obtain a ticket-granting ticket for any user, including Domain Admins, from a service ticket it requests on their behalf. Whoever controls the account can impersonate anyone in the domain; it is a known persistence technique."
+attack = [
+  "Gains Domain Admin rights once.",
+  "Sets constrained delegation from a controlled account to krbtgt/DOMAIN, or adds that account to the RBCD list on krbtgt.",
+  "Later uses S4U2Self and S4U2Proxy from the controlled account to obtain a ticket-granting ticket for any admin.",
+]
+remediation = [
+  "Remove every krbtgt entry from msDS-AllowedToDelegateTo on the listed accounts.",
+  "Clear msDS-AllowedToActOnBehalfOfOtherIdentity on krbtgt.",
+  "Treat the domain as compromised: reset the listed accounts' passwords, investigate who set the delegation and reset the krbtgt password twice.",
+]
+frameworks = [
+  "NIST 800-53 AC-6",
+  "NIST 800-53 IA-2",
+]
+verify = '''
+Get-ADObject -LDAPFilter '(msDS-AllowedToDelegateTo=krbtgt/*)' -Properties msDS-AllowedToDelegateTo |
+  Select-Object Name, msDS-AllowedToDelegateTo
+Get-ADUser krbtgt -Properties msDS-AllowedToActOnBehalfOfOtherIdentity |
+  Select-Object Name, msDS-AllowedToActOnBehalfOfOtherIdentity'''
+cvss = "AV:N/AC:L/PR:L/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1558", "T1098"]
+
+[[check.detail.references]]
+title = "Kerberos constrained delegation overview"
+url = "https://learn.microsoft.com/windows-server/security/kerberos/kerberos-constrained-delegation-overview"
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1558: Steal or Forge Kerberos Tickets"
+url = "https://attack.mitre.org/techniques/T1558/"
+
+[[check]]
+id = "AD-IOC-012"
+title = "Unexpected ACEs granting DCSync created recently (from metadata)"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "The domain head's permissions changed in the last 30 days and principals outside the defaults hold DCSync rights."
+impact = "Granting DCSync rights is a common persistence step: the holder can read every password hash, including krbtgt's, at any time."
+remediation = [
+  "Confirm who granted the rights and why.",
+  "Remove the replication rights unless the account is a documented sync tool.",
+]
+verify = "Get-ADReplicationAttributeMetadata -Object (Get-ADDomain).DistinguishedName -Server <DC> | Where-Object AttributeName -eq nTSecurityDescriptor"
+cvss = "AV:N/AC:L/PR:H/UI:N/S:C/C:H/I:H/A:N"
+mitre = ["T1003.006", "T1222.001"]
+
+[[check]]
+id = "AD-IOC-013"
+title = "Golden gMSA exposure (KDS root key read rights)"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "Principals other than the built-in admin groups, domain controllers and Tier 0 can read KDS root keys (msKds-ProvRootKey objects under CN=Master Root Keys in the configuration partition). The check counts allow entries that grant Full Control, Generic Read, or Read Property for all properties; entries that only apply to child objects are ignored. When no KDS root key exists the check passes."
+impact = "The KDS root key is the secret from which every gMSA password in the forest is derived. A principal that can read it can compute the current and future password of every gMSA offline (Golden gMSA) and sign in as any of them, without any further access to a DC. Resetting gMSA passwords does not help while the key is exposed."
+attack = [
+  "Takes control of a principal that can read a KDS root key.",
+  "Reads the root key attributes and the gMSA's password parameters from the directory.",
+  "Computes the gMSA's password offline and signs in as the gMSA, wherever it has rights.",
+]
+remediation = [
+  "Remove the read rights for every listed principal from the KDS root key objects; leave only the default admin groups, SYSTEM and domain controllers.",
+  "Find out how the rights were granted; if a non-admin could read the key, assume every gMSA password is known.",
+  "In that case create a new KDS root key, move gMSAs to new accounts created after it, and delete the old gMSAs.",
+]
+frameworks = [
+  "NIST 800-53 SC-12",
+  "NIST 800-53 AC-6",
+]
+verify = '''
+$cfg = (Get-ADRootDSE).configurationNamingContext
+Get-ADObject -SearchBase "CN=Master Root Keys,CN=Group Key Distribution Service,CN=Services,$cfg" -LDAPFilter '(objectClass=msKds-ProvRootKey)' -Properties nTSecurityDescriptor |
+  ForEach-Object {
+    $key = $_.Name
+    $_.nTSecurityDescriptor.Access | Where-Object { $_.AccessControlType -eq 'Allow' -and $_.ActiveDirectoryRights -match 'GenericAll|GenericRead|ReadProperty' } |
+      Select-Object @{ n = 'Key'; e = { $key } }, IdentityReference, ActiveDirectoryRights, ObjectType
+  }'''
+cvss = "AV:N/AC:L/PR:L/UI:N/S:C/C:H/I:H/A:N"
+mitre = ["T1552", "T1078.002"]
+
+[[check.detail.references]]
+title = "Group Managed Service Accounts overview"
+url = "https://learn.microsoft.com/windows-server/security/group-managed-service-accounts/group-managed-service-accounts-overview"
+
+[[check.detail.references]]
+title = "Create the Key Distribution Services KDS root key"
+url = "https://learn.microsoft.com/windows-server/security/group-managed-service-accounts/create-the-key-distribution-services-kds-root-key"
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1552: Unsecured Credentials"
+url = "https://attack.mitre.org/techniques/T1552/"
+
+[[check]]
+id = "AD-IOC-014"
+title = "Computer accounts with userAccountControl SERVER_TRUST_ACCOUNT that are not DCs"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "A computer account has SERVER_TRUST_ACCOUNT (0x2000) set in userAccountControl, which marks it as a writable domain controller, but no directory service agent (NTDS Settings under a server in CN=Sites) has a server object linked to it. Read-only DCs use a different flag and are not considered. A real DC always has a directory service agent, so the computer is marked as a DC without being one."
+impact = "Setting SERVER_TRUST_ACCOUNT makes the computer's primary group Domain Controllers, which holds replication rights on the domain. Whoever knows the computer's password can then use DCSync to read every password hash, including krbtgt, while the computer looks like an ordinary server."
+attack = [
+  "Gains rights to modify a computer account they control, as a Domain Admin or through delegated write access.",
+  "Sets SERVER_TRUST_ACCOUNT on it, which moves it into Domain Controllers.",
+  "Uses the computer account's credentials to replicate password hashes from a real DC (DCSync).",
+]
+remediation = [
+  "For each listed computer, check whether it is a DC whose promotion or demotion failed; if so, finish the demotion and run metadata cleanup.",
+  "Otherwise set userAccountControl back to WORKSTATION_TRUST_ACCOUNT, set its primary group back to Domain Computers, and reset the computer's password.",
+  "Treat an unexplained change as a compromise and investigate who made it.",
+]
+frameworks = [
+  "NIST 800-53 AC-6",
+  "NIST 800-53 CM-8",
+]
+verify = '''
+$cfg = (Get-ADRootDSE).configurationNamingContext
+$linked = Get-ADObject -SearchBase "CN=Sites,$cfg" -LDAPFilter '(objectClass=nTDSDSA)' | ForEach-Object {
+  (Get-ADObject ($_.DistinguishedName -replace '^CN=NTDS Settings,', '') -Properties serverReference).serverReference
+}
+Get-ADComputer -LDAPFilter '(userAccountControl:1.2.840.113556.1.4.803:=8192)' |
+  Where-Object { $linked -notcontains $_.DistinguishedName } | Select-Object Name, DistinguishedName'''
+cvss = "AV:N/AC:L/PR:L/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1003.006", "T1207", "T1098"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1003.006: OS Credential Dumping: DCSync"
+url = "https://attack.mitre.org/techniques/T1003/006/"
+
+[[check.detail.references]]
+title = "Clean up Active Directory Domain Controller server metadata"
+url = "https://learn.microsoft.com/windows-server/identity/ad-ds/deploy/ad-ds-metadata-cleanup"

@@ -1,0 +1,194 @@
+# AD-CMP: Computers and endpoints seen from AD
+
+area = "AD-CMP"
+
+[[check]]
+id = "AD-CMP-001"
+title = "Unsupported operating systems (Windows 7, 2008, XP) still enabled"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Enabled computers run Windows versions that no longer receive security updates."
+impact = "Known, unpatched vulnerabilities on these machines give attackers an easy foothold and a way to steal credentials of anyone who signs in."
+remediation = [
+  "Upgrade or isolate the listed computers.",
+  "Where Extended Security Updates are bought, record that so the finding can be accepted.",
+]
+verify = "Get-ADComputer -Filter 'Enabled -eq $true' -Properties OperatingSystem | Group-Object OperatingSystem"
+mitre = ["T1068"]
+
+[[check]]
+id = "AD-CMP-002"
+title = "OS version distribution"
+status = "implemented"
+severity = "info"
+
+[check.detail]
+description = "An inventory of the operatingSystem value of every enabled computer account, counted per operating system. Computers with no value are counted as Unknown. This check is informational and always passes."
+impact = "No direct risk. The inventory shows how many systems each operating system covers, which helps plan upgrades and spot unsupported versions (see AD-CMP-001)."
+remediation = [
+  "Compare the inventory with your asset register and investigate operating systems you did not expect.",
+]
+frameworks = [
+  "CIS Controls 1.1",
+  "NIST 800-53 CM-8",
+]
+verify = '''
+Get-ADComputer -Filter 'Enabled -eq $true' -Properties OperatingSystem |
+  Group-Object OperatingSystem | Sort-Object Count -Descending | Select-Object Count, Name'''
+
+[[check]]
+id = "AD-CMP-003"
+title = "Computers with unconstrained delegation (links to AD-KRB-003)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Enabled computers other than domain controllers are trusted for unconstrained delegation."
+impact = "Any account that signs in to such a computer leaves a forwardable ticket it can use. With a coerced authentication from a domain controller, this gives a path to domain compromise."
+remediation = [
+  "Remove the delegation flag from the computer.",
+  "Use constrained or resource-based constrained delegation where the application needs delegation.",
+  "Add privileged accounts to Protected Users or mark them as sensitive and cannot be delegated.",
+]
+frameworks = [
+  "NIST 800-53 AC-6",
+]
+verify = "Get-ADComputer -LDAPFilter '(&(userAccountControl:1.2.840.113556.1.4.803:=524288)(!(primaryGroupID=516)))' -Properties TrustedForDelegation"
+cvss = "AV:N/AC:L/PR:L/UI:N/S:C/C:H/I:H/A:N"
+mitre = ["T1558"]
+
+[[check]]
+id = "AD-CMP-004"
+title = "Computers with SID history or RBCD configured"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Computer accounts have SID history or resource-based constrained delegation configured."
+impact = "SID history adds privileges to the machine's token. RBCD on a computer lets the listed principals impersonate any user to it."
+remediation = [
+  "Remove SID history and RBCD entries that are not documented and needed.",
+]
+verify = "Get-ADComputer -LDAPFilter '(|(sIDHistory=*)(msDS-AllowedToActOnBehalfOfOtherIdentity=*))'"
+mitre = ["T1134.005", "T1558"]
+
+[[check]]
+id = "AD-CMP-005"
+title = "Computers where Domain Users are local admins (needs remote collection, optional)"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "Domain Users is a member of the local Administrators group on member servers or workstations."
+impact = "Every user in the domain is an administrator there, and can dump credentials of anyone who signs in."
+remediation = [
+  "Remove Domain Users from the local Administrators group, including through Group Policy Preferences or Restricted Groups.",
+]
+verify = "Get-LocalGroupMember -SID S-1-5-32-544"
+cvss = "AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H"
+mitre = ["T1078.002"]
+
+[[check]]
+id = "AD-CMP-006"
+title = "BitLocker recovery keys escrowed to AD (coverage)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Enabled Windows workstations (not servers or domain controllers) have no child msFVE-RecoveryInformation object, so no BitLocker recovery key is stored in AD for them. Only where recovery objects are located is collected, never the recovery password. If no recovery object is visible at all, the collecting account may lack read access, or keys may be stored in Entra ID or Intune instead."
+impact = "A workstation without an escrowed recovery key is either not encrypted, so a lost or stolen device exposes its data, or encrypted with a key nobody can recover, so a locked-out device loses its data."
+remediation = [
+  "Confirm whether each listed workstation is encrypted and where its recovery key is stored.",
+  "Enable the BitLocker policy that stores recovery information in AD DS before encryption is turned on.",
+  "For devices already encrypted, back up the key to AD with manage-bde -protectors -adbackup or BackupToAAD-BitLockerKeyProtector if Entra ID is used instead.",
+]
+frameworks = [
+  "CIS Controls 3.6",
+  "NIST 800-53 SC-28",
+]
+verify = '''
+Get-ADComputer -Filter 'Enabled -eq $true' -Properties OperatingSystem |
+  Where-Object { $_.OperatingSystem -like '*Windows*' -and $_.OperatingSystem -notlike '*Server*' } |
+  Where-Object { -not (Get-ADObject -SearchBase $_.DistinguishedName -LDAPFilter '(objectClass=msFVE-RecoveryInformation)') } |
+  Select-Object Name, OperatingSystem'''
+
+[[check]]
+id = "AD-CMP-007"
+title = "Computers without LAPS (links to AD-LAPS-002)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Enabled computers have no password managed by Windows LAPS or legacy LAPS, so their local Administrator password is set some other way, often the same on many computers."
+impact = "One recovered local administrator password can open every computer that shares it, which lets an attacker move laterally and collect credentials of admins who sign in to them."
+remediation = [
+  "Deploy Windows LAPS by Group Policy or Intune to every workstation and member server.",
+  "Restrict who can read the LAPS password attribute.",
+]
+frameworks = [
+  "CIS Controls 5.2",
+  "ANSSI vuln2_laps",
+]
+cvss = "AV:N/AC:H/PR:L/UI:N/S:U/C:H/I:H/A:N"
+mitre = ["T1078.003"]
+
+[[check.detail.references]]
+title = "Windows LAPS overview"
+url = "https://learn.microsoft.com/windows-server/identity/laps/laps-overview"
+
+[[check]]
+id = "AD-CMP-008"
+title = "Computer objects created by normal users (ms-DS-CreatorSID)"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Computers were joined to the domain by regular users through the machine account quota (ms-DS-CreatorSID is set)."
+impact = "The creator keeps write access to the computer object, which is enough to configure resource-based constrained delegation and take over the computer."
+remediation = [
+  "Review the listed computers, reset their owner to Domain Admins and remove the creator's rights.",
+  "Set ms-DS-MachineAccountQuota to 0 (see AD-FND-012).",
+]
+verify = "Get-ADComputer -LDAPFilter '(ms-DS-CreatorSID=*)' -Properties ms-DS-CreatorSID"
+mitre = ["T1136.002"]
+
+[[check.detail.references]]
+title = "Default limit to number of workstations a user can join to the domain"
+url = "https://learn.microsoft.com/troubleshoot/windows-server/active-directory/default-workstation-numbers-join-domain"
+
+[[check]]
+id = "AD-CMP-009"
+title = "Servers with Print Spooler and WebClient (coercion surface, optional remote)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Member servers run both the Print Spooler and WebClient services."
+impact = "Together they let an attacker coerce the server to authenticate over SMB and HTTP; HTTP authentication can be relayed to LDAP or AD CS to take over the server."
+remediation = [
+  "Disable the Print Spooler on servers that do not print.",
+  "Disable WebClient on servers.",
+]
+verify = "Get-Service Spooler, WebClient"
+mitre = ["T1187"]
+
+[[check]]
+id = "AD-CMP-010"
+title = "Computers with non-standard owner"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "A computer object's owner is not a built-in admin group or SYSTEM. Usually the user who joined the computer to the domain."
+impact = "The owner can change the object's permissions: set resource-based constrained delegation to take over the computer, or read its LAPS password."
+remediation = [
+  "Set the owner of computer objects to Domain Admins, and stop users joining computers (ms-DS-MachineAccountQuota 0) in favour of a delegated join account.",
+]
+verify = "Get-ADComputer <name> | ForEach-Object { (Get-Acl \"AD:$($_.DistinguishedName)\").Owner }"
+mitre = ["T1098"]
+
+[[check.detail.references]]
+title = "Resource-based constrained delegation abuse"
+url = "https://learn.microsoft.com/windows-server/security/kerberos/kerberos-constrained-delegation-overview"

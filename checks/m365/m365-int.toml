@@ -1,0 +1,552 @@
+# M365-INT: Intune and endpoint management
+
+area = "M365-INT"
+
+[[check]]
+id = "M365-INT-001"
+title = "MDM authority and enrollment restrictions (personal devices, platforms)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "The tenant's MDM authority is not Intune, or the default enrollment restriction lets personally owned devices of a platform enroll."
+impact = "Personal devices that enroll become managed devices and pass Conditional Access that requires a managed or compliant device, so the control no longer limits access to company hardware."
+remediation = [
+  "Set the MDM authority to Intune.",
+  "Block personally owned devices in the enrollment restrictions for each platform, or use app protection for them instead.",
+]
+verify = "Intune admin center, or Graph: GET /deviceManagement/deviceEnrollmentConfigurations"
+
+[[check.detail.references]]
+title = "Enrollment restrictions"
+url = "https://learn.microsoft.com/mem/intune/enrollment/enrollment-restrictions-set"
+
+[[check]]
+id = "M365-INT-002"
+title = "Device compliance policies exist for each platform"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "A platform with managed devices (Windows always counts) has no assigned compliance policy."
+impact = "Devices of that platform are never evaluated, so compliance-based access does not reflect their state."
+remediation = [
+  "Create and assign a compliance policy for each platform in use.",
+]
+verify = "Intune admin center, or Graph: GET /deviceManagement/deviceCompliancePolicies?$expand=assignments"
+
+[[check.detail.references]]
+title = "Device compliance policies in Intune"
+url = "https://learn.microsoft.com/mem/intune/protect/device-compliance-get-started"
+
+[[check]]
+id = "M365-INT-003"
+title = "\"Mark devices with no compliance policy as\" set to Not compliant"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "The Intune setting \"Mark devices with no compliance policy assigned as\" is Compliant (secureByDefault false)."
+impact = "Any device no policy targets counts as compliant and passes Conditional Access that requires a compliant device."
+remediation = [
+  "Set \"Mark devices with no compliance policy assigned as\" to Not compliant under Endpoint security > Device compliance > Compliance policy settings.",
+]
+verify = "Intune admin center, or Graph: GET /deviceManagement?$select=settings"
+
+[[check.detail.references]]
+title = "Compliance policy settings"
+url = "https://learn.microsoft.com/mem/intune/protect/device-compliance-get-started#compliance-policy-settings"
+
+[[check]]
+id = "M365-INT-004"
+title = "Compliance grace periods too long"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "An assigned compliance policy marks devices non-compliant only after a grace period longer than 72 hours."
+impact = "A device that fails compliance, for example with protection turned off, keeps access for days."
+remediation = [
+  "Shorten the \"Mark device noncompliant\" schedule to 0 to 3 days.",
+]
+verify = "Intune admin center, or Graph: GET /deviceManagement/deviceCompliancePolicies?$expand=scheduledActionsForRule($expand=scheduledActionConfigurations)"
+
+[[check.detail.references]]
+title = "Device compliance policies in Intune"
+url = "https://learn.microsoft.com/mem/intune/protect/device-compliance-get-started"
+
+[[check]]
+id = "M365-INT-005"
+title = "BitLocker / FileVault enforced through compliance or configuration"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "No assigned compliance policy, configuration profile or disk encryption policy requires BitLocker on Windows, or FileVault on macOS when macOS devices are managed."
+impact = "A lost or stolen laptop gives its finder the data and cached credentials on the disk."
+remediation = [
+  "Require BitLocker in Windows compliance and deploy an endpoint security disk encryption policy.",
+  "Do the same for FileVault on macOS.",
+]
+verify = "Intune admin center, or Graph: GET /deviceManagement/configurationPolicies (templateFamily endpointSecurityDiskEncryption)"
+
+[[check.detail.references]]
+title = "Endpoint security in Intune"
+url = "https://learn.microsoft.com/mem/intune/protect/endpoint-security"
+
+[[check]]
+id = "M365-INT-006"
+title = "Defender for Endpoint onboarding via Intune and compliance risk level integration"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "The Microsoft Defender for Endpoint connector is not enabled for Windows, or no compliance policy requires the device to be at or under a machine risk score."
+impact = "Devices Defender considers compromised stay compliant and keep access to company resources."
+remediation = [
+  "Turn on the Defender for Endpoint connector in Intune and in the Defender portal.",
+  "Require \"Device at or under the machine risk score\" in Windows compliance.",
+]
+verify = "Intune admin center, or Graph: GET /deviceManagement/mobileThreatDefenseConnectors"
+
+[[check.detail.references]]
+title = "Defender for Endpoint in Intune"
+url = "https://learn.microsoft.com/mem/intune/protect/advanced-threat-protection"
+
+[[check]]
+id = "M365-INT-007"
+title = "Security baselines deployed (Windows, Edge, Defender) and assignment coverage"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "No Intune security baseline is assigned, or baselines exist that are not assigned to any device."
+impact = "Devices keep Windows defaults instead of Microsoft's recommended security settings."
+remediation = [
+  "Assign the Windows, Microsoft Edge and Defender for Endpoint security baselines, with exceptions documented.",
+]
+verify = "Intune admin center, or Graph: GET beta/deviceManagement/intents"
+
+[[check.detail.references]]
+title = "Security baselines"
+url = "https://learn.microsoft.com/mem/intune/protect/security-baselines"
+
+[[check]]
+id = "M365-INT-008"
+title = "Attack surface reduction rules in block mode"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "No attack surface reduction rules are deployed, or deployed rules are in audit, warn or off mode instead of block."
+impact = "ASR rules stop common initial access and credential theft techniques, such as Office spawning child processes or reading LSASS; in audit mode they only log."
+remediation = [
+  "Move each rule to block after reviewing audit results; use per-rule exclusions instead of leaving rules in audit.",
+]
+verify = "Intune admin center, or Graph: GET beta/deviceManagement/configurationPolicies?$expand=settings"
+
+[[check.detail.references]]
+title = "Attack surface reduction rules"
+url = "https://learn.microsoft.com/defender-endpoint/attack-surface-reduction-rules-reference"
+
+[[check]]
+id = "M365-INT-009"
+title = "Windows LAPS policy via Intune"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "No assigned Intune policy configures Windows LAPS to back up the local administrator password."
+impact = "Local administrator passwords are the same on many devices or never change, so one stolen hash opens them all."
+remediation = [
+  "Create an endpoint security account protection (LAPS) policy that backs up to Entra ID and rotates the password.",
+]
+verify = "Intune admin center, or Graph: GET beta/deviceManagement/configurationPolicies?$expand=settings"
+mitre = ["T1078.003"]
+
+[[check.detail.references]]
+title = "Windows LAPS with Intune"
+url = "https://learn.microsoft.com/mem/intune/protect/windows-laps-overview"
+
+[[check]]
+id = "M365-INT-010"
+title = "Local admin management (account protection / local user group membership policies)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "No assigned policy manages the members of the local Administrators group on managed Windows devices."
+impact = "Users and helpdesk accounts added as local admins over time stay there, so malware runs with admin rights."
+remediation = [
+  "Deploy an account protection policy (Local user group membership) that sets local Administrators to the intended members only.",
+]
+verify = "Intune admin center, or Graph: GET beta/deviceManagement/configurationPolicies?$expand=settings"
+mitre = ["T1078.003"]
+
+[[check.detail.references]]
+title = "Endpoint security in Intune"
+url = "https://learn.microsoft.com/mem/intune/protect/endpoint-security"
+
+[[check]]
+id = "M365-INT-011"
+title = "Credential Guard, LSA protection, and Windows Hello for Business policies"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Intune does not configure one or more of Credential Guard, LSA protection, and Windows Hello for Business."
+impact = "Without them, credentials in memory can be dumped by tools such as Mimikatz, and passwords stay the main sign-in method."
+remediation = [
+  "Turn on Credential Guard and LSA protection with a settings catalog or account protection policy.",
+  "Enable Windows Hello for Business.",
+]
+verify = "Intune admin center, or Graph: GET beta/deviceManagement/configurationPolicies?$expand=settings"
+mitre = ["T1003.001"]
+
+[[check.detail.references]]
+title = "Credential Guard"
+url = "https://learn.microsoft.com/windows/security/identity-protection/credential-guard/configure"
+
+[[check]]
+id = "M365-INT-012"
+title = "Firewall policies per profile"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Intune does not turn on the Windows firewall for every profile (domain, private and public)."
+impact = "Users or software can turn the firewall off, and devices on public networks expose their services."
+remediation = [
+  "Assign an endpoint security firewall policy that enables all three profiles.",
+]
+verify = "Intune admin center, or Graph: GET beta/deviceManagement/configurationPolicies (templateFamily endpointSecurityFirewall)"
+
+[[check.detail.references]]
+title = "Endpoint security in Intune"
+url = "https://learn.microsoft.com/mem/intune/protect/endpoint-security"
+
+[[check]]
+id = "M365-INT-013"
+title = "Windows Update rings: deferral too long, update compliance"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "No Windows update ring is assigned, or a ring defers quality (security) updates more than 14 days or has them paused."
+impact = "Known vulnerabilities stay open on devices weeks after patches are released."
+remediation = [
+  "Assign update rings that defer quality updates no more than 7 to 14 days with deadlines, and resume paused rings.",
+]
+verify = "Intune admin center, or Graph: GET /deviceManagement/deviceConfigurations (windowsUpdateForBusinessConfiguration)"
+
+[[check.detail.references]]
+title = "Update rings for Windows"
+url = "https://learn.microsoft.com/mem/intune/protect/windows-10-update-rings"
+
+[[check]]
+id = "M365-INT-014"
+title = "App protection policies (MAM) for iOS/Android"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "There is no assigned app protection policy for iOS or Android, or a policy lets company data be sent to any app."
+impact = "Mail and files opened on personal phones can be copied into personal apps and cloud storage."
+remediation = [
+  "Assign app protection policies for iOS and Android that keep data in managed apps, and require them with Conditional Access.",
+]
+verify = "Intune admin center, or Graph: GET /deviceAppManagement/managedAppPolicies"
+
+[[check.detail.references]]
+title = "App protection policies"
+url = "https://learn.microsoft.com/mem/intune/apps/app-protection-policy"
+
+[[check]]
+id = "M365-INT-015"
+title = "Conditional Access dependency on compliance (devices without policy)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "An enabled Conditional Access policy requires a compliant device while Intune counts devices without a compliance policy as compliant."
+impact = "The Conditional Access control can be met by any enrolled device that no compliance policy targets."
+remediation = [
+  "Set \"Mark devices with no compliance policy assigned as\" to Not compliant, and make sure every platform has a compliance policy.",
+]
+verify = "Intune admin center, or Graph: GET /deviceManagement?$select=settings"
+
+[[check.detail.references]]
+title = "Device compliance policies in Intune"
+url = "https://learn.microsoft.com/mem/intune/protect/device-compliance-get-started"
+
+[[check]]
+id = "M365-INT-016"
+title = "Intune RBAC: custom roles and scope tags too broad"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "An Intune role assignment (other than Read Only Operator) is scoped to all devices or all users instead of scope groups and scope tags."
+impact = "Regional or helpdesk admins can manage, wipe or deploy to every device in the tenant, including privileged ones."
+remediation = [
+  "Scope role assignments to groups and scope tags for the devices each team supports.",
+]
+verify = "Intune admin center, or Graph: GET beta/deviceManagement/roleAssignments?$expand=roleDefinition"
+
+[[check.detail.references]]
+title = "Role-based access control in Intune"
+url = "https://learn.microsoft.com/mem/intune/fundamentals/role-based-access-control"
+
+[[check]]
+id = "M365-INT-017"
+title = "Multi-admin approval for scripts, wipes and app deployment"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Multi-admin approval is not configured for one or more of scripts, device wipes and app deployment."
+impact = "One compromised Intune admin account can push a script or app to every device, or wipe them, with no second person involved."
+remediation = [
+  "Create access policies for multi-admin approval covering scripts, apps and device wipe.",
+]
+verify = "Intune admin center, or Graph: GET beta/deviceManagement/operationApprovalPolicies"
+
+[[check.detail.references]]
+title = "Multi Admin Approval"
+url = "https://learn.microsoft.com/mem/intune/fundamentals/multi-admin-approval"
+
+[[check]]
+id = "M365-INT-018"
+title = "PowerShell scripts and remediations deployed: who can create, what runs as SYSTEM"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Lists assigned PowerShell scripts and remediations that run as SYSTEM, and whether they require a signature."
+impact = "These run with full control of every targeted device; whoever can edit them controls the fleet."
+remediation = [
+  "Review each script, require signature checks where possible, and limit who can create and assign scripts.",
+]
+verify = "Intune admin center, or Graph: GET beta/deviceManagement/deviceManagementScripts"
+mitre = ["T1651"]
+
+[[check.detail.references]]
+title = "PowerShell scripts in Intune"
+url = "https://learn.microsoft.com/mem/intune/apps/intune-management-extension"
+
+[[check]]
+id = "M365-INT-019"
+title = "Win32 apps deployed from writable or external sources"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "A Win32 app's install command reads from a network share or downloads from the internet."
+impact = "The install runs as SYSTEM; anyone who can change the file on the share or the web server runs code on every device that installs the app."
+remediation = [
+  "Package the installer inside the .intunewin file instead of fetching it at install time.",
+]
+verify = "Intune admin center, or Graph: GET /deviceAppManagement/mobileApps?$filter=isof('microsoft.graph.win32LobApp')"
+
+[[check.detail.references]]
+title = "Win32 app management"
+url = "https://learn.microsoft.com/mem/intune/apps/apps-win32-app-management"
+
+[[check]]
+id = "M365-INT-020"
+title = "Enrollment of DCs or Tier 0 servers into Intune/co-management (cloud-to-Tier-0 path)"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "A domain controller or Tier 0 server from Active Directory is enrolled in Intune (or co-managed), matched by host name."
+impact = "Intune administrators, a lower tier, can run scripts and install apps as SYSTEM on it, which is control of the domain."
+remediation = [
+  "Remove domain controllers and Tier 0 servers from Intune and co-management, and manage them only from Tier 0 tools.",
+]
+verify = "Get-MgDeviceManagementManagedDevice -Filter \"deviceName eq '<domain controller name>'\""
+mitre = ["T1651"]
+
+[[check.detail.references]]
+title = "Enterprise access model"
+url = "https://learn.microsoft.com/security/privileged-access-workstations/privileged-access-access-model"
+
+[[check]]
+id = "M365-INT-021"
+title = "Device cleanup rules"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "No device cleanup rule removes devices that have not checked in."
+impact = "Stale devices pile up, skew compliance numbers and keep their certificates and access."
+remediation = [
+  "Set a device cleanup rule, for example 90 days.",
+]
+verify = "Intune admin center, or Graph: GET beta/deviceManagement/managedDeviceCleanupSettings"
+
+[[check.detail.references]]
+title = "Microsoft Intune documentation"
+url = "https://learn.microsoft.com/mem/intune/"
+
+[[check]]
+id = "M365-INT-022"
+title = "Stale and non-compliant device counts"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Lists managed devices that have not checked in for 30 days or are not compliant."
+impact = "Stale and non-compliant devices are unpatched or unprotected, and may still hold valid tokens."
+remediation = [
+  "Investigate non-compliant devices; retire devices that are gone.",
+]
+verify = "Intune admin center, or Graph: GET /deviceManagement/managedDevices"
+
+[[check.detail.references]]
+title = "Microsoft Intune documentation"
+url = "https://learn.microsoft.com/mem/intune/"
+
+[[check]]
+id = "M365-INT-023"
+title = "Autopilot profile settings (user as local admin)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "An assigned Autopilot profile makes the user who sets up the device a local administrator."
+impact = "Every user is admin on their own device, so malware and users can turn off protection."
+remediation = [
+  "Set the user account type to Standard in Autopilot deployment profiles.",
+]
+verify = "Intune admin center, or Graph: GET beta/deviceManagement/windowsAutopilotDeploymentProfiles"
+
+[[check.detail.references]]
+title = "Autopilot profiles"
+url = "https://learn.microsoft.com/autopilot/profiles"
+
+[[check]]
+id = "M365-INT-024"
+title = "Enrollment Status Page blocking settings"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "No Enrollment Status Page shows installation progress, or one lets users use the device when required apps or policies failed to install."
+impact = "New devices reach users before security software and policies are in place."
+remediation = [
+  "Configure the Enrollment Status Page to block use until required apps install, and do not allow use on failure.",
+]
+verify = "Intune admin center, or Graph: GET /deviceManagement/deviceEnrollmentConfigurations"
+
+[[check.detail.references]]
+title = "Enrollment Status Page"
+url = "https://learn.microsoft.com/mem/intune/enrollment/windows-enrollment-status"
+
+[[check]]
+id = "M365-INT-025"
+title = "Corporate device identifiers / device enrollment managers"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Shows whether corporate device identifiers are uploaded, and flags enrollment limits of 15 devices per user or more."
+impact = "Without corporate identifiers, personal devices cannot be told from company ones; high limits let one account enroll many devices."
+remediation = [
+  "Upload corporate identifiers or use Autopilot, and lower the device limit per user.",
+]
+verify = "Intune admin center, or Graph: GET /deviceManagement/deviceEnrollmentConfigurations"
+
+[[check.detail.references]]
+title = "Microsoft Intune documentation"
+url = "https://learn.microsoft.com/mem/intune/"
+
+[[check]]
+id = "M365-INT-026"
+title = "Endpoint Privilege Management rules (elevation without approval)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "An Endpoint Privilege Management policy elevates automatically, without user justification or support approval."
+impact = "Any process matching the rule runs as administrator; a broad rule is a way around removing local admin rights."
+remediation = [
+  "Use user-confirmed or support-approved elevation and narrow rules to signed files with hashes.",
+]
+verify = "Intune admin center, or Graph: GET beta/deviceManagement/configurationPolicies (templateFamily endpointSecurityEndpointPrivilegeManagement)"
+
+[[check.detail.references]]
+title = "Endpoint Privilege Management"
+url = "https://learn.microsoft.com/mem/intune/protect/epm-overview"
+
+[[check]]
+id = "M365-INT-027"
+title = "Remote help and remote actions permissions"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Remote Help can connect to devices that are not enrolled, or a role assignment with remote actions is scoped to all devices."
+impact = "Support accounts can take over or wipe any device; a compromised one reaches the whole fleet."
+remediation = [
+  "Allow Remote Help only to enrolled devices and scope remote task permissions to the devices each team supports.",
+]
+verify = "Intune admin center, or Graph: GET beta/deviceManagement/remoteAssistanceSettings"
+
+[[check.detail.references]]
+title = "Remote Help"
+url = "https://learn.microsoft.com/mem/intune/fundamentals/remote-help"
+
+[[check]]
+id = "M365-INT-028"
+title = "Configuration conflicts and policy errors"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "A configuration profile reports devices in conflict or with errors."
+impact = "Settings in conflict or error are not applied, so devices are not configured as the profile says."
+remediation = [
+  "Open the profile's device status, resolve conflicting settings and errors.",
+]
+verify = "Intune admin center, or Graph: GET /deviceManagement/deviceConfigurations?$expand=deviceStatusOverview"
+
+[[check.detail.references]]
+title = "Microsoft Intune documentation"
+url = "https://learn.microsoft.com/mem/intune/"
+
+[[check]]
+id = "M365-INT-029"
+title = "macOS/iOS/Android OS minimum versions enforced"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "A platform in use other than Windows (macOS, iOS, Android) has no compliance policy that requires a minimum OS version."
+impact = "Devices running old, unpatched operating systems stay compliant."
+remediation = [
+  "Set a minimum OS version in each platform's compliance policy and raise it with each release.",
+]
+verify = "Intune admin center, or Graph: GET /deviceManagement/deviceCompliancePolicies"
+
+[[check.detail.references]]
+title = "Device compliance policies in Intune"
+url = "https://learn.microsoft.com/mem/intune/protect/device-compliance-get-started"
+
+[[check]]
+id = "M365-INT-030"
+title = "Co-management workload split with ConfigMgr"
+status = "implemented"
+severity = "info"
+
+[check.detail]
+description = "Shows how many managed devices are co-managed with Configuration Manager."
+impact = "With co-management, Configuration Manager and Intune split workloads; who controls compliance, updates and security settings must be known."
+remediation = [
+  "Review the co-management workload settings in Configuration Manager.",
+]
+verify = "Intune admin center, or Graph: GET /deviceManagement/managedDevices?$select=managementAgent"
+
+[[check.detail.references]]
+title = "Co-management workloads"
+url = "https://learn.microsoft.com/mem/configmgr/comanage/workloads"

@@ -1,0 +1,521 @@
+# AD-KRB: Kerberos and delegation
+
+area = "AD-KRB"
+
+[[check]]
+id = "AD-KRB-001"
+title = "Users with SPNs (kerberoastable), weighted by password age and privilege"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Enabled user accounts have a service principal name (SPN). Any domain user can request a Kerberos service ticket for them and try to crack the account's password offline."
+impact = "Service account passwords are often old and never expire. A cracked password gives the account's rights, which are frequently high."
+attack = [
+  "Requests a service ticket for the SPN as any domain user.",
+  "Cracks the ticket offline to recover the password.",
+  "Signs in as the service account.",
+]
+remediation = [
+  "Replace user-based service accounts with group managed service accounts (gMSA).",
+  "Where that is not possible, use long random passwords (25+ characters) and AES-only encryption.",
+  "Remove SPNs that are no longer used.",
+]
+verify = "Get-ADUser -LDAPFilter '(servicePrincipalName=*)' -Properties servicePrincipalName, PasswordLastSet"
+mitre = ["T1558.003"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1558.003"
+url = "https://attack.mitre.org/techniques/T1558/003/"
+
+[[check]]
+id = "AD-KRB-002"
+title = "Accounts with \"Do not require Kerberos preauthentication\" (AS-REP roastable)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Accounts have \"Do not require Kerberos preauthentication\" set. Anyone can request an authentication reply for them without knowing the password."
+impact = "The reply is encrypted with the account's password and can be cracked offline (AS-REP roasting), without any credentials."
+attack = [
+  "Sends an AS-REQ without preauthentication for the account.",
+  "Cracks the AS-REP offline.",
+  "Signs in with the recovered password.",
+]
+remediation = [
+  "Clear \"Do not require Kerberos preauthentication\" on every listed account.",
+  "If an application needs it, use a long random password and monitor the account.",
+]
+verify = "Get-ADUser -LDAPFilter '(userAccountControl:1.2.840.113556.1.4.803:=4194304)'"
+mitre = ["T1558.004"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1558.004"
+url = "https://attack.mitre.org/techniques/T1558/004/"
+
+[[check]]
+id = "AD-KRB-003"
+title = "Unconstrained delegation on non-DC computers"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "Computers other than domain controllers are trusted for unconstrained delegation. When a user signs in to such a computer with Kerberos, their ticket-granting ticket is stored in the computer's memory so the computer can act as them anywhere."
+impact = "An attacker with administrative access to one of these computers collects the tickets of everyone who signs in, and can force a domain controller to authenticate to it (printer bug, PetitPotam) to capture a DC ticket. That leads to domain compromise."
+attack = [
+  "Gains local admin on a computer with unconstrained delegation.",
+  "Forces a domain controller to authenticate to it, or waits for an admin to sign in.",
+  "Extracts the stored ticket-granting ticket and uses it (pass the ticket).",
+]
+remediation = [
+  "Find what each computer uses delegation for with its owner.",
+  "Switch to resource-based or constrained delegation limited to the services that need it.",
+  "Clear Trust this computer for delegation to any service on the computer object.",
+  "Mark admin accounts as sensitive and cannot be delegated, or add them to Protected Users.",
+]
+frameworks = [
+  "ANSSI vuln1_delegation_t4d",
+  "CIS Controls 5.4",
+]
+verify = '''
+Get-ADComputer -Filter {TrustedForDelegation -eq $true -and PrimaryGroupID -ne 516} | Select-Object Name'''
+cvss = "AV:N/AC:H/PR:L/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1558", "T1550.003", "T1187"]
+
+[[check.detail.references]]
+title = "Kerberos delegation overview"
+url = "https://learn.microsoft.com/windows-server/security/kerberos/kerberos-constrained-delegation-overview"
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1558: Steal or Forge Kerberos Tickets"
+url = "https://attack.mitre.org/techniques/T1558/"
+
+[[check]]
+id = "AD-KRB-004"
+title = "Unconstrained delegation on user accounts"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "User accounts are trusted for unconstrained delegation. Services running as them receive and keep the full Kerberos TGT of every user who authenticates."
+impact = "Whoever controls the account can impersonate any user who connects, including admins, to any service."
+remediation = [
+  "Remove unconstrained delegation from the accounts.",
+  "Use constrained or resource-based constrained delegation where delegation is needed.",
+]
+verify = "Get-ADUser -LDAPFilter '(userAccountControl:1.2.840.113556.1.4.803:=524288)'"
+mitre = ["T1558", "T1550.003"]
+
+[[check.detail.references]]
+title = "Kerberos constrained delegation overview"
+url = "https://learn.microsoft.com/windows-server/security/kerberos/kerberos-constrained-delegation-overview"
+
+[[check]]
+id = "AD-KRB-005"
+title = "Constrained delegation with protocol transition (TrustedToAuthForDelegation) inventory"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Accounts use constrained delegation with protocol transition (\"Use any authentication protocol\"). They can get a ticket to the listed services as any user, without that user signing in."
+impact = "If the account is compromised, the attacker can access the listed services as any user, including admins, unless those users are protected from delegation."
+remediation = [
+  "Confirm each account needs protocol transition; switch to Kerberos-only constrained delegation where possible.",
+  "Mark admin accounts as sensitive and put them in Protected Users.",
+]
+verify = "Get-ADObject -LDAPFilter '(userAccountControl:1.2.840.113556.1.4.803:=16777216)' -Properties msDS-AllowedToDelegateTo"
+mitre = ["T1558"]
+
+[[check.detail.references]]
+title = "Kerberos constrained delegation overview"
+url = "https://learn.microsoft.com/windows-server/security/kerberos/kerberos-constrained-delegation-overview"
+
+[[check]]
+id = "AD-KRB-006"
+title = "Constrained delegation to sensitive SPNs (ldap, cifs on DCs, krbtgt)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Accounts can delegate to services on domain controllers (for example ldap, cifs or host) or to krbtgt."
+impact = "Delegating to a DC service as an admin gives control of the domain controller. Combined with protocol transition, the account alone is enough."
+remediation = [
+  "Remove domain controller services from msDS-AllowedToDelegateTo on these accounts.",
+  "Treat any account that must keep it as Tier 0.",
+]
+verify = "Get-ADObject -LDAPFilter '(msDS-AllowedToDelegateTo=*)' -Properties msDS-AllowedToDelegateTo"
+mitre = ["T1558"]
+
+[[check.detail.references]]
+title = "Kerberos constrained delegation overview"
+url = "https://learn.microsoft.com/windows-server/security/kerberos/kerberos-constrained-delegation-overview"
+
+[[check]]
+id = "AD-KRB-007"
+title = "Resource-based constrained delegation configured on sensitive objects"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "Resource-based constrained delegation (msDS-AllowedToActOnBehalfOfOtherIdentity) is set on domain controllers or other Tier 0 computers."
+impact = "The principals listed in that attribute can impersonate any user, including domain admins, to the Tier 0 computer. That is domain compromise."
+remediation = [
+  "Clear msDS-AllowedToActOnBehalfOfOtherIdentity on the listed computers unless a documented need exists.",
+  "Find out who set it, using replication metadata and security logs.",
+]
+verify = "Get-ADComputer -LDAPFilter '(msDS-AllowedToActOnBehalfOfOtherIdentity=*)' -Properties msDS-AllowedToActOnBehalfOfOtherIdentity"
+mitre = ["T1558", "T1098"]
+
+[[check.detail.references]]
+title = "Kerberos constrained delegation overview"
+url = "https://learn.microsoft.com/windows-server/security/kerberos/kerberos-constrained-delegation-overview"
+
+[[check]]
+id = "AD-KRB-008"
+title = "Accounts using DES encryption types"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Enabled user or computer accounts have a DES type (DES-CBC-CRC or DES-CBC-MD5) set in msDS-SupportedEncryptionTypes. This tells the domain controller that the account accepts Kerberos tickets encrypted with DES."
+impact = "DES uses a 56-bit key that can be brute forced in hours. If a DC still issues DES tickets for the account, a captured ticket gives up the account key, which can then be used to sign in as the account or forge tickets for its services."
+attack = [
+  "Signs in as any domain user and requests a service ticket for the account with DES as the only offered type.",
+  "Brute forces the DES key of the ticket offline.",
+  "Uses the key to forge service tickets or to sign in as the account.",
+]
+remediation = [
+  "Clear the DES bits in msDS-SupportedEncryptionTypes on each listed account and set AES128 and AES256 instead.",
+  "Reset the account password afterwards so AES keys exist for it.",
+  "Find the application that needed DES and update or retire it.",
+]
+frameworks = [
+  "NIST 800-53 SC-13",
+  "NIST 800-53 IA-5",
+]
+verify = '''
+Get-ADObject -LDAPFilter '(msDS-SupportedEncryptionTypes:1.2.840.113556.1.4.804:=3)' -Properties msDS-SupportedEncryptionTypes |
+  Select-Object Name, ObjectClass, msDS-SupportedEncryptionTypes'''
+mitre = ["T1558", "T1558.003"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1558: Steal or Forge Kerberos Tickets"
+url = "https://attack.mitre.org/techniques/T1558/"
+
+[[check.detail.references]]
+title = "Network security: Configure encryption types allowed for Kerberos"
+url = "https://learn.microsoft.com/windows/security/threat-protection/security-policy-settings/network-security-configure-encryption-types-allowed-for-kerberos"
+
+[[check]]
+id = "AD-KRB-009"
+title = "Accounts allowing RC4, or service accounts without AES set"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Enabled user or computer accounts, other than krbtgt, allow RC4 in msDS-SupportedEncryptionTypes, either alone or next to AES. User accounts with a service principal name (SPN) and no encryption types set are also listed, because domain controllers then issue their service tickets with RC4 by default."
+impact = "Service tickets encrypted with RC4 use the NT hash of the account password as the key. They are much faster to crack offline (Kerberoasting) than AES tickets, so a weak service account password is recovered quickly."
+attack = [
+  "Signs in as any domain user and requests an RC4 service ticket for the account's SPN.",
+  "Cracks the ticket offline to recover the account password.",
+  "Signs in as the service account.",
+]
+remediation = [
+  "Set msDS-SupportedEncryptionTypes to AES128 and AES256 (24) on each listed account, after checking that the service supports AES.",
+  "Reset the password of each user service account afterwards so AES keys exist for it.",
+  "Move user-based service accounts to group managed service accounts (gMSA).",
+  "Watch event 4769 for tickets still issued with RC4 (encryption type 0x17) before removing RC4 domain-wide.",
+]
+frameworks = [
+  "NIST 800-53 SC-13",
+  "NIST 800-53 IA-5",
+]
+verify = '''
+Get-ADObject -LDAPFilter '(msDS-SupportedEncryptionTypes:1.2.840.113556.1.4.804:=4)' -Properties msDS-SupportedEncryptionTypes |
+  Select-Object Name, ObjectClass, msDS-SupportedEncryptionTypes
+Get-ADUser -LDAPFilter '(&(servicePrincipalName=*)(|(!(msDS-SupportedEncryptionTypes=*))(msDS-SupportedEncryptionTypes=0)))' | Select-Object Name'''
+mitre = ["T1558.003", "T1558"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1558.003: Kerberoasting"
+url = "https://attack.mitre.org/techniques/T1558/003/"
+
+[[check.detail.references]]
+title = "Detect and remediate RC4 usage in Kerberos"
+url = "https://learn.microsoft.com/windows-server/security/kerberos/detect-remediate-rc4-kerberos"
+
+[[check]]
+id = "AD-KRB-010"
+title = "Kerberos encryption types allowed on domain controllers"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Checks the setting Network security: Configure encryption types allowed for Kerberos in the GPOs that apply to domain controllers. The check fails when no such GPO sets it, because DCs then accept RC4 by default, or when a GPO sets it with DES or RC4 allowed."
+impact = "While DCs accept RC4 or DES, they keep issuing tickets with these types to any account that allows them, and attackers can ask for them on purpose to get tickets that are faster to crack or forge."
+remediation = [
+  "Find the accounts and services that still use RC4 (event 4769 with encryption type 0x17) and move them to AES.",
+  "Then set Network security: Configure encryption types allowed for Kerberos to AES128 and AES256 only in a GPO linked to the Domain Controllers OU.",
+  "Remove DES and RC4 from any other GPO that applies to DCs.",
+]
+frameworks = [
+  "NIST 800-53 SC-13",
+]
+verify = '''
+# Run on a domain controller
+Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System\Kerberos\Parameters' -Name SupportedEncryptionTypes -ErrorAction SilentlyContinue'''
+mitre = ["T1558", "T1558.003"]
+
+[[check.detail.references]]
+title = "Network security: Configure encryption types allowed for Kerberos"
+url = "https://learn.microsoft.com/windows/security/threat-protection/security-policy-settings/network-security-configure-encryption-types-allowed-for-kerberos"
+
+[[check.detail.references]]
+title = "Detect and remediate RC4 usage in Kerberos"
+url = "https://learn.microsoft.com/windows-server/security/kerberos/detect-remediate-rc4-kerberos"
+
+[[check]]
+id = "AD-KRB-011"
+title = "Kerberos max ticket lifetime and renewal policy deviations"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Reads the Kerberos Policy section of GPOs linked to the domain and compares it with the defaults: user tickets 10 hours, renewal 7 days, service tickets 600 minutes and clock skew 5 minutes. A setting above the default, or set to 0 (no limit), is listed."
+impact = "Longer ticket lifetimes mean a stolen ticket stays usable for longer, and disabled or reset accounts keep access until their tickets expire. A larger clock skew lets replayed requests be accepted for longer."
+remediation = [
+  "In the GPO that sets them (usually the Default Domain Policy), bring the Kerberos policy settings back to the defaults or lower.",
+  "Do not set any of them to 0.",
+]
+frameworks = [
+  "NIST 800-53 IA-11",
+]
+verify = '''
+([xml](Get-GPOReport -Name 'Default Domain Policy' -ReportType Xml)).GPO.Computer.ExtensionData.Extension.Account |
+  Where-Object Type -eq 'Kerberos' | Select-Object Name, SettingNumber'''
+mitre = ["T1550.003"]
+
+[[check.detail.references]]
+title = "Maximum lifetime for user ticket"
+url = "https://learn.microsoft.com/windows/security/threat-protection/security-policy-settings/maximum-lifetime-for-user-ticket"
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1550.003: Pass the Ticket"
+url = "https://attack.mitre.org/techniques/T1550/003/"
+
+[[check]]
+id = "AD-KRB-012"
+title = "Duplicate SPNs"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "The same service principal name is registered on more than one account."
+impact = "Kerberos authentication to the service fails or falls back to NTLM, which weakens authentication and breaks services."
+remediation = [
+  "Keep each SPN on the one account that runs the service and remove it from the others.",
+]
+verify = "setspn -X -F"
+
+[[check]]
+id = "AD-KRB-013"
+title = "SPNs pointing at non-existent hosts (inventory)"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "User accounts have SPNs for host names that are not computers in the domain. DNS aliases (CNAMEs) for real servers also show here."
+impact = "SPNs for hosts that no longer exist are leftovers that keep the account Kerberoastable for no purpose; if the name is re-registered, tickets go to whoever holds it."
+remediation = [
+  "Remove SPNs for hosts that were decommissioned.",
+  "Keep SPNs that match a documented DNS alias.",
+]
+verify = "Get-ADUser -LDAPFilter '(servicePrincipalName=*)' -Properties ServicePrincipalName | Select-Object Name, ServicePrincipalName"
+mitre = ["T1558.003"]
+
+[[check]]
+id = "AD-KRB-014"
+title = "Accounts with \"Use only Kerberos DES\" flag"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Accounts are restricted to DES Kerberos encryption (\"Use only Kerberos DES encryption types\")."
+impact = "DES is broken; tickets for these accounts can be decrypted or forged. Modern domain controllers refuse DES, so the flag usually also points at forgotten configuration."
+remediation = [
+  "Clear \"Use only Kerberos DES encryption types\" and reset the account password so AES keys are created.",
+]
+verify = "Get-ADObject -LDAPFilter '(userAccountControl:1.2.840.113556.1.4.803:=2097152)'"
+mitre = ["T1558"]
+
+[[check]]
+id = "AD-KRB-015"
+title = "Kerberos armoring (FAST) / claims support configuration"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Checks whether a GPO that applies to domain controllers turns on KDC support for claims, compound authentication and Kerberos armoring. Without it, Kerberos armoring (FAST) is not available to clients."
+impact = "Without armoring, the pre-authentication data a client sends is protected only by its password. Someone who captures this traffic on the network can try to guess the password offline."
+remediation = [
+  "Check that all DCs run Windows Server 2012 or later.",
+  "Set KDC support for claims, compound authentication and Kerberos armoring to Supported in a GPO linked to the Domain Controllers OU.",
+  "Once clients support it, consider turning on Kerberos client support for claims, compound authentication and Kerberos armoring for them too.",
+]
+frameworks = [
+  "NIST 800-53 SC-8",
+]
+verify = '''
+# Run on a domain controller
+Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System\KDC\Parameters' -Name EnableCbacAndArmor -ErrorAction SilentlyContinue'''
+mitre = ["T1110"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1110: Brute Force"
+url = "https://attack.mitre.org/techniques/T1110/"
+
+[[check]]
+id = "AD-KRB-016"
+title = "Authentication policies and silos defined and applied to Tier 0"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Enabled admin accounts are not in an authentication policy silo, or are in a silo that is only audited and not enforced. The result also counts the authentication policies and silos that are defined."
+impact = "Without an enforced silo, an admin's password or Kerberos tickets work from any computer in the domain. If they are stolen from a workstation or server, the attacker can use them anywhere."
+attack = [
+  "Takes an admin's ticket or password hash from the memory of a workstation or server the admin used.",
+  "Uses it from another computer to reach domain controllers as that admin.",
+]
+remediation = [
+  "Create an authentication policy that limits Tier 0 accounts to sign-in from domain controllers and privileged access workstations.",
+  "Create an authentication policy silo with that policy, add the admin accounts and those computers to it, and assign the silo to them.",
+  "Run the silo in audit mode first, review the events, then set it to enforced.",
+  "Add admin accounts to Protected Users as well.",
+]
+frameworks = [
+  "NIST 800-53 AC-6",
+]
+verify = '''
+Get-ADAuthenticationPolicySilo -Filter * | Select-Object Name, Enforce
+Get-ADUser -Filter 'adminCount -eq 1' -Properties msDS-AssignedAuthNPolicySilo, msDS-AssignedAuthNPolicy |
+  Select-Object Name, msDS-AssignedAuthNPolicySilo, msDS-AssignedAuthNPolicy'''
+mitre = ["T1550.003", "T1078.002"]
+
+[[check.detail.references]]
+title = "Authentication policies and authentication policy silos"
+url = "https://learn.microsoft.com/windows-server/security/credentials-protection-and-management/authentication-policies-and-authentication-policy-silos"
+
+[[check.detail.references]]
+title = "Protected Users security group"
+url = "https://learn.microsoft.com/windows-server/security/credentials-protection-and-management/protected-users-security-group"
+
+[[check]]
+id = "AD-KRB-017"
+title = "Protected Users group membership coverage"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Enabled privileged accounts are not members of the Protected Users group."
+impact = "Protected Users blocks NTLM, DES and RC4 for the account, stops delegation and limits ticket lifetime to four hours. Without it, a stolen privileged credential has far more uses."
+remediation = [
+  "Add privileged user accounts to Protected Users, after testing the sign-ins they need.",
+  "Keep service accounts and break-glass accounts out of the group and protect them another way.",
+]
+frameworks = [
+  "NIST 800-53 AC-6",
+]
+verify = "Get-ADGroupMember 'Protected Users' | Select-Object SamAccountName"
+mitre = ["T1078.002", "T1550"]
+
+[[check]]
+id = "AD-KRB-018"
+title = "S4U2Self abuse exposure on computer accounts"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Computers other than domain controllers are trusted to authenticate for delegation (protocol transition)."
+impact = "Whoever controls such a computer can obtain a ticket as any user, including domain admins, to the services it may delegate to, without that user signing in."
+remediation = [
+  "Remove protocol transition unless the application requires it.",
+  "Limit msDS-AllowedToDelegateTo to the exact services needed, and add privileged accounts to Protected Users.",
+]
+verify = "Get-ADComputer -LDAPFilter '(userAccountControl:1.2.840.113556.1.4.803:=16777216)' -Properties msDS-AllowedToDelegateTo"
+cvss = "AV:N/AC:L/PR:H/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1558", "T1550.003"]
+
+[[check]]
+id = "AD-KRB-019"
+title = "krbtgt never rotated or allowing DES/RC4"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Checks the krbtgt account: its password has not changed since the account was created, or its msDS-SupportedEncryptionTypes allows DES or RC4. The age of the krbtgt password itself is checked by AD-PRIV-021."
+impact = "The krbtgt key signs every Kerberos ticket in the domain. If it has never changed, any copy of its hash taken since the domain was built, from a backup or an old compromise, can still forge tickets for any account (golden ticket). If RC4 is allowed, forged tickets can use RC4 and blend in with normal traffic."
+attack = [
+  "Obtains the krbtgt hash once, for example from a DC backup or a past DCSync.",
+  "Forges a ticket-granting ticket for any account, with any group membership.",
+  "Uses the forged ticket to access any service in the domain.",
+]
+remediation = [
+  "Reset the krbtgt password twice, waiting for replication and the maximum ticket lifetime (10 hours by default) between the two resets.",
+  "Set msDS-SupportedEncryptionTypes on krbtgt to AES only (24), or clear it once DCs are limited to AES by policy.",
+  "Plan to reset the krbtgt password regularly, for example every 180 days.",
+]
+frameworks = [
+  "NIST 800-53 SC-12",
+  "NIST 800-53 IA-5",
+]
+verify = '''
+Get-ADUser krbtgt -Properties PasswordLastSet, whenCreated, msDS-SupportedEncryptionTypes |
+  Select-Object PasswordLastSet, whenCreated, msDS-SupportedEncryptionTypes'''
+mitre = ["T1558.001"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1558.001: Golden Ticket"
+url = "https://attack.mitre.org/techniques/T1558/001/"
+
+[[check.detail.references]]
+title = "AD Forest Recovery: Resetting the krbtgt password"
+url = "https://learn.microsoft.com/windows-server/identity/ad-ds/manage/forest-recovery-guide/ad-forest-recovery-reset-the-krbtgt-password"
+
+[[check]]
+id = "AD-KRB-020"
+title = "Kerberos audit events enabled (4768/4769/4771)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "On each domain controller, the audit subcategories Kerberos Authentication Service (events 4768 and 4771) and Kerberos Service Ticket Operations (event 4769) must log both success and failure."
+impact = "Without these events, Kerberoasting, AS-REP roasting, password guessing against Kerberos and use of forged tickets leave no trace on the domain controllers."
+remediation = [
+  "In a GPO linked to the Domain Controllers OU, set Advanced Audit Policy Configuration, Account Logon, Audit Kerberos Authentication Service and Audit Kerberos Service Ticket Operations to Success and Failure.",
+  "Make sure the security log is large enough and is forwarded to a central log store.",
+]
+frameworks = [
+  "NIST 800-53 AU-2",
+  "NIST 800-53 AU-12",
+]
+verify = '''
+# Run on a domain controller
+auditpol /get /subcategory:"Kerberos Authentication Service","Kerberos Service Ticket Operations"'''
+mitre = ["T1558.003", "T1110.003"]
+
+[[check.detail.references]]
+title = "Audit policy recommendations"
+url = "https://learn.microsoft.com/windows-server/identity/ad-ds/plan/security-best-practices/audit-policy-recommendations"
+
+[[check.detail.references]]
+title = "Event 4768: A Kerberos authentication ticket (TGT) was requested"
+url = "https://learn.microsoft.com/en-us/previous-versions/windows/it-pro/windows-10/security/threat-protection/auditing/event-4768"
+
+[[check.detail.references]]
+title = "Event 4769: A Kerberos service ticket was requested"
+url = "https://learn.microsoft.com/en-us/previous-versions/windows/it-pro/windows-10/security/threat-protection/auditing/event-4769"
+
+[[check.detail.references]]
+title = "Event 4771: Kerberos pre-authentication failed"
+url = "https://learn.microsoft.com/en-us/previous-versions/windows/it-pro/windows-10/security/threat-protection/auditing/event-4771"

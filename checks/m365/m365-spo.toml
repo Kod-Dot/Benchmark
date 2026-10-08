@@ -1,0 +1,329 @@
+# M365-SPO: SharePoint Online and OneDrive
+
+area = "M365-SPO"
+
+[[check]]
+id = "M365-SPO-001"
+title = "External sharing level for tenant and per site"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "The tenant's SharePoint sharing level allows Anyone links (externalUserAndGuestSharing), or a site does."
+impact = "Anyone links work for whoever holds them, with no sign-in, so a forwarded or leaked link exposes the file to the world."
+remediation = [
+  "Lower the organization-level sharing to New and existing guests, and allow Anyone links only on sites that need them.",
+]
+verify = "Get-SPOTenant | Select-Object SharingCapability; Get-SPOSite -Limit All | Select-Object Url, SharingCapability"
+
+[[check.detail.references]]
+title = "SharePoint and OneDrive sharing settings"
+url = "https://learn.microsoft.com/sharepoint/turn-external-sharing-on-or-off"
+
+[[check]]
+id = "M365-SPO-002"
+title = "\"Anyone\" links allowed, default link type and expiry"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "With Anyone links allowed, they are the default link type, or they never expire or last more than 30 days."
+impact = "Users create anonymous links without meaning to, and those links stay valid indefinitely."
+remediation = [
+  "Set the default link to Specific people or People in the organization, and require Anyone links to expire within 30 days.",
+]
+verify = "Get-SPOTenant | Select-Object DefaultSharingLinkType, RequireAnonymousLinksExpireInDays"
+
+[[check.detail.references]]
+title = "SharePoint and OneDrive sharing settings"
+url = "https://learn.microsoft.com/sharepoint/turn-external-sharing-on-or-off"
+
+[[check]]
+id = "M365-SPO-003"
+title = "Guest access expiration and re-authentication"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Guest access to sites does not expire, or guests are not asked to re-verify their email address."
+impact = "Guests keep access long after the collaboration ends, and a guest account taken over elsewhere keeps working."
+remediation = [
+  "Turn on guest access expiration (for example 60 days) and require re-verification with a code (for example every 30 days).",
+]
+verify = "Get-SPOTenant | Select-Object ExternalUserExpirationRequired, ExternalUserExpireInDays, EmailAttestationRequired, EmailAttestationReAuthDays"
+
+[[check.detail.references]]
+title = "Manage guest access expiration"
+url = "https://learn.microsoft.com/sharepoint/turn-external-sharing-on-or-off#guest-access-expiration"
+
+[[check]]
+id = "M365-SPO-004"
+title = "Sharing restricted to allowed domains"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "External sharing is on and not limited by an allowed or blocked domain list."
+impact = "Files can be shared with any outside domain, including personal mail providers and look-alike domains."
+remediation = [
+  "Limit sharing to the partner domains you work with, or at least block personal mail domains.",
+]
+verify = "Invoke-MgGraphRequest GET v1.0/admin/sharepoint/settings"
+
+[[check.detail.references]]
+title = "Restrict sharing by domain"
+url = "https://learn.microsoft.com/sharepoint/restricted-domains-sharing"
+
+[[check]]
+id = "M365-SPO-005"
+title = "Sites with \"Everyone except external users\" permissions on sensitive libraries"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "A site grants access to Everyone or Everyone except external users. Up to 200 sites are read."
+impact = "Every account in the organization can open the content, and Copilot and search show it to everyone."
+remediation = [
+  "Remove the Everyone claims from the site and its libraries and grant access to named groups instead.",
+  "Hide the Everyone claims from the people picker (ShowEveryoneExceptExternalUsersClaim).",
+]
+verify = "Get-SPOUser -Site <url> -Limit All | Where-Object LoginName -match 'spo-grid-all-users|c:0\\(\\.s\\|true'"
+
+[[check.detail.references]]
+title = "Data access governance reports"
+url = "https://learn.microsoft.com/sharepoint/data-access-governance-reports"
+
+[[check]]
+id = "M365-SPO-006"
+title = "Legacy auth to SharePoint allowed"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "SharePoint accepts legacy authentication protocols."
+impact = "Apps can sign in with only a password, which bypasses Conditional Access MFA."
+remediation = [
+  "Turn off apps that don't use modern authentication in the SharePoint admin center (Set-SPOTenant -LegacyAuthProtocolsEnabled $false).",
+]
+verify = "Invoke-MgGraphRequest GET v1.0/admin/sharepoint/settings"
+mitre = ["T1078.004"]
+
+[[check.detail.references]]
+title = "Control access from apps without modern authentication"
+url = "https://learn.microsoft.com/sharepoint/control-access-from-apps-that-dont-use-modern-authentication"
+
+[[check]]
+id = "M365-SPO-007"
+title = "Unmanaged device access policy (limited/blocked)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Unmanaged devices have full access to SharePoint and OneDrive (ConditionalAccessPolicy AllowFullAccess)."
+impact = "Company files can be downloaded and synced to personal and public computers."
+remediation = [
+  "Allow limited, web-only access from unmanaged devices, or block it.",
+]
+verify = "Get-SPOTenant | Select-Object ConditionalAccessPolicy"
+
+[[check.detail.references]]
+title = "Control access from unmanaged devices"
+url = "https://learn.microsoft.com/sharepoint/control-access-from-unmanaged-devices"
+
+[[check]]
+id = "M365-SPO-008"
+title = "Idle session sign-out"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Idle session sign-out for SharePoint and OneDrive in the browser is off."
+impact = "Sessions on shared or public computers stay open for the next person."
+remediation = [
+  "Turn on idle session sign-out (for example after one hour).",
+]
+verify = "Invoke-MgGraphRequest GET v1.0/admin/sharepoint/settings"
+
+[[check.detail.references]]
+title = "Idle session sign-out"
+url = "https://learn.microsoft.com/sharepoint/sign-out-inactive-users"
+
+[[check]]
+id = "M365-SPO-009"
+title = "OneDrive sync restricted to domain-joined/Entra-joined devices"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "OneDrive sync is not limited to computers joined to the organization's domains."
+impact = "Users can sync complete libraries of company files to personal computers."
+remediation = [
+  "Allow syncing only on computers joined to specific domains.",
+]
+verify = "Invoke-MgGraphRequest GET v1.0/admin/sharepoint/settings"
+
+[[check.detail.references]]
+title = "Allow syncing only on domain-joined computers"
+url = "https://learn.microsoft.com/sharepoint/allow-syncing-only-on-specific-domains"
+
+[[check]]
+id = "M365-SPO-010"
+title = "Default sharing link permission (view vs edit)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "The default sharing link gives edit permission, or is an Anyone link."
+impact = "Every quick share grants more than most recipients need."
+remediation = [
+  "Set the default link permission to View and the default link type to Specific people or the organization.",
+]
+verify = "Get-SPOTenant | Select-Object DefaultSharingLinkType, DefaultLinkPermission"
+
+[[check.detail.references]]
+title = "SharePoint and OneDrive sharing settings"
+url = "https://learn.microsoft.com/sharepoint/turn-external-sharing-on-or-off"
+
+[[check]]
+id = "M365-SPO-011"
+title = "Site collection admins inventory (orphaned or external admins)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "A site collection administrator is an external user or an account that no longer exists in Entra ID. Up to 200 sites are read."
+impact = "External admins control the whole site, and orphaned entries hide who really administers it."
+remediation = [
+  "Remove external and orphaned site collection administrators and name internal owners.",
+]
+verify = "Get-SPOUser -Site <url> -Limit All | Where-Object IsSiteAdmin"
+
+[[check.detail.references]]
+title = "Get-SPOTenant"
+url = "https://learn.microsoft.com/powershell/module/sharepoint-online/get-spotenant"
+
+[[check]]
+id = "M365-SPO-012"
+title = "Sites without owners"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "A site has no owner, or its Microsoft 365 group has no owner."
+impact = "Nobody reviews who has access or answers for the content."
+remediation = [
+  "Assign at least two owners, and use a group ownership policy.",
+]
+verify = "Get-SPOSite -Limit All | Select-Object Url, Owner, GroupId"
+
+[[check.detail.references]]
+title = "Get-SPOTenant"
+url = "https://learn.microsoft.com/powershell/module/sharepoint-online/get-spotenant"
+
+[[check]]
+id = "M365-SPO-013"
+title = "Infected file download blocked"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Users can download files that Defender for Office 365 detected as malicious (DisallowInfectedFileDownload is false)."
+impact = "Malware found in SharePoint, OneDrive or Teams can still be downloaded and run."
+remediation = [
+  "Set DisallowInfectedFileDownload to true.",
+]
+verify = "Get-SPOTenant | Select-Object DisallowInfectedFileDownload"
+
+[[check.detail.references]]
+title = "Safe Attachments for SharePoint, OneDrive and Teams"
+url = "https://learn.microsoft.com/defender-office-365/safe-attachments-for-spo-odfb-teams-about"
+
+[[check]]
+id = "M365-SPO-014"
+title = "Custom script allowed on sites"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "A site allows custom script (DenyAddAndCustomizePages is Disabled)."
+impact = "Site owners can add script that runs in every visitor's session, a way to steal sessions or data."
+remediation = [
+  "Block custom script on the site (Set-SPOSite -DenyAddAndCustomizePages $true).",
+]
+verify = "Get-SPOSite -Limit All | Select-Object Url, DenyAddAndCustomizePages"
+
+[[check.detail.references]]
+title = "Allow or prevent custom script"
+url = "https://learn.microsoft.com/sharepoint/allow-or-prevent-custom-script"
+
+[[check]]
+id = "M365-SPO-015"
+title = "Site creation by users"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Users can create SharePoint sites themselves."
+impact = "Sites appear without naming, classification or owners, and sharing settings follow the user's choice."
+remediation = [
+  "Turn off user site creation, or use a request process with templates and labels.",
+]
+verify = "Invoke-MgGraphRequest GET v1.0/admin/sharepoint/settings"
+
+[[check.detail.references]]
+title = "Manage site creation"
+url = "https://learn.microsoft.com/sharepoint/manage-site-creation"
+
+[[check]]
+id = "M365-SPO-016"
+title = "OneDrive retention for departed users"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "A departed user's OneDrive is kept fewer than 90 days."
+impact = "Files may be gone before a manager, legal hold or investigation needs them."
+remediation = [
+  "Set OneDrive retention for deleted users to at least 90 days, or cover OneDrive with a retention policy.",
+]
+verify = "Invoke-MgGraphRequest GET v1.0/admin/sharepoint/settings"
+
+[[check.detail.references]]
+title = "OneDrive retention"
+url = "https://learn.microsoft.com/sharepoint/set-retention-and-deletion"
+
+[[check]]
+id = "M365-SPO-017"
+title = "Sensitivity labels for sites applied"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "No SharePoint site has a sensitivity label."
+impact = "Privacy, guest access and unmanaged-device access are set site by site rather than enforced by the label."
+remediation = [
+  "Enable sensitivity labels for groups and sites and require or default a label on new sites.",
+]
+verify = "Get-SPOSite -Limit All | Select-Object Url, SensitivityLabel"
+
+[[check.detail.references]]
+title = "Sensitivity labels for sites"
+url = "https://learn.microsoft.com/purview/sensitivity-labels-teams-groups-sites"
+
+[[check]]
+id = "M365-SPO-018"
+title = "Oversharing report summary (sites with most broad grants)"
+status = "implemented"
+severity = "info"
+
+[check.detail]
+description = "Ranks sites by oversharing: grants to Everyone or Everyone except external users, and Anyone links allowed."
+impact = "Overshared sites are where Copilot and search expose content to people who should not see it."
+remediation = [
+  "Review the top sites with their owners and remove the broad grants.",
+]
+verify = "SharePoint admin center > Reports > Data access governance"
+
+[[check.detail.references]]
+title = "Data access governance reports"
+url = "https://learn.microsoft.com/sharepoint/data-access-governance-reports"

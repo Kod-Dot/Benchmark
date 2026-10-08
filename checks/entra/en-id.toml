@@ -1,0 +1,376 @@
+# EN-ID: Identities and accounts
+
+area = "EN-ID"
+
+[[check]]
+id = "EN-ID-001"
+title = "Stale members (no sign-in in 90 days, using signInActivity)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Enabled member users have not signed in, interactively or non-interactively, for more than 90 days, or have never signed in and were created more than 90 days ago."
+impact = "Unused accounts are rarely watched, so a password spray or credential leak against them goes unnoticed and gives an attacker a working account."
+attack = [
+  "Finds or guesses the password of an unused account, for example through password spraying.",
+  "Signs in; nobody notices because the owner never uses the account.",
+  "Uses the account's group memberships and app access as a foothold.",
+]
+remediation = [
+  "Review the listed accounts with their managers and disable those that are no longer needed, then delete them after a grace period.",
+  "Set up a recurring access review or an inactive users workflow in Microsoft Entra ID Governance so stale accounts are found automatically.",
+]
+verify = "Get-MgUser -All -Filter \"userType eq 'Member' and accountEnabled eq true\" -Property displayName,userPrincipalName,createdDateTime,signInActivity | Select-Object UserPrincipalName, CreatedDateTime, @{n='LastSignIn';e={$_.SignInActivity.LastSignInDateTime}}, @{n='LastNonInteractive';e={$_.SignInActivity.LastNonInteractiveSignInDateTime}}"
+cvss = "AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:L/A:N"
+mitre = ["T1078.004"]
+
+[[check.detail.references]]
+title = "How to manage inactive user accounts"
+url = "https://learn.microsoft.com/entra/identity/monitoring-health/howto-manage-inactive-user-accounts"
+
+[[check]]
+id = "EN-ID-002"
+title = "Stale guests and guests that never redeemed invitations"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Guest invitations have stayed unredeemed for more than 30 days, or enabled guests have not signed in for more than 90 days."
+impact = "Old invitations can still be redeemed by whoever gets hold of the invitation link or mailbox, and unused guests keep access to shared resources long after the collaboration has ended."
+attack = [
+  "Gets access to the external mailbox that received an old invitation, or to an unused guest's home account.",
+  "Redeems the invitation or signs in as the guest.",
+  "Reads the Teams, SharePoint sites and apps the guest still has access to.",
+]
+remediation = [
+  "Delete invitations that were never redeemed and disable or remove guests that have not signed in for 90 days.",
+  "Configure a recurring access review for guest users in Identity Governance > Access reviews so guests are removed when they are no longer needed.",
+]
+verify = "Get-MgUser -All -Filter \"userType eq 'Guest'\" -Property displayName,mail,externalUserState,createdDateTime,signInActivity | Select-Object Mail, ExternalUserState, CreatedDateTime, @{n='LastSignIn';e={$_.SignInActivity.LastSignInDateTime}}"
+mitre = ["T1078.004"]
+
+[[check.detail.references]]
+title = "How to manage inactive user accounts"
+url = "https://learn.microsoft.com/entra/identity/monitoring-health/howto-manage-inactive-user-accounts"
+
+[[check.detail.references]]
+title = "Manage guest access with access reviews"
+url = "https://learn.microsoft.com/entra/id-governance/manage-guest-access-with-access-reviews"
+
+[[check]]
+id = "EN-ID-003"
+title = "Guests with privileged roles"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Guest users hold privileged directory roles, either as active or as PIM-eligible assignments."
+impact = "The security of these admin roles depends on another organization's account, password policy and MFA, which the tenant does not control. A compromise of the guest's home account gives administrative access to this tenant."
+attack = [
+  "Compromises the guest's account in its home tenant or email provider.",
+  "Signs in to this tenant as the guest.",
+  "Uses the privileged role to change settings, add credentials or create accounts.",
+]
+remediation = [
+  "In the Entra admin center, go to Identity > Roles & admins and remove privileged role assignments from guest users.",
+  "If an external person needs administrative access, create a member account in this tenant for them that is covered by your own MFA and Conditional Access policies.",
+]
+verify = "Get-MgRoleManagementDirectoryRoleAssignment -All -ExpandProperty Principal | Where-Object { $_.Principal.AdditionalProperties.userType -eq 'Guest' } | Select-Object RoleDefinitionId, PrincipalId"
+cvss = "AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:N"
+mitre = ["T1078.004"]
+
+[[check.detail.references]]
+title = "Best practices for Microsoft Entra roles"
+url = "https://learn.microsoft.com/entra/identity/role-based-access-control/best-practices"
+
+[[check]]
+id = "EN-ID-004"
+title = "Disabled users still assigned licenses or roles"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Disabled user accounts still hold directory roles or assigned licences."
+impact = "Licences are paid for but not used, and a role on a disabled account becomes usable again as soon as someone re-enables the account."
+remediation = [
+  "Remove directory role assignments from disabled users in Identity > Roles & admins.",
+  "Remove licences from disabled users, or use group-based licensing tied to an active-user group so licences follow account status.",
+]
+verify = "Get-MgUser -All -Filter 'accountEnabled eq false' -Property userPrincipalName,assignedLicenses | Where-Object { $_.AssignedLicenses.Count -gt 0 } | Select-Object UserPrincipalName"
+mitre = ["T1078.004"]
+
+[[check.detail.references]]
+title = "Best practices for Microsoft Entra roles"
+url = "https://learn.microsoft.com/entra/identity/role-based-access-control/best-practices"
+
+[[check]]
+id = "EN-ID-005"
+title = "Accounts with password never expires (Entra password policy)"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "An enabled cloud-only account has the DisablePasswordExpiration password policy set."
+impact = "The account is outside the tenant's password expiry policy; set per user, it is easy to forget and often marks a service account with a static password."
+remediation = [
+  "Clear DisablePasswordExpiration, or move the workload to a managed identity or service principal.",
+  "If the tenant does not expire passwords by design, document the exception.",
+]
+verify = "Get-MgUser -All -Property UserPrincipalName,PasswordPolicies | Where-Object PasswordPolicies -match DisablePasswordExpiration"
+mitre = ["T1078.004"]
+
+[[check]]
+id = "EN-ID-006"
+title = "Cloud-only vs. synced account distribution"
+status = "implemented"
+severity = "info"
+
+[check.detail]
+description = "Inventory of member accounts that are cloud-only and accounts that are synchronized from on-premises Active Directory."
+remediation = [
+  "No action is needed. Use the split to see how much of the tenant depends on on-premises Active Directory and its synchronization server.",
+]
+verify = "Get-MgUser -All -Filter \"userType eq 'Member'\" -Property userPrincipalName,onPremisesSyncEnabled | Group-Object OnPremisesSyncEnabled | Select-Object Name, Count"
+
+[[check.detail.references]]
+title = "Protect Microsoft 365 from on-premises attacks"
+url = "https://learn.microsoft.com/entra/architecture/protect-m365-from-on-premises-attacks"
+
+[[check]]
+id = "EN-ID-007"
+title = "Synced accounts holding Entra privileged roles (should be cloud-only)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "User accounts synchronized from on-premises Active Directory hold privileged Entra roles, either as active or as PIM-eligible assignments."
+impact = "A compromise of on-premises Active Directory, for example a domain admin resetting the account's password, carries over into administrative control of the Entra tenant and Microsoft 365."
+attack = [
+  "Compromises on-premises Active Directory.",
+  "Resets the password of, or takes over, the synchronized account that holds an Entra role.",
+  "Waits for the change to sync and signs in to Entra ID with administrative rights.",
+]
+remediation = [
+  "Create dedicated cloud-only accounts for administrators, with phishing-resistant MFA.",
+  "Move the privileged role assignments to the cloud-only accounts in Identity > Roles & admins and remove them from the synchronized accounts.",
+]
+verify = "Get-MgRoleManagementDirectoryRoleAssignment -All -ExpandProperty Principal | Where-Object { $_.Principal.AdditionalProperties.onPremisesSyncEnabled } | Select-Object RoleDefinitionId, PrincipalId"
+cvss = "AV:N/AC:H/PR:H/UI:N/S:C/C:H/I:H/A:N"
+mitre = ["T1078.004", "T1078.002"]
+
+[[check.detail.references]]
+title = "Protect Microsoft 365 from on-premises attacks"
+url = "https://learn.microsoft.com/entra/architecture/protect-m365-from-on-premises-attacks"
+
+[[check.detail.references]]
+title = "Best practices for Microsoft Entra roles"
+url = "https://learn.microsoft.com/entra/identity/role-based-access-control/best-practices"
+
+[[check]]
+id = "EN-ID-008"
+title = "Break-glass accounts: existence, excluded from CA correctly, monitored, FIDO2"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "No emergency access (break-glass) account was found: no enabled cloud-only Global Administrator is excluded from every enabled Conditional Access policy. The check is not assessed when the tenant has no enabled Conditional Access policy."
+impact = "A broken Conditional Access policy, an MFA service outage or a federation failure can lock every administrator out of the tenant, with recovery only through Microsoft support."
+remediation = [
+  "Create two cloud-only accounts on the tenant's onmicrosoft.com domain and assign them the Global Administrator role permanently.",
+  "Exclude both accounts from every Conditional Access policy, or protect them with FIDO2 security keys under a dedicated policy, and store the credentials securely.",
+  "Alert on every sign-in of these accounts and test them on a regular schedule.",
+]
+verify = "Get-MgIdentityConditionalAccessPolicy -All | Where-Object State -eq 'enabled' | Select-Object DisplayName, @{n='ExcludeUsers';e={$_.Conditions.Users.ExcludeUsers -join ','}}"
+cvss = "AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:N/A:H"
+frameworks = [
+  "CIS Microsoft 365 1.1.2",
+]
+
+[[check.detail.references]]
+title = "Manage emergency access admin accounts"
+url = "https://learn.microsoft.com/entra/identity/role-based-access-control/security-emergency-access"
+
+[[check]]
+id = "EN-ID-009"
+title = "Shared mailbox / resource accounts with sign-in enabled"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "A shared, room, equipment or scheduling mailbox is backed by an Entra account with sign-in enabled."
+impact = "Resource mailboxes are opened through permissions, not their own password; an enabled account with a known or weak password is a mailbox and a sign-in nobody owns."
+remediation = [
+  "Block sign-in for the account (accountEnabled false).",
+  "Grant access through mailbox permissions instead.",
+]
+verify = "Get-EXOMailbox -RecipientTypeDetails SharedMailbox | ForEach-Object { Get-MgUser -UserId $_.ExternalDirectoryObjectId -Property AccountEnabled }"
+mitre = ["T1078.004"]
+
+[[check.detail.references]]
+title = "Block sign-in for shared mailbox accounts"
+url = "https://learn.microsoft.com/microsoft-365/admin/email/about-shared-mailboxes"
+
+[[check]]
+id = "EN-ID-010"
+title = "Users with on-premisesImmutableId mismatches / soft-match risk"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "A cloud-only account (not synced) has an on-premises immutable ID set."
+impact = "An on-premises account with the same source anchor will hard-match and take over the cloud account at the next sync, including its roles and mailbox."
+remediation = [
+  "Clear onPremisesImmutableId on cloud-only accounts that should stay cloud-only.",
+  "Block hard match takeover of admins (BlockCloudObjectTakeoverThroughHardMatch).",
+]
+verify = "Get-MgUser -All -Property UserPrincipalName,OnPremisesImmutableId,OnPremisesSyncEnabled | Where-Object { $_.OnPremisesImmutableId -and -not $_.OnPremisesSyncEnabled }"
+mitre = ["T1098"]
+
+[[check.detail.references]]
+title = "Entra Connect hard match and soft match"
+url = "https://learn.microsoft.com/entra/identity/hybrid/connect/how-to-connect-syncservice-features"
+
+[[check]]
+id = "EN-ID-011"
+title = "Accounts with insecure legacy authentication sign-ins in the last 30 days"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Users signed in successfully over legacy authentication protocols (Exchange ActiveSync, IMAP4, POP3, authenticated SMTP, MAPI over HTTP, Outlook Anywhere, Exchange Web Services, Autodiscover, Offline Address Book, Exchange Online PowerShell or other clients) in the last 30 days of sign-in logs. The finding lists each user with the protocols used and the number of sign-ins."
+impact = "Legacy protocols send only a user name and password and cannot ask for MFA, so for these accounts a guessed or leaked password is enough to get in, even where MFA is required for other sign-ins."
+attack = [
+  "Sprays common passwords against the listed accounts over IMAP, POP3 or SMTP, where MFA is not asked.",
+  "Signs in with a working password and reads or sends mail as the user.",
+  "Uses the mailbox to phish colleagues or reset passwords on other services.",
+]
+remediation = [
+  "Contact the listed users and find the client or device that still uses the protocol, then move it to modern authentication (for example Outlook or a current mail app with OAuth).",
+  "Create a Conditional Access policy that blocks legacy authentication for all users, starting in report-only mode to find remaining clients.",
+  "Turn off the unused protocols per mailbox or tenant-wide in Exchange Online (for example POP, IMAP and authenticated SMTP).",
+]
+verify = "$since = (Get-Date).AddDays(-30).ToString('yyyy-MM-ddTHH:mm:ssZ'); Get-MgAuditLogSignIn -All -Filter \"createdDateTime ge $since and status/errorCode eq 0\" | Where-Object { $_.ClientAppUsed -notin 'Browser','Mobile Apps and Desktop clients' } | Group-Object UserPrincipalName, ClientAppUsed | Select-Object Name, Count"
+cvss = "AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:L/A:N"
+mitre = ["T1078.004", "T1110.003"]
+
+[[check.detail.references]]
+title = "Block legacy authentication with Conditional Access"
+url = "https://learn.microsoft.com/entra/identity/conditional-access/policy-block-legacy-authentication"
+
+[[check]]
+id = "EN-ID-012"
+title = "Risky users not remediated (Identity Protection)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Identity Protection has flagged users as at risk, and the risk has not been remediated or dismissed."
+impact = "An at-risk user is one whose credentials may be in an attacker's hands, for example after a leaked password or a suspicious sign-in. Until the risk is handled the attacker may still be using the account."
+attack = [
+  "Gets the user's password from a leak, phishing or password spraying.",
+  "Signs in; Identity Protection raises the user risk.",
+  "Keeps using the account because nobody resets the password or reviews the risk.",
+]
+remediation = [
+  "In the Entra admin center, go to Protection > Identity Protection > Risky users and investigate each user's risk detections.",
+  "For real compromises, reset the password, revoke sessions and confirm compromise; for false positives, dismiss the risk.",
+  "Add a Conditional Access policy on user risk so users remediate their own risk with a secure password change.",
+]
+verify = "Get-MgRiskyUser -All -Filter \"riskState eq 'atRisk'\" | Select-Object UserPrincipalName, RiskLevel, RiskState, RiskLastUpdatedDateTime"
+cvss = "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:L/A:N"
+mitre = ["T1078.004"]
+
+[[check.detail.references]]
+title = "Investigate risk with Microsoft Entra ID Protection"
+url = "https://learn.microsoft.com/entra/id-protection/howto-identity-protection-investigate-risk"
+
+[[check.detail.references]]
+title = "Remediate risks and unblock users"
+url = "https://learn.microsoft.com/entra/id-protection/howto-identity-protection-remediate-unblock"
+
+[[check]]
+id = "EN-ID-013"
+title = "Users at high user risk with no policy response"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Users are at high user risk while no enabled Conditional Access policy acts on high user risk."
+impact = "High user risk means Identity Protection is confident the account is compromised. Without a policy, the attacker can keep signing in and nothing forces a password change or blocks access."
+attack = [
+  "Obtains the user's credentials, for example from a leak Microsoft also detects.",
+  "Signs in; the user is marked high risk but no policy reacts.",
+  "Keeps using the account for mailbox access or further phishing.",
+]
+remediation = [
+  "Investigate and remediate the listed high-risk users in Protection > Identity Protection > Risky users.",
+  "Create a Conditional Access policy for all users with the condition User risk: High and the grant Require password change together with multifactor authentication, starting in report-only mode.",
+]
+verify = "Get-MgRiskyUser -All -Filter \"riskLevel eq 'high'\" | Select-Object UserPrincipalName, RiskLevel, RiskState"
+cvss = "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:L/A:N"
+mitre = ["T1078.004"]
+frameworks = [
+  "Microsoft Secure Score",
+]
+
+[[check.detail.references]]
+title = "Require secure password change for elevated user risk"
+url = "https://learn.microsoft.com/entra/identity/conditional-access/policy-risk-based-user"
+
+[[check.detail.references]]
+title = "Remediate risks and unblock users"
+url = "https://learn.microsoft.com/entra/id-protection/howto-identity-protection-remediate-unblock"
+
+[[check]]
+id = "EN-ID-014"
+title = "Duplicate UPN/proxyAddresses conflicts"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Sync reports a UPN or proxy address conflict for an account, or two accounts share a proxy address."
+impact = "Mail for the shared address can go to the wrong account, and sync conflicts leave accounts out of date."
+remediation = [
+  "Fix the duplicate value on the on-premises object or in Exchange, and check the sync errors are gone.",
+]
+verify = "Get-MgUser -All -Property UserPrincipalName,ProxyAddresses,OnPremisesProvisioningErrors"
+
+[[check.detail.references]]
+title = "Duplicate attribute resiliency"
+url = "https://learn.microsoft.com/entra/identity/hybrid/connect/how-to-connect-syncservice-duplicate-attribute-resiliency"
+
+[[check]]
+id = "EN-ID-015"
+title = "Users with directly assigned (not group-based) licenses (hygiene)"
+status = "implemented"
+severity = "info"
+
+[check.detail]
+description = "Lists licensed users with at least one directly assigned licence, from licenseAssignmentStates."
+impact = "Directly assigned licences are not removed when people change role or leave a group, so licences and the services they bring drift."
+remediation = [
+  "Assign licences through groups and remove the direct assignments.",
+]
+verify = "Get-MgUser -All -Property UserPrincipalName,LicenseAssignmentStates"
+
+[[check.detail.references]]
+title = "Group-based licensing"
+url = "https://learn.microsoft.com/entra/identity/users/licensing-groups-assign"
+
+[[check]]
+id = "EN-ID-016"
+title = "Account lifecycle: access reviews configured for guests"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "The tenant has guest accounts and no active access review covers guests."
+impact = "Guests keep their access after the project or partnership ends, often for years."
+remediation = [
+  "Create a recurring access review for guest users in groups and apps, with auto-apply to remove denied guests.",
+]
+verify = "Get-MgIdentityGovernanceAccessReviewDefinition"
+
+[[check.detail.references]]
+title = "Access reviews"
+url = "https://learn.microsoft.com/entra/id-governance/access-reviews-overview"

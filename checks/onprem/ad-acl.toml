@@ -1,0 +1,516 @@
+# AD-ACL: Dangerous ACLs and delegation of control
+
+area = "AD-ACL"
+
+[[check]]
+id = "AD-ACL-001"
+title = "Non-default principals with GenericAll / GenericWrite / WriteDACL / WriteOwner on the domain root"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "Principals other than the built-in administrative groups have GenericAll, GenericWrite, WriteDACL or WriteOwner on the domain root object."
+impact = "These rights let the principal grant itself DCSync or change domain-wide settings, which leads to full domain compromise."
+remediation = [
+  "Remove the access control entries from the domain root for every principal that does not need them.",
+  "Delegate specific tasks on OUs instead of the domain root.",
+]
+frameworks = [
+  "ANSSI vuln1_permissions_domain",
+]
+cvss = "AV:N/AC:L/PR:H/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1098", "T1484.001"]
+
+[[check.detail.references]]
+title = "Delegating administration by using OU objects"
+url = "https://learn.microsoft.com/windows-server/identity/ad-ds/plan/delegating-administration-by-using-ou-objects"
+
+[[check]]
+id = "AD-ACL-002"
+title = "DCSync rights (Replicating Directory Changes / All / In Filtered Set) held by non-DC principals"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "Principals other than domain controllers and the built-in administrative groups hold the replication rights Replicating Directory Changes and Replicating Directory Changes All on the domain root. Together these rights let a principal request password data from a domain controller exactly as another DC would."
+impact = "Whoever controls one of these principals can read the password hash of every account, including krbtgt, without touching a domain controller. That is full domain compromise and enables golden tickets."
+attack = [
+  "Takes control of a principal that holds the rights, for example a service account.",
+  "Asks a domain controller to replicate account secrets (DCSync).",
+  "Uses the krbtgt hash or admin hashes to sign in as anyone.",
+]
+remediation = [
+  "Review each listed principal with its owner. Accounts for Entra Connect need Replicating Directory Changes and Changes All only when password hash sync is used; nothing else should.",
+  "Remove the extended rights from every principal that does not need them, on the domain root object.",
+  "For Entra Connect accounts that keep the rights, treat the account and its server as Tier 0.",
+]
+frameworks = [
+  "ANSSI vuln1_dcsync",
+  "CIS Controls 5.4",
+]
+verify = '''
+(Get-Acl "AD:$((Get-ADDomain).DistinguishedName)").Access |
+  Where-Object { $_.ObjectType -in '1131f6aa-9c07-11d1-f79f-00c04fc2dcd2','1131f6ad-9c07-11d1-f79f-00c04fc2dcd2' } |
+  Select-Object IdentityReference, ObjectType'''
+cvss = "AV:N/AC:L/PR:H/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1003.006"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1003.006: DCSync"
+url = "https://attack.mitre.org/techniques/T1003/006/"
+
+[[check.detail.references]]
+title = "Microsoft Defender for Identity: suspected DCSync attack"
+url = "https://learn.microsoft.com/defender-for-identity/credential-access-alerts"
+
+[[check]]
+id = "AD-ACL-003"
+title = "Dangerous rights on AdminSDHolder"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "Principals outside Tier 0 have strong rights on AdminSDHolder. Every hour, SDProp copies AdminSDHolder's permissions to all protected accounts and groups."
+impact = "Rights on AdminSDHolder become rights on Domain Admins, Enterprise Admins and every other protected object within an hour, and come back every time they are removed there."
+remediation = [
+  "Remove the non-default entries from the AdminSDHolder ACL.",
+  "Find out who added them and when.",
+]
+verify = "(Get-Acl \"AD:CN=AdminSDHolder,CN=System,$((Get-ADDomain).DistinguishedName)\").Access"
+mitre = ["T1098"]
+
+[[check.detail.references]]
+title = "Appendix C: Protected accounts and groups in Active Directory"
+url = "https://learn.microsoft.com/windows-server/identity/ad-ds/plan/security-best-practices/appendix-c--protected-accounts-and-groups-in-active-directory"
+
+[[check]]
+id = "AD-ACL-004"
+title = "Dangerous rights on the Domain Controllers OU and DC objects"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "Principals outside Tier 0 can modify the Domain Controllers OU or domain controller computer objects."
+impact = "Control of a DC object is enough to configure delegation to it or add shadow credentials, which leads to domain compromise."
+remediation = [
+  "Remove the listed permissions from the Domain Controllers OU and the DC objects.",
+]
+verify = "(Get-Acl \"AD:OU=Domain Controllers,$((Get-ADDomain).DistinguishedName)\").Access"
+mitre = ["T1098"]
+
+[[check.detail.references]]
+title = "Implementing least-privilege administrative models"
+url = "https://learn.microsoft.com/windows-server/identity/ad-ds/plan/security-best-practices/implementing-least-privilege-administrative-models"
+
+[[check]]
+id = "AD-ACL-005"
+title = "Dangerous rights on privileged groups (add-member paths)"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "Principals outside Tier 0 can change the membership or permissions of privileged groups."
+impact = "Adding oneself to a privileged group is the shortest path to domain admin."
+attack = [
+  "Uses the right to add an account it controls to the group.",
+  "Signs in again to get a token with the group.",
+  "Acts as a domain administrator.",
+]
+remediation = [
+  "Remove the listed permissions from the privileged groups.",
+  "Check AdminSDHolder as well, since its ACL is copied to these groups.",
+]
+verify = "(Get-Acl \"AD:$((Get-ADGroup 'Domain Admins').DistinguishedName)\").Access"
+mitre = ["T1098"]
+
+[[check.detail.references]]
+title = "Appendix C: Protected accounts and groups in Active Directory"
+url = "https://learn.microsoft.com/windows-server/identity/ad-ds/plan/security-best-practices/appendix-c--protected-accounts-and-groups-in-active-directory"
+
+[[check]]
+id = "AD-ACL-006"
+title = "Dangerous rights on GPOs linked to Tier 0 OUs"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "Principals outside Tier 0 can edit GPOs that apply to domain controllers or to the whole domain."
+impact = "Editing such a GPO runs code on every domain controller (for example with a scheduled task or a startup script) as SYSTEM."
+remediation = [
+  "Remove edit rights on the listed GPOs from everyone outside Tier 0.",
+  "Review the GPO contents for changes you did not make.",
+]
+verify = "Get-GPPermission -Name 'Default Domain Controllers Policy' -All"
+mitre = ["T1484.001"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1484.001"
+url = "https://attack.mitre.org/techniques/T1484/001/"
+
+[[check]]
+id = "AD-ACL-007"
+title = "Rights on the Configuration and Schema partitions"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "Principals other than the forest's built-in admin groups hold write rights on the configuration or schema partition heads."
+impact = "Write access to the configuration partition allows changes to sites, services and AD CS that apply to the whole forest; on the schema it allows adding attributes and classes. Both lead to forest compromise."
+remediation = [
+  "Remove the extra rights from CN=Configuration and CN=Schema.",
+  "Grant product rights (for example Exchange) on the specific containers they need only.",
+]
+verify = "(Get-Acl \"AD:$((Get-ADRootDSE).configurationNamingContext)\").Access | Where-Object { $_.ActiveDirectoryRights -match 'Write|GenericAll|CreateChild' }"
+cvss = "AV:N/AC:L/PR:L/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1222.001", "T1484.002"]
+
+[[check]]
+id = "AD-ACL-008"
+title = "ResetPassword / ForceChangePassword over privileged users"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "Principals outside Tier 0 can reset the passwords of Tier 0 accounts."
+impact = "Resetting an admin's password lets the attacker sign in as that admin."
+remediation = [
+  "Remove \"Reset password\" and \"All extended rights\" on Tier 0 accounts from everyone outside Tier 0.",
+  "Keep helpdesk delegation on OUs that hold no admin accounts.",
+]
+verify = "(Get-Acl \"AD:$((Get-ADUser <admin>).DistinguishedName)\").Access | Where-Object ObjectType -eq '00299570-246d-11d0-a768-00aa006e0529'"
+mitre = ["T1098"]
+
+[[check.detail.references]]
+title = "Delegating administration by using OU objects"
+url = "https://learn.microsoft.com/windows-server/identity/ad-ds/plan/delegating-administration-by-using-ou-objects"
+
+[[check]]
+id = "AD-ACL-009"
+title = "Write on servicePrincipalName (targeted kerberoasting)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Principals can write the servicePrincipalName of user accounts. Setting an SPN makes an account kerberoastable on demand."
+impact = "The attacker adds an SPN to an account they want, requests a ticket and cracks the password offline (targeted Kerberoasting)."
+remediation = [
+  "Remove write access to servicePrincipalName from the listed principals.",
+]
+verify = "(Get-Acl \"AD:<object DN>\").Access | Where-Object ObjectType -eq 'f3a64788-5306-11d1-a9c5-0000f80367c1'"
+mitre = ["T1558.003", "T1098"]
+
+[[check]]
+id = "AD-ACL-010"
+title = "Write on msDS-KeyCredentialLink (Shadow Credentials)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Principals can write msDS-KeyCredentialLink on users or computers. That attribute holds Windows Hello for Business keys."
+impact = "Writing a key there (shadow credentials) lets the attacker request a certificate-based TGT and sign in as the account, without changing its password."
+remediation = [
+  "Remove write access to msDS-KeyCredentialLink from the listed principals. Key Admins and the account itself are the only expected writers.",
+]
+verify = "(Get-Acl \"AD:<object DN>\").Access | Where-Object ObjectType -eq '5b47d60f-6090-40b2-9f37-2a4de88f3063'"
+mitre = ["T1556", "T1098"]
+
+[[check]]
+id = "AD-ACL-011"
+title = "Write on msDS-AllowedToActOnBehalfOfOtherIdentity (RBCD takeover)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Principals can write msDS-AllowedToActOnBehalfOfOtherIdentity (directly or through Account Restrictions) on computers."
+impact = "Writing that attribute configures resource-based constrained delegation, letting the attacker impersonate any user to the computer."
+remediation = [
+  "Remove the write permission from the listed principals.",
+]
+verify = "(Get-Acl \"AD:<computer DN>\").Access | Where-Object ObjectType -in '3f78c3e5-f79a-46bd-a0b8-9d18116ddc79','4c164200-20c0-11d0-a768-00aa003049e2'"
+mitre = ["T1558", "T1098"]
+
+[[check.detail.references]]
+title = "Kerberos constrained delegation overview"
+url = "https://learn.microsoft.com/windows-server/security/kerberos/kerberos-constrained-delegation-overview"
+
+[[check]]
+id = "AD-ACL-012"
+title = "Write on userAccountControl or altSecurityIdentities on sensitive objects"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Principals outside Tier 0 can write userAccountControl, the account restrictions property set, or altSecurityIdentities on Tier 0 user or computer accounts."
+impact = "Writing userAccountControl can turn on DONT_REQ_PREAUTH or delegation flags; writing altSecurityIdentities maps a certificate the attacker holds to the account. Both lead to takeover of the privileged account."
+remediation = [
+  "Remove the property write rights from the Tier 0 objects and from AdminSDHolder.",
+  "Check the OUs above the objects for inherited delegations.",
+]
+verify = "(Get-Acl \"AD:<DN of the account>\").Access | Where-Object { $_.ObjectType -in 'bf967a68-0de6-11d0-a285-00aa003049e2','00fbf30c-91fe-11d1-aebc-0000f80367c1','4c164200-20c0-11d0-a768-00aa006e0529' }"
+cvss = "AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H"
+mitre = ["T1098", "T1222.001"]
+
+[[check]]
+id = "AD-ACL-013"
+title = "Rights to read LAPS passwords (ms-Mcs-AdmPwd / msLAPS-Password) held too broadly"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Inventory of who can read LAPS passwords on each OU (read on ms-Mcs-AdmPwd or msLAPS-Password, or all extended rights), failing where Everyone, Authenticated Users, Domain Users, Domain Computers or a group of more than 50 members can."
+impact = "Anyone who can read a computer's LAPS password is a local administrator of it. Broad read access turns LAPS into a shared password list."
+remediation = [
+  "Remove broad groups from LAPS read permissions and from All Extended Rights on computer OUs.",
+  "Delegate LAPS read to small, named admin groups per tier.",
+]
+verify = "Find-LapsADExtendedRights -Identity <OU>  # Windows LAPS module"
+cvss = "AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:N"
+mitre = ["T1552", "T1078.003"]
+
+[[check]]
+id = "AD-ACL-014"
+title = "Rights to read gMSA passwords (msDS-GroupMSAMembership) held too broadly"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Inventory of who can read each group managed service account's password, failing where Everyone, Authenticated Users, Domain Users or Domain Computers can."
+impact = "Anyone who can read the password can sign in as the service account and use its access."
+remediation = [
+  "Limit PrincipalsAllowedToRetrieveManagedPassword to the computers that run the service, or a small group of them.",
+]
+verify = "Get-ADServiceAccount -Filter * -Properties PrincipalsAllowedToRetrieveManagedPassword"
+mitre = ["T1003", "T1078.002"]
+
+[[check]]
+id = "AD-ACL-015"
+title = "Everyone / Authenticated Users / Domain Users with write rights anywhere sensitive"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "Everyone, Authenticated Users, Domain Users or Domain Computers hold write or control rights on Tier 0 objects."
+impact = "Any account in the domain, including a phished user or a joined workstation, can use these rights to take over Tier 0."
+remediation = [
+  "Remove the listed permissions immediately.",
+  "Then review the attack paths page for any remaining route to Tier 0.",
+]
+verify = "(Get-Acl \"AD:<object DN>\").Access | Where-Object IdentityReference -match 'Everyone|Authenticated Users|Domain Users|Domain Computers'"
+mitre = ["T1098", "T1484.001"]
+
+[[check.detail.references]]
+title = "Reducing the Active Directory attack surface"
+url = "https://learn.microsoft.com/windows-server/identity/ad-ds/plan/security-best-practices/reducing-the-active-directory-attack-surface"
+
+[[check]]
+id = "AD-ACL-016"
+title = "Owner of sensitive objects is not Domain Admins / Enterprise Admins / SYSTEM"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Tier 0 objects are owned by principals other than Domain Admins, Enterprise Admins, Administrators or SYSTEM. An owner can always change the object's permissions."
+impact = "The owner can grant itself full control at any time, which leads to Tier 0."
+remediation = [
+  "Change the owner of each listed object to Domain Admins.",
+]
+verify = "(Get-Acl \"AD:<object DN>\").Owner"
+mitre = ["T1098"]
+
+[[check]]
+id = "AD-ACL-017"
+title = "Inheritance disabled on sensitive OUs (inventory)"
+status = "implemented"
+severity = "info"
+
+[check.detail]
+description = "Inventory of OUs with permission inheritance disabled, failing for Tier 0 OUs."
+impact = "An OU that blocks inheritance does not get protections or restrictions set higher in the tree, which can leave sensitive objects with outdated permissions."
+remediation = [
+  "Re-enable inheritance where it is not documented as required.",
+  "Review the explicit permissions on OUs that must stay protected.",
+]
+verify = "Get-ADOrganizationalUnit -Filter * | Where-Object { (Get-Acl \"AD:$($_.DistinguishedName)\").AreAccessRulesProtected }"
+mitre = ["T1222.001"]
+
+[[check]]
+id = "AD-ACL-018"
+title = "Explicit deny ACEs hiding objects (inventory)"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Inventory of explicit deny entries on sensitive objects, failing where read or list access is denied (hiding the object). An object hidden from the account that runs the collection cannot be read at all, so run the collection with a Domain Admin account to see every deny entry."
+impact = "Deny entries that block reading are used to hide objects and their permissions from administrators and audit tools."
+remediation = [
+  "Remove deny entries that are not documented.",
+  "Review the hidden objects with an account that can read them.",
+]
+verify = "(Get-Acl \"AD:<DN>\").Access | Where-Object AccessControlType -eq 'Deny'"
+mitre = ["T1564", "T1222.001"]
+
+[[check]]
+id = "AD-ACL-019"
+title = "Exchange-related legacy permissions (Exchange Windows Permissions WriteDACL on domain)"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "Exchange Windows Permissions or Exchange Trusted Subsystem holds WriteDACL (or full control) on the domain head."
+impact = "Exchange servers, and anyone who controls them, can grant themselves DCSync rights and read every password hash in the domain (the PrivExchange path)."
+remediation = [
+  "Apply the Exchange fix that removes WriteDACL from the domain head (Exchange 2019 CU1 and later setup /PrepareAD), or use split permissions.",
+  "Remove the ACE manually where Exchange is no longer used.",
+]
+verify = "(Get-Acl \"AD:$((Get-ADDomain).DistinguishedName)\").Access | Where-Object { $_.IdentityReference -like '*Exchange*' -and $_.ActiveDirectoryRights -match 'WriteDacl|GenericAll' }"
+cvss = "AV:N/AC:L/PR:L/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1222.001", "T1003.006"]
+
+[[check]]
+id = "AD-ACL-020"
+title = "Rights on the MicrosoftDNS container and zones"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Principals other than DnsAdmins and the built-in admin groups hold takeover rights (full control, change permissions, take ownership, write all properties) on AD-integrated DNS zones."
+impact = "Control of a zone lets an attacker redirect any name in it, for example to intercept authentication or deliver malicious updates."
+remediation = [
+  "Remove the extra rights from the zones and the MicrosoftDNS container.",
+  "Delegate DNS administration through DnsAdmins with reviewed membership.",
+]
+verify = "Get-ADObject -SearchBase \"CN=MicrosoftDNS,DC=DomainDnsZones,$((Get-ADDomain).DistinguishedName)\" -Filter 'objectClass -eq \"dnsZone\"' | ForEach-Object { (Get-Acl \"AD:$($_.DistinguishedName)\").Access }"
+mitre = ["T1557", "T1222.001"]
+
+[[check]]
+id = "AD-ACL-021"
+title = "Rights on the Certificate Templates and PKI containers (feeds AD CS checks)"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "Principals other than the built-in admin groups (and Cert Publishers) hold takeover rights on PKI containers in CN=Public Key Services: Certificate Templates, Enrollment Services, NTAuthCertificates, AIA or CDP (ESC5)."
+impact = "Control of these containers lets an attacker publish a vulnerable template, add a rogue CA to NTAuth or change enrollment services, which leads to forest compromise through certificate authentication."
+remediation = [
+  "Remove the extra rights from the PKI containers.",
+  "Restrict AD CS administration to Enterprise Admins or a dedicated Tier 0 group.",
+]
+verify = "Get-ChildItem \"AD:CN=Public Key Services,CN=Services,$((Get-ADRootDSE).configurationNamingContext)\" | ForEach-Object { (Get-Acl \"AD:$($_.DistinguishedName)\").Access }"
+cvss = "AV:N/AC:L/PR:L/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1649", "T1222.001"]
+
+[[check]]
+id = "AD-ACL-022"
+title = "Delegated OU permissions inventory (who can manage what)"
+status = "implemented"
+severity = "info"
+
+[check.detail]
+description = "Inventory of delegated permissions on OUs: who holds which right on each OU, besides the built-in admin groups."
+impact = "Delegations accumulate over time. A clear list is needed to review whether each one is still required."
+remediation = [
+  "Review the list with each OU owner and remove delegations that are no longer needed.",
+]
+verify = "dsacls \"OU=...\""
+mitre = ["T1222.001"]
+
+[[check]]
+id = "AD-ACL-023"
+title = "Create-child rights on OUs that hold privileged objects"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Principals outside Tier 0 can create users, groups or computers in OUs that hold Tier 0 objects."
+impact = "Create rights let them add objects that inherit the OU's permissions and Group Policy, and are often combined with other rights to take over the OU's contents."
+remediation = [
+  "Remove create-child rights from OUs that hold Tier 0 objects.",
+  "Move Tier 0 objects to a dedicated OU with Tier 0-only delegations.",
+]
+verify = "(Get-Acl \"AD:<OU DN>\").Access | Where-Object ActiveDirectoryRights -match 'CreateChild|GenericAll'"
+mitre = ["T1222.001", "T1136.002"]
+
+[[check]]
+id = "AD-ACL-024"
+title = "Rights over computer objects of Tier 0 servers"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "Principals that are not Tier 0 hold control rights (full control, write, change permissions, or similar) over Tier 0 computer objects such as domain controllers."
+impact = "Control of a domain controller's computer object allows takeover through resource-based constrained delegation or shadow credentials, which compromises the domain."
+remediation = [
+  "Remove the rights from the computer objects.",
+  "Check the OU the computers are in for inherited delegations.",
+]
+verify = "Get-ADDomainController -Filter * | ForEach-Object { (Get-Acl \"AD:$($_.ComputerObjectDN)\").Access }"
+cvss = "AV:N/AC:L/PR:L/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1222.001", "T1078.002"]
+
+[[check]]
+id = "AD-ACL-025"
+title = "Write rights on `gPLink` / `gPOptions` of OUs containing privileged objects"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Principals outside Tier 0 can link GPOs to the domain head or to OUs that contain domain controllers."
+impact = "Linking a GPO they control to such an OU runs their settings and scripts on Tier 0 machines."
+remediation = [
+  "Remove write access to gPLink on the listed containers from everyone outside Tier 0.",
+]
+verify = "(Get-Acl \"AD:OU=Domain Controllers,$((Get-ADDomain).DistinguishedName)\").Access | Where-Object ObjectType -eq 'f30e3bbe-9ff0-11d1-b603-0000f80367c1'"
+mitre = ["T1484.001"]
+
+[[check]]
+id = "AD-ACL-026"
+title = "Rights to the `Password Settings Container` (FGPP tampering)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Principals other than the built-in admin groups hold write or create rights on the Password Settings Container."
+impact = "They can create or change fine-grained password policies and apply a weak policy to any account, including privileged ones."
+remediation = [
+  "Remove the extra rights from CN=Password Settings Container,CN=System.",
+]
+verify = "(Get-Acl \"AD:CN=Password Settings Container,CN=System,$((Get-ADDomain).DistinguishedName)\").Access"
+mitre = ["T1222.001", "T1098"]
+
+[[check]]
+id = "AD-ACL-027"
+title = "Unresolvable SIDs in ACLs (deleted principals)"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Permissions on sensitive objects are granted to SIDs from this domain that no longer resolve to an object, usually deleted accounts or groups."
+impact = "Orphaned entries make permission reviews harder. If the object is restored from the recycle bin, the rights come back with it."
+remediation = [
+  "Remove the unresolvable entries from the listed objects.",
+]
+mitre = ["T1098"]
+
+[[check]]
+id = "AD-ACL-028"
+title = "Full attack-path analysis: shortest paths from low-privilege groups to Domain Admins (graph built from ACLs, memberships, sessions, delegation)"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "Attack-path analysis found chains of group membership, permissions, GPO links and replication rights that lead from broad groups to Tier 0."
+impact = "Any domain user can follow the chain to become a domain administrator."
+attack = [
+  "Starts as any domain user.",
+  "Follows each step's right or membership.",
+  "Reaches a Tier 0 group, object or domain controller.",
+]
+remediation = [
+  "Open the Attack paths page and fix the check listed for each step; fixing any one step breaks that path.",
+  "Start with steps shared by several paths.",
+]
+mitre = ["T1098", "T1078.002"]
+
+[[check.detail.references]]
+title = "Reducing the Active Directory attack surface"
+url = "https://learn.microsoft.com/windows-server/identity/ad-ds/plan/security-best-practices/reducing-the-active-directory-attack-surface"

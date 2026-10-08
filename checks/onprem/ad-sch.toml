@@ -1,0 +1,129 @@
+# AD-SCH: Schema and configuration anomalies
+
+area = "AD-SCH"
+
+[[check]]
+id = "AD-SCH-001"
+title = "LAPS and BitLocker secret attributes not marked confidential"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "One of the schema attributes that store secrets (ms-Mcs-AdmPwd, msLAPS-Password, msLAPS-EncryptedPassword, msLAPS-EncryptedDSRMPassword, msFVE-RecoveryPassword, msFVE-KeyPackage) does not have the confidential bit (0x80) set in its searchFlags. Without that bit, a general Read permission on the object is enough to read the attribute."
+impact = "Any principal with read access to computer objects, which by default includes every authenticated user, can read local administrator passwords or BitLocker recovery keys stored in these attributes."
+remediation = [
+  "Find out who changed searchFlags on the attribute and why; the LAPS and BitLocker schema extensions set the confidential bit by default.",
+  "Set the confidential bit (0x80) in searchFlags of the attribute again, as a Schema Admin, after testing in a lab.",
+  "Rotate the LAPS passwords and BitLocker recovery keys that were readable.",
+]
+frameworks = [
+  "NIST 800-53 AC-3",
+  "NIST 800-53 AC-6",
+]
+verify = '''
+Get-ADObject -SearchBase (Get-ADRootDSE).schemaNamingContext -LDAPFilter '(|(lDAPDisplayName=ms-Mcs-AdmPwd)(lDAPDisplayName=msLAPS-Password)(lDAPDisplayName=msLAPS-EncryptedPassword)(lDAPDisplayName=msLAPS-EncryptedDSRMPassword)(lDAPDisplayName=msFVE-RecoveryPassword)(lDAPDisplayName=msFVE-KeyPackage))' -Properties lDAPDisplayName, searchFlags |
+  Select-Object lDAPDisplayName, searchFlags, @{ n = 'Confidential'; e = { [bool]($_.searchFlags -band 0x80) } }'''
+cvss = "AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N"
+mitre = ["T1552"]
+
+[[check.detail.references]]
+title = "Windows LAPS overview"
+url = "https://learn.microsoft.com/windows-server/identity/laps/laps-overview"
+
+[[check.detail.references]]
+title = "Search-Flags attribute"
+url = "https://learn.microsoft.com/windows/win32/adschema/a-searchflags"
+
+[[check]]
+id = "AD-SCH-002"
+title = "Custom attributes named like secrets and not confidential"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "An attribute that is not part of the base schema has a name containing pass, pwd, secret, credential, apikey or token, and does not have the confidential bit (0x80) set in its searchFlags. Such attributes are often added by applications to store credentials, and anyone with read access to the object can read them."
+impact = "If an application stores passwords or keys in the attribute, every account that can read the objects, often every authenticated user, can read those secrets."
+remediation = [
+  "Ask the owner of the schema extension what the attribute holds, and check whether objects have values in it.",
+  "If it holds secrets, move them to a proper secret store, or set the confidential bit in searchFlags after testing.",
+  "Change any password or key that was stored in the attribute.",
+]
+frameworks = [
+  "NIST 800-53 IA-5",
+]
+verify = '''
+Get-ADObject -SearchBase (Get-ADRootDSE).schemaNamingContext -LDAPFilter '(objectClass=attributeSchema)' -Properties lDAPDisplayName, searchFlags, systemFlags |
+  Where-Object { -not ($_.systemFlags -band 0x10) -and -not ($_.searchFlags -band 0x80) -and $_.lDAPDisplayName -match 'pass|pwd|secret|credential|apikey|token' } |
+  Select-Object lDAPDisplayName, searchFlags'''
+mitre = ["T1552"]
+
+[[check.detail.references]]
+title = "Search-Flags attribute"
+url = "https://learn.microsoft.com/windows/win32/adschema/a-searchflags"
+
+[[check]]
+id = "AD-SCH-003"
+title = "Attributes with searchFlags changed (filtered attribute set, RODC)"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Inventory of attributes marked confidential or in the RODC filtered attribute set, listing those changed after the forest was created."
+impact = "Removing the confidential or filtered flag from an attribute exposes its value to all readers or to read-only domain controllers."
+remediation = [
+  "Confirm each change was a product update or a planned change.",
+  "Restore flags that were removed without a reason.",
+]
+verify = "Get-ADObject -SearchBase (Get-ADRootDSE).schemaNamingContext -LDAPFilter '(|(searchFlags:1.2.840.113556.1.4.804:=128)(searchFlags:1.2.840.113556.1.4.804:=512))' -Properties searchFlags, whenChanged"
+mitre = ["T1222.001"]
+
+[[check]]
+id = "AD-SCH-004"
+title = "Display specifiers modified (persistence via context menus)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Display specifiers have context menu entries (adminContextMenu or shellContextMenu) that run a program, script or URL."
+impact = "The entry runs when an administrator right-clicks an object in the management consoles, with the administrator's rights. This is a known persistence technique."
+remediation = [
+  "Remove the entries that are not part of a known product.",
+  "Find out who changed the display specifier and when.",
+]
+verify = "Get-ADObject -SearchBase \"CN=DisplaySpecifiers,$((Get-ADRootDSE).configurationNamingContext)\" -LDAPFilter '(|(adminContextMenu=*)(shellContextMenu=*))' -Properties adminContextMenu, shellContextMenu"
+mitre = ["T1546"]
+
+[[check]]
+id = "AD-SCH-005"
+title = "Extended rights added to configuration"
+status = "implemented"
+severity = "info"
+
+[check.detail]
+description = "Extended rights (controlAccessRight objects) that were added after the forest was created."
+impact = "Products and attackers can add extended rights to control access to new operations. Unknown rights deserve a look at who holds them."
+remediation = [
+  "Confirm each added right belongs to a known product.",
+]
+verify = "Get-ADObject -SearchBase \"CN=Extended-Rights,$((Get-ADRootDSE).configurationNamingContext)\" -Filter * -Properties whenCreated | Sort-Object whenCreated"
+mitre = ["T1222.001"]
+
+[[check]]
+id = "AD-SCH-006"
+title = "Schema changes in the last 90 days"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Attribute or class definitions in the schema were created or changed in the last 90 days, based on their whenCreated and whenChanged dates."
+impact = "Schema changes are forest-wide and cannot be undone. An unexpected change can mean an unapproved product install, or an attacker with Schema Admin rights changing default permissions or attribute flags."
+remediation = [
+  "Match each listed change to a known product install or upgrade (Exchange, LAPS, Entra Connect and similar).",
+  "Investigate changes nobody can explain, and keep Schema Admins empty except during approved changes.",
+]
+frameworks = [
+  "NIST 800-53 CM-3",
+]
+verify = '''
+Get-ADObject -SearchBase (Get-ADRootDSE).schemaNamingContext -Filter * -Properties whenCreated, whenChanged |
+  Where-Object { $_.whenChanged -gt (Get-Date).AddDays(-90) } | Select-Object Name, whenCreated, whenChanged'''

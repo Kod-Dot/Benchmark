@@ -1,0 +1,473 @@
+# HUNT-EN: Cloud hunt
+
+area = "HUNT-EN"
+
+[[check]]
+id = "HUNT-EN-001"
+title = "Impossible travel and anomalous sign-ins (beyond what Identity Protection flagged)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Lists Identity Protection detections of the last 30 days for impossible or unlikely travel, new countries, unfamiliar sign-in properties and anomalous user activity."
+impact = "These are the detections most often tied to stolen passwords used from another location."
+remediation = [
+  "Investigate each detection with the user and reset credentials where it is not explained.",
+]
+verify = "Get-MgRiskDetection -Filter \"riskEventType eq 'unlikelyTravel'\""
+mitre = ["T1078.004"]
+
+[[check.detail.references]]
+title = "What is risk? (Identity Protection)"
+url = "https://learn.microsoft.com/entra/id-protection/concept-identity-protection-risks"
+
+[[check]]
+id = "HUNT-EN-002"
+title = "Token replay indicators (same session from different IPs/devices)"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "Lists detections of anomalous tokens, token issuer anomalies and attempted Primary Refresh Token access in the last 30 days."
+impact = "Token theft bypasses passwords and MFA; a forged token issuer anomaly can mean a Golden SAML attack."
+remediation = [
+  "Revoke the user's sessions and refresh tokens, investigate the device, and check federation settings for added certificates.",
+]
+verify = "Get-MgRiskDetection -Filter \"riskEventType eq 'anomalousToken'\""
+mitre = ["T1550", "T1606"]
+
+[[check.detail.references]]
+title = "What is risk? (Identity Protection)"
+url = "https://learn.microsoft.com/entra/id-protection/concept-identity-protection-risks"
+
+[[check]]
+id = "HUNT-EN-003"
+title = "Password spray against Entra (many users, few attempts, one IP or ASN)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "In the last 30 days of sign-in logs, one IP address had wrong-password failures (error 50126) against 10 or more different accounts, with on average 3 or fewer attempts per account. This is the pattern of a password spray."
+impact = "A finding is something to investigate, not proof of compromise: a misconfigured shared device or proxy can produce the same pattern. A real spray means someone is guessing passwords across the tenant, and any account with a weak password and no MFA may already be in their hands."
+attack = [
+  "Collects a list of user names from the web, LinkedIn or earlier leaks.",
+  "Tries one or two common passwords against every account from the same address, staying under the lockout threshold.",
+  "Signs in with the accounts that work, often over protocols or apps without MFA.",
+]
+remediation = [
+  "Investigate the listed IP addresses: check whether they belong to the organization, a partner or a proxy, and look for successful sign-ins from the same address to the same accounts.",
+  "For any account that also had a successful sign-in from that address, confirm with the user; if it was not them, reset the password, revoke sessions and review MFA methods.",
+  "Then contain: block the address with a named location in Conditional Access if it is not legitimate, and make sure MFA is required and legacy authentication is blocked for all users.",
+]
+verify = "$since = (Get-Date).AddDays(-30).ToString('yyyy-MM-ddTHH:mm:ssZ'); Get-MgAuditLogSignIn -All -Filter \"createdDateTime ge $since and status/errorCode eq 50126\" | Group-Object IpAddress | Where-Object { ($_.Group.UserPrincipalName | Sort-Object -Unique).Count -ge 10 } | Select-Object Name, Count, @{n='Accounts';e={($_.Group.UserPrincipalName | Sort-Object -Unique).Count}}"
+cvss = "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:L/A:N"
+mitre = ["T1110.003"]
+
+[[check.detail.references]]
+title = "Password spray investigation"
+url = "https://learn.microsoft.com/security/operations/incident-response-playbook-password-spray"
+
+[[check]]
+id = "HUNT-EN-004"
+title = "MFA fatigue (repeated denied pushes followed by approval)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "In the last 30 days of sign-in logs, an account had 5 or more failed MFA prompts (error 500121, denied or not answered) within one hour. This is the pattern of an MFA fatigue attack."
+impact = "A finding is something to investigate, not proof of compromise: a broken phone or a confused user can cause the same failures. But repeated prompts mean someone may already know the user's password, and a single tired approval gives them the account."
+attack = [
+  "Gets the user's password through phishing, a leak or a password spray.",
+  "Signs in again and again so the user receives a stream of MFA prompts.",
+  "Waits until the user approves one prompt, or calls them pretending to be IT support, and takes over the session.",
+]
+remediation = [
+  "Investigate the listed accounts: ask the user whether they were signing in at that time, and check the IP addresses and whether a successful sign-in followed the failed prompts.",
+  "If the user did not cause the prompts, treat the password as known: reset it, revoke sessions with Revoke-MgUserSignInSession and review the registered MFA methods.",
+  "Then contain: require number matching with Microsoft Authenticator, or move users to phishing-resistant methods, so a blind approval no longer works.",
+]
+verify = "$since = (Get-Date).AddDays(-30).ToString('yyyy-MM-ddTHH:mm:ssZ'); Get-MgAuditLogSignIn -All -Filter \"createdDateTime ge $since and status/errorCode eq 500121\" | Group-Object UserPrincipalName, { $_.CreatedDateTime.ToString('yyyy-MM-dd HH') } | Where-Object Count -ge 5 | Select-Object Name, Count"
+cvss = "AV:N/AC:L/PR:N/UI:R/S:U/C:H/I:H/A:N"
+mitre = ["T1621"]
+
+[[check.detail.references]]
+title = "How to use number matching in multifactor authentication notifications"
+url = "https://learn.microsoft.com/entra/identity/authentication/how-to-mfa-additional-context"
+
+[[check]]
+id = "HUNT-EN-005"
+title = "New credentials added to existing apps or service principals"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "In the last 30 days of audit logs, client secrets or certificates were added to applications or service principals. The finding lists each one with the object, who added it and when."
+impact = "A finding is something to investigate, not proof of compromise: developers add and rotate secrets as part of normal work. A credential added by someone else lets them sign in as the app with all its API permissions, without any user and without MFA."
+attack = [
+  "Takes over an account that owns an application or holds Application Administrator.",
+  "Adds a new secret or certificate to an app that already has strong permissions, such as Mail.Read or Directory.ReadWrite.All.",
+  "Signs in as the app from anywhere and uses its permissions; the activity looks like the app's own.",
+]
+remediation = [
+  "Investigate each listed credential: confirm with the person who added it and the app owner that it was planned, for example a rotation or a new deployment.",
+  "If nobody can account for it, remove the credential, check the app's sign-in logs for its use and review what data the app reached.",
+  "Then contain: limit who owns apps and holds Application or Cloud Application Administrator, and prefer certificates or managed identities with short lifetimes.",
+]
+verify = "$since = (Get-Date).AddDays(-30).ToString('yyyy-MM-ddTHH:mm:ssZ'); Get-MgAuditLogDirectoryAudit -All -Filter \"activityDateTime ge $since and category eq 'ApplicationManagement'\" | Where-Object { $_.ActivityDisplayName -match 'credentials|Certificates and secrets' } | Select-Object ActivityDateTime, ActivityDisplayName, @{n='Target';e={$_.TargetResources[0].DisplayName}}, @{n='By';e={$_.InitiatedBy.User.UserPrincipalName}}"
+cvss = "AV:N/AC:L/PR:H/UI:N/S:U/C:H/I:H/A:N"
+mitre = ["T1098.001"]
+
+[[check.detail.references]]
+title = "Security best practices for application properties"
+url = "https://learn.microsoft.com/entra/identity-platform/security-best-practices-for-app-registration"
+
+[[check]]
+id = "HUNT-EN-006"
+title = "New federated domain or federation certificate change"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "In the last 30 days of audit logs, the authentication of a domain was changed (for example from managed to federated) or federation settings were set on a domain."
+impact = "A finding is something to investigate, not proof of compromise: a planned move to or from AD FS or another identity provider produces the same events. An unplanned change lets whoever controls the new identity provider issue sign-in tokens for any user in that domain, including admins, and skip MFA."
+attack = [
+  "Gets a role that can manage domains, such as Global Administrator or Hybrid Identity Administrator.",
+  "Adds or changes federation on a domain to point to an identity provider and signing certificate the attacker controls.",
+  "Forges SAML tokens to sign in as any user of the domain.",
+]
+remediation = [
+  "Investigate each change: confirm with the person who made it and the identity team that it was a planned change, and check the issuer and signing certificate now set on the domain.",
+  "If it was not planned, set the domain back to managed authentication or the known federation settings, and review sign-ins of that domain's users since the change.",
+  "Then contain: limit who holds Global Administrator and Hybrid Identity Administrator, and alert on domain authentication changes.",
+]
+verify = "$since = (Get-Date).AddDays(-30).ToString('yyyy-MM-ddTHH:mm:ssZ'); Get-MgAuditLogDirectoryAudit -All -Filter \"activityDateTime ge $since\" | Where-Object { $_.ActivityDisplayName -in 'Set domain authentication','Set federation settings on domain' } | Select-Object ActivityDateTime, ActivityDisplayName, @{n='Domain';e={$_.TargetResources[0].DisplayName}}, @{n='By';e={$_.InitiatedBy.User.UserPrincipalName}}"
+cvss = "AV:N/AC:L/PR:H/UI:N/S:C/C:H/I:H/A:N"
+mitre = ["T1484.002", "T1606.002"]
+
+[[check.detail.references]]
+title = "What is federation with Microsoft Entra ID?"
+url = "https://learn.microsoft.com/entra/identity/hybrid/connect/whatis-fed"
+
+[[check.detail.references]]
+title = "internalDomainFederation resource type"
+url = "https://learn.microsoft.com/graph/api/resources/internaldomainfederation"
+
+[[check]]
+id = "HUNT-EN-007"
+title = "Consent grants to unfamiliar or newly registered apps"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "In the last 30 days of audit logs, users or admins consented to applications. The finding lists the app, who consented and whether it was admin consent for all users."
+impact = "A finding is something to investigate, not proof of compromise: users connect legitimate apps every day. A consent to a malicious app gives it lasting access to mail, files or the directory through tokens that survive a password reset."
+attack = [
+  "Registers a multi-tenant app with a trusted-looking name and asks for permissions such as Mail.Read or Files.ReadWrite.All.",
+  "Sends users, or an admin, a link to the app's consent page.",
+  "Once consent is given, reads data through Microsoft Graph with the app's tokens, without needing the user's password.",
+]
+remediation = [
+  "Investigate each consent: confirm with the user or admin who consented that they know the app, and check its publisher, permissions and sign-in activity.",
+  "If the app is not wanted, remove its permissions and disable or delete its service principal, then review what it accessed.",
+  "Then contain: restrict user consent to verified publishers and low-risk permissions, and turn on the admin consent workflow.",
+]
+verify = "$since = (Get-Date).AddDays(-30).ToString('yyyy-MM-ddTHH:mm:ssZ'); Get-MgAuditLogDirectoryAudit -All -Filter \"activityDateTime ge $since and activityDisplayName eq 'Consent to application'\" | Select-Object ActivityDateTime, @{n='App';e={$_.TargetResources[0].DisplayName}}, @{n='By';e={$_.InitiatedBy.User.UserPrincipalName}}, @{n='AdminConsent';e={($_.TargetResources[0].ModifiedProperties | Where-Object DisplayName -eq 'ConsentContext.IsAdminConsent').NewValue}}"
+cvss = "AV:N/AC:L/PR:N/UI:R/S:U/C:H/I:L/A:N"
+mitre = ["T1528", "T1566.002"]
+
+[[check.detail.references]]
+title = "App consent grant investigation"
+url = "https://learn.microsoft.com/security/operations/incident-response-playbook-app-consent"
+
+[[check.detail.references]]
+title = "Configure how users consent to applications"
+url = "https://learn.microsoft.com/entra/identity/enterprise-apps/configure-user-consent"
+
+[[check]]
+id = "HUNT-EN-008"
+title = "New privileged role assignments outside PIM"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "In the last 30 days of audit logs, a directory role was assigned directly, not through Privileged Identity Management (PIM)."
+impact = "A finding is something to investigate, not proof of compromise: some admins still assign roles directly by habit or for break-glass accounts. A direct assignment bypasses PIM approval, justification and time limits, and is a common way for an attacker to give a controlled account permanent admin rights."
+attack = [
+  "Takes over an account with Privileged Role Administrator or Global Administrator.",
+  "Assigns a privileged role directly to another account the attacker controls.",
+  "Keeps admin access through that second account even after the first one is cleaned up.",
+]
+remediation = [
+  "Investigate each assignment: confirm with the person who made it and the account owner that it was requested and approved.",
+  "If it was not, remove the role assignment and review what the account did with the role.",
+  "Then contain: convert permanent active assignments to PIM-eligible ones and restrict who holds Privileged Role Administrator.",
+]
+verify = "$since = (Get-Date).AddDays(-30).ToString('yyyy-MM-ddTHH:mm:ssZ'); Get-MgAuditLogDirectoryAudit -All -Filter \"activityDateTime ge $since and activityDisplayName eq 'Add member to role'\" | Where-Object { $_.InitiatedBy.App.DisplayName -ne 'MS-PIM' } | Select-Object ActivityDateTime, @{n='Member';e={$_.TargetResources[0].UserPrincipalName}}, @{n='By';e={$_.InitiatedBy.User.UserPrincipalName}}"
+cvss = "AV:N/AC:L/PR:H/UI:N/S:U/C:H/I:H/A:N"
+mitre = ["T1098.003"]
+
+[[check.detail.references]]
+title = "Start using Privileged Identity Management"
+url = "https://learn.microsoft.com/entra/id-governance/privileged-identity-management/pim-getting-started"
+
+[[check]]
+id = "HUNT-EN-009"
+title = "Conditional Access policy disabled or modified"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "In the last 30 days of audit logs, a Conditional Access policy was changed or deleted. The finding lists the policy, the change and who made it."
+impact = "A finding is something to investigate, not proof of compromise: admins tune policies as part of normal work. An attacker with admin access weakens or removes policies so that MFA, device or location requirements no longer apply to their sign-ins."
+attack = [
+  "Gets an account with Conditional Access Administrator, Security Administrator or Global Administrator.",
+  "Disables a policy, switches it to report-only or adds an exclusion for an account the attacker controls.",
+  "Signs in without MFA or from an untrusted device or location.",
+]
+remediation = [
+  "Investigate each change: confirm with the person who made it that it was planned, and compare the old and new values shown in the audit event.",
+  "If it was not planned, restore the policy to its previous settings and review sign-ins that the changed policy no longer covered.",
+  "Then contain: limit who can edit Conditional Access, keep a copy of the policies and alert on policy changes.",
+]
+verify = "$since = (Get-Date).AddDays(-30).ToString('yyyy-MM-ddTHH:mm:ssZ'); Get-MgAuditLogDirectoryAudit -All -Filter \"activityDateTime ge $since and category eq 'Policy'\" | Where-Object { $_.ActivityDisplayName -in 'Update conditional access policy','Delete conditional access policy' } | Select-Object ActivityDateTime, ActivityDisplayName, @{n='Policy';e={$_.TargetResources[0].DisplayName}}, @{n='By';e={$_.InitiatedBy.User.UserPrincipalName}}"
+cvss = "AV:N/AC:L/PR:H/UI:N/S:U/C:H/I:H/A:N"
+mitre = ["T1556"]
+
+[[check.detail.references]]
+title = "What is Conditional Access?"
+url = "https://learn.microsoft.com/entra/identity/conditional-access/overview"
+
+[[check.detail.references]]
+title = "Audit logs in Microsoft Entra ID"
+url = "https://learn.microsoft.com/entra/identity/monitoring-health/concept-audit-logs"
+
+[[check]]
+id = "HUNT-EN-010"
+title = "Mailbox rules created right after a risky sign-in"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "An inbox rule was created or changed within 24 hours after an Identity Protection risk detection for the same user, from the unified audit log of 30 days."
+impact = "Attackers who get into a mailbox commonly set up rules to forward or hide mail right after signing in."
+remediation = [
+  "Treat the account as compromised: remove the rule, reset credentials, revoke sessions and review mail sent.",
+]
+verify = "Search-UnifiedAuditLog -Operations New-InboxRule,Set-InboxRule -UserIds <user> -StartDate <date> -EndDate <date>"
+mitre = ["T1564"]
+
+[[check.detail.references]]
+title = "Responding to a compromised email account"
+url = "https://learn.microsoft.com/defender-office-365/responding-to-a-compromised-email-account"
+
+[[check]]
+id = "HUNT-EN-011"
+title = "Mass file download or sharing in SharePoint/OneDrive"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "A user downloaded or synced 500 or more files, or created 20 or more anonymous links, in one day in the last 30 days, from the unified audit log."
+impact = "Mass downloads and anonymous sharing are how data is taken before someone leaves or after an account is compromised."
+remediation = [
+  "Ask the user and their manager about the activity, and review what was shared or taken.",
+]
+verify = "Search-UnifiedAuditLog -Operations FileDownloaded,FileSyncDownloadedFull,AnonymousLinkCreated -UserIds <user>"
+
+[[check.detail.references]]
+title = "Search the audit log"
+url = "https://learn.microsoft.com/purview/audit-search"
+
+[[check]]
+id = "HUNT-EN-012"
+title = "Device code phishing patterns (device code flow sign-ins)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "In the last 30 days of sign-in logs, users signed in successfully with the device code flow. The finding lists the users, the apps and the number of sign-ins."
+impact = "A finding is something to investigate, not proof of compromise: the flow is also used to sign in on TVs, meeting room devices and command-line tools. In device code phishing the user enters a code sent by the attacker and completes MFA, which gives the attacker tokens for the user's account."
+attack = [
+  "Starts a device code sign-in and sends the code to the user with a message such as a Teams meeting or document invite.",
+  "The user enters the code at the Microsoft sign-in page and completes MFA.",
+  "Receives access and refresh tokens and reads the user's mail and files from their own machine.",
+]
+remediation = [
+  "Investigate each listed sign-in: ask the user whether they entered a code at that time and for which device or tool, and check the IP address and app.",
+  "If the user did not expect it, revoke their sessions with Revoke-MgUserSignInSession, reset the password and review recent mailbox and file activity.",
+  "Then contain: block the device code flow with a Conditional Access authentication flows policy, with an exception only for the users or devices that need it.",
+]
+verify = "Entra admin center > Identity > Monitoring & health > Sign-in logs, set the date range to the last 30 days, add the filter Authentication Protocol = Device code and Status = Success, and review the user, application and IP address of each sign-in."
+cvss = "AV:N/AC:L/PR:N/UI:R/S:U/C:H/I:L/A:N"
+mitre = ["T1528", "T1566.002"]
+
+[[check.detail.references]]
+title = "Block authentication flows with Conditional Access policy"
+url = "https://learn.microsoft.com/entra/identity/conditional-access/policy-block-authentication-flows"
+
+[[check]]
+id = "HUNT-EN-013"
+title = "Sign-ins from anonymizers / TOR / hosting ASNs"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Lists detections of sign-ins from anonymizers such as Tor, from known malicious addresses, and from nation-state addresses in the last 30 days."
+impact = "Attackers hide behind anonymizers; legitimate users rarely sign in through Tor."
+remediation = [
+  "Investigate the accounts, and block anonymizer sign-ins with sign-in risk policies.",
+]
+verify = "Get-MgRiskDetection -Filter \"riskEventType eq 'anonymizedIPAddress'\""
+mitre = ["T1078.004"]
+
+[[check.detail.references]]
+title = "What is risk? (Identity Protection)"
+url = "https://learn.microsoft.com/entra/id-protection/concept-identity-protection-risks"
+
+[[check]]
+id = "HUNT-EN-014"
+title = "Guest invitations at scale"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "In the last 30 days of audit logs, one account invited 20 or more guests within 24 hours."
+impact = "A finding is something to investigate, not proof of compromise: a project kickoff or a partner onboarding can involve many invitations. Mass invitations from one account can also mean a compromised account is bringing in outside accounts, giving them a foothold in Teams, SharePoint and apps, or that it is used to send phishing through invitation mails."
+attack = [
+  "Takes over a member account that is allowed to invite guests.",
+  "Invites many external accounts, either the attacker's own or the targets of a phishing campaign.",
+  "Uses the guest accounts to read shared content, or relies on the trusted Microsoft invitation mail to deliver phishing links.",
+]
+remediation = [
+  "Investigate the listed account: confirm with the user and their manager that the invitations were for a known project or partner, and check who was invited.",
+  "If they were not, remove the invited guests and secure the inviting account by resetting its password and revoking its sessions.",
+  "Then contain: limit guest invitations to specific admin roles or the Guest Inviter role, and restrict invitations to allowed domains in the external collaboration settings.",
+]
+verify = "$since = (Get-Date).AddDays(-30).ToString('yyyy-MM-ddTHH:mm:ssZ'); Get-MgAuditLogDirectoryAudit -All -Filter \"activityDateTime ge $since and activityDisplayName eq 'Invite external user'\" | Group-Object { $_.InitiatedBy.User.UserPrincipalName }, { $_.ActivityDateTime.ToString('yyyy-MM-dd') } | Where-Object Count -ge 20 | Select-Object Name, Count"
+cvss = "AV:N/AC:L/PR:L/UI:N/S:U/C:L/I:L/A:N"
+mitre = ["T1136.003", "T1078.004"]
+
+[[check.detail.references]]
+title = "Configure external collaboration settings"
+url = "https://learn.microsoft.com/entra/external-id/external-collaboration-settings-configure"
+
+[[check]]
+id = "HUNT-EN-015"
+title = "Partner (GDAP) relationship changes"
+status = "implemented"
+severity = "info"
+
+[check.detail]
+description = "Lists audit log events in the last 30 days that change partner or delegated admin relationships."
+impact = "A partner with delegated admin rights can administer the tenant; attackers have abused such relationships to reach many customers."
+remediation = [
+  "Confirm each change with the partner and remove relationships that are not needed.",
+  "Prefer GDAP with the least roles and an end date.",
+]
+verify = "Search the Entra audit log for activities that contain \"partner\"."
+mitre = ["T1199"]
+
+[[check.detail.references]]
+title = "Granular delegated admin privileges"
+url = "https://learn.microsoft.com/partner-center/customers/gdap-introduction"
+
+[[check]]
+id = "HUNT-EN-016"
+title = "Azure: role assignments at root scope, elevate-access events"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Lists Azure role assignments at the root scope (\"/\"), which cover every management group and subscription."
+impact = "A root-scope assignment, often left over from elevate access, gives its holder that role everywhere in Azure."
+remediation = [
+  "Remove root-scope assignments and assign roles at the management group or subscription they are needed for.",
+]
+verify = "Get-AzRoleAssignment -Scope /"
+mitre = ["T1098"]
+
+[[check.detail.references]]
+title = "Elevate access to manage all Azure subscriptions"
+url = "https://learn.microsoft.com/azure/role-based-access-control/elevate-access-global-admin"
+
+[[check]]
+id = "HUNT-EN-017"
+title = "Azure: Run Command / extension execution on DC VMs"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Lists Run Command executions and extension changes on Azure VMs in the last 30 days from the activity log, with who made them."
+impact = "Run Command and extensions run code as SYSTEM inside the VM; on a domain controller that is full control of the domain."
+remediation = [
+  "Confirm each operation with whoever ran it.",
+  "Restrict Virtual Machine Contributor and runCommand rights on Tier 0 VMs to Tier 0 admins.",
+]
+verify = "Get-AzActivityLog -ResourceProvider Microsoft.Compute -StartTime (Get-Date).AddDays(-30) | Where-Object { $_.OperationName.Value -match 'runCommand|extensions/write' }"
+mitre = ["T1651"]
+
+[[check.detail.references]]
+title = "Run scripts in a Windows VM with Run Command"
+url = "https://learn.microsoft.com/azure/virtual-machines/windows/run-command"
+
+[[check]]
+id = "HUNT-EN-018"
+title = "Key Vault secret reads by unusual identities"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Lists identities that started reading Key Vault secrets in the last 7 days of a 30-day window, from Key Vault diagnostic logs in Log Analytics (one read-only query per workspace). Vaults that do not send diagnostics to Log Analytics cannot be searched."
+impact = "A new reader of secrets is often a compromised app or person harvesting credentials."
+remediation = [
+  "Confirm each new caller with the vault owner; rotate secrets read by unknown callers and restrict the vault's access.",
+]
+verify = "AzureDiagnostics | where ResourceProvider == \"MICROSOFT.KEYVAULT\" and OperationName == \"SecretGet\""
+mitre = ["T1552"]
+
+[[check.detail.references]]
+title = "Key Vault logging"
+url = "https://learn.microsoft.com/azure/key-vault/general/logging"
+
+[[check]]
+id = "HUNT-EN-019"
+title = "Service principal sign-ins from new locations"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Lists service principals whose sign-ins in the last 30 days came from more than one country."
+impact = "Apps usually run from one place; sign-ins from a new country often mean a leaked secret or certificate is in use elsewhere."
+remediation = [
+  "Check where the app runs; rotate its credentials if the extra location is not explained.",
+  "Restrict the app with a Conditional Access policy for workload identities.",
+]
+verify = "Sign-in logs > Service principal sign-ins, grouped by location."
+mitre = ["T1078.004"]
+
+[[check]]
+id = "HUNT-EN-020"
+title = "Changes to sync settings or Entra Connect accounts"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "In the last 30 days of audit logs, directory synchronization settings changed: sync was turned on or off for the tenant, or sync features such as soft match or hard match takeover were changed."
+impact = "A finding is something to investigate, not proof of compromise: installing or rebuilding Microsoft Entra Connect produces the same events. Turning on soft match or hard match takeover lets an on-premises object be matched to an existing cloud account, including a cloud-only admin, so whoever controls on-premises AD can take over that account."
+attack = [
+  "Gets a role that can change sync settings, such as Hybrid Identity Administrator or Global Administrator.",
+  "Turns on hard match or soft match takeover for the tenant.",
+  "Creates an on-premises object that matches a cloud admin, lets it sync and sets its password, taking over the cloud account.",
+]
+remediation = [
+  "Investigate each change: confirm with the person who made it and the team that runs Microsoft Entra Connect that it was part of a planned change.",
+  "If it was not, set the features back with Update-MgDirectoryOnPremiseSynchronization (keep soft match and hard match takeover blocked) and review recent changes to cloud admin accounts.",
+  "Then contain: limit who holds Hybrid Identity Administrator and treat the sync server and its accounts as Tier 0.",
+]
+verify = "$since = (Get-Date).AddDays(-30).ToString('yyyy-MM-ddTHH:mm:ssZ'); Get-MgAuditLogDirectoryAudit -All -Filter \"activityDateTime ge $since and category eq 'DirectoryManagement'\" | Where-Object { $_.ActivityDisplayName -match 'DirSync' } | Select-Object ActivityDateTime, ActivityDisplayName, @{n='By';e={$_.InitiatedBy.User.UserPrincipalName}}"
+cvss = "AV:N/AC:H/PR:H/UI:N/S:C/C:H/I:H/A:N"
+mitre = ["T1098", "T1078.004"]
+
+[[check.detail.references]]
+title = "Microsoft Entra Connect Sync service features"
+url = "https://learn.microsoft.com/entra/identity/hybrid/connect/how-to-connect-syncservice-features"

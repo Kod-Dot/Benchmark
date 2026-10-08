@@ -1,0 +1,459 @@
+# EN-AUTH: Authentication and MFA
+
+area = "EN-AUTH"
+
+[[check]]
+id = "EN-AUTH-001"
+title = "Users without any MFA method registered"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Enabled member users have no multifactor authentication method registered."
+impact = "These users cannot complete MFA, so policies that require it either block them or are excluded for them, and an attacker who knows their password can register their own method first."
+remediation = [
+  "Run an MFA registration campaign and require registration through Conditional Access.",
+  "Restrict security info registration to trusted locations or compliant devices.",
+]
+frameworks = [
+  "CIS Microsoft 365 5.2.3.4",
+]
+cvss = "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:L/A:N"
+mitre = ["T1078.004", "T1621", "T1556.006"]
+
+[[check.detail.references]]
+title = "Authentication methods activity report"
+url = "https://learn.microsoft.com/entra/identity/authentication/howto-authentication-methods-activity"
+
+[[check]]
+id = "EN-AUTH-002"
+title = "Privileged users without phishing-resistant MFA (FIDO2, WHfB, CBA)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Users who hold a privileged directory role, active or eligible, have no phishing-resistant authentication method registered. Phishing-resistant methods are FIDO2 security keys or passkeys, Windows Hello for Business, and certificate-based authentication."
+impact = "These administrators can only use methods such as push notifications, codes, or SMS, which an adversary-in-the-middle phishing page can relay. A phished session token for one of these accounts gives control over the tenant."
+attack = [
+  "Sends the administrator a phishing link to a proxy page that relays the real Microsoft sign-in.",
+  "Relays the password and MFA approval to Microsoft Entra ID as the administrator types them.",
+  "Captures the session cookie and replays it from the attacker's own browser to act as the administrator.",
+]
+remediation = [
+  "Have every privileged user register a FIDO2 security key, a passkey in Microsoft Authenticator, Windows Hello for Business, or a certificate.",
+  "Use a Temporary Access Pass to bootstrap the registration where needed.",
+  "Then require the built-in Phishing-resistant MFA authentication strength for admin roles in Conditional Access (see EN-CA-003).",
+]
+verify = "Get-MgReportAuthenticationMethodUserRegistrationDetail -All -Filter \"isAdmin eq true\" | Select-Object UserPrincipalName, MethodsRegistered"
+cvss = "AV:N/AC:L/PR:N/UI:R/S:U/C:H/I:H/A:N"
+mitre = ["T1557", "T1078.004"]
+
+[[check.detail.references]]
+title = "Authentication strengths"
+url = "https://learn.microsoft.com/entra/identity/authentication/concept-authentication-strengths"
+
+[[check.detail.references]]
+title = "Enable passkeys (FIDO2) in Microsoft Entra ID"
+url = "https://learn.microsoft.com/entra/identity/authentication/how-to-enable-passkey-fido2"
+
+[[check]]
+id = "EN-AUTH-003"
+title = "Authentication methods policy: SMS and voice enabled"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "SMS or voice call is enabled as an authentication method in the authentication methods policy. Both deliver a code or call over the phone network, which an attacker can redirect."
+impact = "An attacker who takes over a user's phone number, for example through a SIM swap or port-out fraud, receives the MFA codes and can complete sign-in or a password reset with them."
+attack = [
+  "Obtains the user's password by phishing or from a leak.",
+  "Moves the user's phone number to an attacker SIM through the mobile carrier.",
+  "Receives the SMS code or voice call and completes the sign-in.",
+]
+remediation = [
+  "In the Microsoft Entra admin center, go to Protection > Authentication methods > Policies.",
+  "Move users to Microsoft Authenticator or a phishing-resistant method, using a registration campaign.",
+  "Disable SMS and Voice call, or scope them to a small group that has no alternative.",
+]
+verify = "Invoke-MgGraphRequest -Method GET -Uri \"https://graph.microsoft.com/beta/policies/authenticationMethodsPolicy/authenticationMethodConfigurations/Sms\""
+cvss = "AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:L/A:N"
+mitre = ["T1078.004", "T1111"]
+
+[[check.detail.references]]
+title = "Manage authentication methods for Microsoft Entra ID"
+url = "https://learn.microsoft.com/entra/identity/authentication/concept-authentication-methods-manage"
+
+[[check.detail.references]]
+title = "Authentication methods in Microsoft Entra ID: voice call"
+url = "https://learn.microsoft.com/entra/identity/authentication/concept-authentication-phone-options"
+
+[[check]]
+id = "EN-AUTH-004"
+title = "Microsoft Authenticator number matching and additional context"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Microsoft Authenticator push notifications do not show additional context, so users do not see the application name and the sign-in location when they approve a request."
+impact = "Users cannot tell an attacker's sign-in from their own, which makes it easier for an attacker with a stolen password to get a push request approved."
+attack = [
+  "Signs in with a stolen password.",
+  "Sends repeated push requests until the user approves one without knowing where it came from.",
+]
+remediation = [
+  "In the Microsoft Entra admin center, go to Protection > Authentication methods > Policies > Microsoft Authenticator > Configure.",
+  "Set Show application name in push and passwordless notifications and Show geographic location in push and passwordless notifications to Enabled for All users.",
+]
+verify = "Invoke-MgGraphRequest -Method GET -Uri \"https://graph.microsoft.com/beta/policies/authenticationMethodsPolicy/authenticationMethodConfigurations/MicrosoftAuthenticator\""
+frameworks = [
+  "CIS Microsoft 365 5.2.3.1",
+]
+mitre = ["T1621", "T1111"]
+
+[[check.detail.references]]
+title = "Use additional context in Microsoft Authenticator notifications"
+url = "https://learn.microsoft.com/entra/identity/authentication/how-to-mfa-additional-context"
+
+[[check]]
+id = "EN-AUTH-005"
+title = "Legacy per-user MFA still in use (migration state)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "The authentication methods policy migration is not complete (policyMigrationState is not migrationComplete), so the legacy per-user MFA and SSPR method settings still apply alongside the new policy."
+impact = "Methods turned off in the authentication methods policy can still be used through the legacy settings, such as SMS or voice, which keeps weaker methods available and makes the effective configuration hard to reason about."
+remediation = [
+  "Finish the migration under Protection > Authentication methods > Policies > Manage migration, then set it to Migration complete.",
+  "Move users off per-user MFA to Conditional Access first.",
+]
+verify = "(Invoke-MgGraphRequest GET v1.0/policies/authenticationMethodsPolicy).policyMigrationState"
+mitre = ["T1556"]
+
+[[check.detail.references]]
+title = "Migrate MFA and SSPR settings to the authentication methods policy"
+url = "https://learn.microsoft.com/entra/identity/authentication/how-to-authentication-methods-manage"
+
+[[check]]
+id = "EN-AUTH-006"
+title = "Legacy MFA/SSPR policies migrated to authentication methods policy"
+status = "implemented"
+mitre = ["T1556.006"]
+severity = "low"
+
+[check.detail]
+description = "The migration to the authentication methods policy is not complete. The legacy per-tenant MFA settings and SSPR methods settings still apply alongside the authentication methods policy."
+impact = "Methods can stay enabled through the legacy policies even when they are disabled in the authentication methods policy, so the effective configuration is harder to see and control. Microsoft has retired the legacy policies for management."
+remediation = [
+  "In the Microsoft Entra admin center, go to Protection > Authentication methods > Policies and open Manage migration.",
+  "Enable in the authentication methods policy every method that is in use in the legacy MFA and SSPR settings.",
+  "Set the migration state to Migration Complete, then turn off the methods in the legacy settings.",
+]
+verify = "(Invoke-MgGraphRequest -Method GET -Uri \"https://graph.microsoft.com/beta/policies/authenticationMethodsPolicy\").policyMigrationState"
+
+[[check.detail.references]]
+title = "How to migrate MFA and SSPR policy settings to the Authentication methods policy"
+url = "https://learn.microsoft.com/entra/identity/authentication/how-to-authentication-methods-manage"
+
+[[check]]
+id = "EN-AUTH-007"
+title = "Temporary Access Pass configuration (lifetime, one-time use)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Temporary Access Pass is enabled and either can be used more than once within its lifetime, or its maximum lifetime is longer than 8 hours."
+impact = "A Temporary Access Pass satisfies MFA on its own. A long-lived or reusable pass that is leaked, for example in a ticket or chat, lets anyone sign in as the user and register their own methods."
+attack = [
+  "Obtains a Temporary Access Pass issued to a user, for example from a helpdesk ticket.",
+  "Signs in with it repeatedly while it remains valid.",
+  "Registers an attacker-controlled authentication method on the account for persistent access.",
+]
+remediation = [
+  "In the Microsoft Entra admin center, go to Protection > Authentication methods > Policies > Temporary Access Pass > Configure.",
+  "Set One-time to Yes and Maximum lifetime to 8 hours or less.",
+  "Limit who can issue passes to a small set of administrators.",
+]
+verify = "Invoke-MgGraphRequest -Method GET -Uri \"https://graph.microsoft.com/beta/policies/authenticationMethodsPolicy/authenticationMethodConfigurations/TemporaryAccessPass\""
+cvss = "AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:L/A:N"
+mitre = ["T1078.004", "T1098", "T1556.006"]
+
+[[check.detail.references]]
+title = "Configure Temporary Access Pass to register passwordless authentication methods"
+url = "https://learn.microsoft.com/entra/identity/authentication/howto-authentication-temporary-access-pass"
+
+[[check]]
+id = "EN-AUTH-008"
+title = "FIDO2 / passkey policy (attestation, key restrictions)"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "FIDO2 security keys and passkeys are disabled in the authentication methods policy, or they are enabled without enforcing attestation."
+impact = "When the method is disabled, users cannot register a phishing-resistant method. Without attestation, the tenant cannot be sure that a registered key is a genuine authenticator of an approved make and model."
+remediation = [
+  "In the Microsoft Entra admin center, go to Protection > Authentication methods > Policies > Passkey (FIDO2).",
+  "Enable the method for all users, or at least for administrators.",
+  "Under Configure, set Enforce attestation to Yes, and restrict keys to approved AAGUIDs if your organization has standardized on specific models.",
+]
+verify = "Invoke-MgGraphRequest -Method GET -Uri \"https://graph.microsoft.com/beta/policies/authenticationMethodsPolicy/authenticationMethodConfigurations/Fido2\""
+
+[[check.detail.references]]
+title = "Enable passkeys (FIDO2) in Microsoft Entra ID"
+url = "https://learn.microsoft.com/entra/identity/authentication/how-to-enable-passkey-fido2"
+
+[[check]]
+id = "EN-AUTH-009"
+title = "Certificate-based authentication configuration and CA trust list"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Certificate-based authentication is enabled with a user binding of low affinity, such as the certificate's principal name or RFC822 name to the UPN."
+impact = "With a low-affinity binding, anyone who can get a certificate from a trusted CA with the right name in it can sign in as that user, including from a CA that is shared with other purposes."
+remediation = [
+  "Use high-affinity bindings (SubjectKeyIdentifier, SHA1 public key, or issuer and serial number) mapped to certificateUserIds.",
+  "Limit the trusted CAs to those that issue user authentication certificates.",
+]
+verify = "(Invoke-MgGraphRequest GET v1.0/policies/authenticationMethodsPolicy/authenticationMethodConfigurations/X509Certificate).certificateUserBindings"
+mitre = ["T1556"]
+
+[[check.detail.references]]
+title = "Certificate user bindings"
+url = "https://learn.microsoft.com/entra/identity/authentication/concept-certificate-based-authentication-certificateuserids"
+
+[[check]]
+id = "EN-AUTH-010"
+title = "SSPR enabled, methods required, and admin SSPR policy"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "No member account is enabled for self-service password reset, read from the authentication methods registration report. The check also shows whether admins may use SSPR."
+impact = "Without SSPR every reset goes through the help desk, where social engineering of the agent is the common way to take over an account."
+remediation = [
+  "Enable SSPR for all users with two strong methods required.",
+  "Require registration at sign-in and keep admin SSPR on with strong methods.",
+]
+verify = "Get-MgReportAuthenticationMethodUserRegistrationDetail | Group-Object IsSsprEnabled"
+mitre = ["T1078.004"]
+
+[[check.detail.references]]
+title = "Plan self-service password reset"
+url = "https://learn.microsoft.com/entra/identity/authentication/howto-sspr-deployment"
+
+[[check]]
+id = "EN-AUTH-011"
+title = "Password protection: custom banned list and lockout threshold"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "No custom banned password list is in use. In the Password Rule Settings, the banned password check is off or the custom list is empty."
+impact = "Users can set passwords built from the company name, products, or locations, which are among the first guesses in a targeted password spray."
+attack = [
+  "Builds a word list from the organization's name, products, and city.",
+  "Sprays a few of these passwords against many accounts.",
+]
+remediation = [
+  "In the Microsoft Entra admin center, go to Protection > Authentication methods > Password protection.",
+  "Set Enforce custom list to Yes and add organization-specific terms such as company names, brands, and locations.",
+  "For hybrid tenants, also deploy Microsoft Entra Password Protection for on-premises Active Directory.",
+]
+verify = "(Invoke-MgGraphRequest -Method GET -Uri \"https://graph.microsoft.com/beta/settings\").value | ForEach-Object { [pscustomobject]$_ } | Where-Object { $_.displayName -eq \"Password Rule Settings\" } | Select-Object -ExpandProperty values"
+frameworks = [
+  "CIS Microsoft 365 5.2.3.2",
+]
+cvss = "AV:N/AC:H/PR:N/UI:N/S:U/C:L/I:L/A:N"
+mitre = ["T1110.003"]
+
+[[check.detail.references]]
+title = "Eliminate bad passwords using Microsoft Entra Password Protection"
+url = "https://learn.microsoft.com/entra/identity/authentication/concept-password-ban-bad"
+
+[[check.detail.references]]
+title = "Configure custom banned passwords"
+url = "https://learn.microsoft.com/entra/identity/authentication/tutorial-configure-custom-password-protection"
+
+[[check]]
+id = "EN-AUTH-012"
+title = "Smart lockout settings"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Smart lockout is weaker than the default. The lockout threshold is above 10 failed attempts, or the lockout duration is below 60 seconds."
+impact = "Attackers get more password guesses per account in a given time before the account is locked."
+attack = [
+  "Runs a slow password spray or brute force that stays under the lockout threshold.",
+]
+remediation = [
+  "In the Microsoft Entra admin center, go to Protection > Authentication methods > Password protection.",
+  "Set Lockout threshold to 10 or less and Lockout duration in seconds to 60 or more.",
+  "In hybrid tenants with pass-through authentication, keep the Entra threshold lower than the on-premises Active Directory threshold.",
+]
+verify = "(Invoke-MgGraphRequest -Method GET -Uri \"https://graph.microsoft.com/beta/settings\").value | ForEach-Object { [pscustomobject]$_ } | Where-Object { $_.displayName -eq \"Password Rule Settings\" } | Select-Object -ExpandProperty values"
+mitre = ["T1110"]
+
+[[check.detail.references]]
+title = "Protect user accounts from attacks with Microsoft Entra smart lockout"
+url = "https://learn.microsoft.com/entra/identity/authentication/howto-password-smart-lockout"
+
+[[check]]
+id = "EN-AUTH-013"
+title = "Seamless SSO account (AZUREADSSOACC) Kerberos key age (links to hybrid)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "The AZUREADSSOACC computer account that Seamless SSO uses has a Kerberos key (password) older than 30 days. The same check is listed under hybrid sync as HY-SYNC-014."
+impact = "Anyone who obtains the key can forge Kerberos tickets that Entra ID accepts for any synchronized user, signing in to the cloud as them."
+remediation = [
+  "Roll over the key with Update-AzureADSSOForest from the Entra Connect server, and schedule it every 30 days.",
+  "Consider retiring Seamless SSO for Entra-joined devices with PRT-based SSO.",
+]
+verify = "Get-ADComputer AZUREADSSOACC -Properties PasswordLastSet"
+mitre = ["T1558"]
+
+[[check.detail.references]]
+title = "Seamless SSO key rollover"
+url = "https://learn.microsoft.com/entra/identity/hybrid/connect/how-to-connect-sso-faq#how-can-i-roll-over-the-kerberos-decryption-key-of-the--azureadsso--computer-account-"
+
+[[check]]
+id = "EN-AUTH-014"
+title = "Password hash sync enabled (leaked credential detection depends on it)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "The tenant synchronizes users from on-premises Active Directory, but password hash synchronization is off."
+impact = "Microsoft Entra ID Protection cannot detect leaked credentials for synchronized users, and cloud sign-in has no fallback if federation or pass-through authentication becomes unavailable."
+remediation = [
+  "In Microsoft Entra Connect, choose Customize synchronization options and enable Password hash synchronization.",
+  "In Microsoft Entra Cloud Sync, enable password hash sync in the configuration.",
+  "Password hash sync can be enabled while keeping federation or pass-through authentication as the sign-in method.",
+]
+verify = "Invoke-MgGraphRequest -Method GET -Uri \"https://graph.microsoft.com/beta/directory/onPremisesSynchronization\""
+cvss = "AV:N/AC:H/PR:N/UI:N/S:U/C:L/I:L/A:N"
+mitre = ["T1078.004", "T1556.007"]
+
+[[check.detail.references]]
+title = "What is password hash synchronization with Microsoft Entra ID?"
+url = "https://learn.microsoft.com/entra/identity/hybrid/connect/whatis-phs"
+
+[[check]]
+id = "EN-AUTH-015"
+title = "Registration campaign (nudge) configuration"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "The authentication methods registration campaign is disabled, so users who have weaker methods are not prompted to set up Microsoft Authenticator at sign-in."
+impact = "Users stay on SMS, voice, or no strong method, and the move to stronger methods depends on users acting on their own."
+remediation = [
+  "In the Microsoft Entra admin center, go to Protection > Authentication methods > Registration campaign.",
+  "Set State to Enabled or Microsoft managed, target All users, and limit the number of days a user can snooze.",
+]
+verify = "(Invoke-MgGraphRequest -Method GET -Uri \"https://graph.microsoft.com/beta/policies/authenticationMethodsPolicy\").registrationEnforcement"
+
+[[check.detail.references]]
+title = "Run a registration campaign to set up a passkey or Microsoft Authenticator"
+url = "https://learn.microsoft.com/entra/identity/authentication/how-to-mfa-registration-campaign"
+
+[[check]]
+id = "EN-AUTH-016"
+title = "Authentication strengths defined and used"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "No Conditional Access policy uses an authentication strength. Policies that require MFA accept any MFA method, including SMS and voice."
+impact = "The tenant cannot require phishing-resistant methods for sensitive users or resources, so a phished MFA code or approval is enough to sign in."
+remediation = [
+  "In the Microsoft Entra admin center, go to Protection > Conditional Access > Authentication strengths and review the built-in strengths.",
+  "In Conditional Access policies for administrators and sensitive resources, replace Require multifactor authentication with Require authentication strength, for example Phishing-resistant MFA.",
+]
+verify = "Get-MgIdentityConditionalAccessPolicy -All | Where-Object { $_.GrantControls.AuthenticationStrength.Id } | Select-Object DisplayName, State"
+mitre = ["T1557"]
+
+[[check.detail.references]]
+title = "Conditional Access authentication strength"
+url = "https://learn.microsoft.com/entra/identity/authentication/concept-authentication-strengths"
+
+[[check]]
+id = "EN-AUTH-017"
+title = "System-preferred MFA enabled"
+status = "implemented"
+mitre = ["T1111"]
+severity = "low"
+
+[check.detail]
+description = "System-preferred multifactor authentication is disabled. Users are prompted for the method they set as default, even when they have a stronger one registered."
+impact = "Users who registered a strong method but kept SMS or voice as their default keep signing in with the weaker method."
+remediation = [
+  "In the Microsoft Entra admin center, go to Protection > Authentication methods > Settings.",
+  "Set System-preferred multifactor authentication to Enabled or Microsoft managed, targeting All users.",
+]
+verify = "(Invoke-MgGraphRequest -Method GET -Uri \"https://graph.microsoft.com/beta/policies/authenticationMethodsPolicy\").systemCredentialPreferences"
+
+[[check.detail.references]]
+title = "System-preferred multifactor authentication"
+url = "https://learn.microsoft.com/entra/identity/authentication/concept-system-preferred-multifactor-authentication"
+
+[[check]]
+id = "EN-AUTH-018"
+title = "MFA fatigue indicators (denied push spikes from sign-in logs)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "An account had ten or more sign-ins in 30 days that failed with error 500121 (strong authentication not completed): MFA prompts that were denied or not answered."
+impact = "Repeated unanswered prompts usually mean someone has the password and is pushing MFA requests in the hope that the user approves one."
+remediation = [
+  "Reset the account's password and revoke its sessions, then ask the user about the prompts.",
+  "Use number matching and additional context in Authenticator, or phishing-resistant methods.",
+]
+verify = "Sign-in logs filtered on the user and error code 500121."
+mitre = ["T1621"]
+
+[[check.detail.references]]
+title = "Multifactor authentication fatigue"
+url = "https://learn.microsoft.com/entra/identity/authentication/how-to-mfa-number-match"
+
+[[check]]
+id = "EN-AUTH-019"
+title = "Email OTP for guests configuration"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Email one-time passcodes are off, or not allowed for external IDs, in the authentication methods policy."
+impact = "Guests without an Entra or Microsoft account fall back to unmanaged Microsoft accounts, or cannot redeem invitations, instead of a verified one-time passcode."
+remediation = [
+  "Turn on Email OTP and allow it for external IDs.",
+]
+verify = "(Invoke-MgGraphRequest GET v1.0/policies/authenticationMethodsPolicy/authenticationMethodConfigurations/Email)"
+
+[[check.detail.references]]
+title = "Email one-time passcode authentication"
+url = "https://learn.microsoft.com/entra/external-id/one-time-passcode"
+
+[[check]]
+id = "EN-AUTH-020"
+title = "Report suspicious activity enabled"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "The Report suspicious activity setting is disabled, so users cannot report an MFA prompt they did not start."
+impact = "MFA requests caused by an attacker with a valid password go unreported, and the user is not flagged as high risk for Identity Protection to act on."
+remediation = [
+  "In the Microsoft Entra admin center, go to Protection > Authentication methods > Settings.",
+  "Set Report suspicious activity to Enabled, targeting All users.",
+]
+verify = "(Invoke-MgGraphRequest -Method GET -Uri \"https://graph.microsoft.com/beta/policies/authenticationMethodsPolicy\").reportSuspiciousActivitySettings"
+mitre = ["T1621"]
+
+[[check.detail.references]]
+title = "Configure Microsoft Entra multifactor authentication settings"
+url = "https://learn.microsoft.com/entra/identity/authentication/howto-mfa-mfasettings"

@@ -1,0 +1,212 @@
+/* Design tokens for the Benchmark theme: a cool blue-grey light theme (the
+   default) and a near-black dark theme with a violet glow, pastel accents,
+   big radii and Urbanist. See /plans/dc-assessor-theme-plan.html.
+
+   Severity has three forms: an ink colour for text and thin marks (meets
+   WCAG AA on panels), a pastel fill for badges and bars (always with dark
+   text), and a soft tint for row and chip backgrounds. */
+
+:root {
+  color-scheme: light;
+  --bg: #e3e5e8;
+  --glow: #c9d3e8;
+  --glow-2: #d6dceb;
+  --surface: #f1f2f5;
+  --surface-raised: #fbfbfd;
+  --surface-alt: #e7e9ee;
+  --border: #d5d9e0;
+  --border-strong: #bcc2cd;
+  --text: #121317;
+  --text-muted: #50545e;
+
+  /* The one solid main action per screen, the active rail button and the
+     pressed state of pill switches */
+  --pill: #111111;
+  --pill-fg: #ffffff;
+  --pill-hover: #2b2c31;
+  --rail: #f6f7f9;
+  --rail-hover: #ffffff;
+
+  /* Selection, focus and links: periwinkle from the reference */
+  --accent: #6f8fd6;
+  --accent-hover: #5a7cc8;
+  --accent-text: #ffffff;
+  --accent-soft: #dde4f6;
+  --accent-ink: #3a59a8;
+  --accent-ink-hover: #2c4688;
+
+  /* Pastels from the reference, used as fills with --ink text */
+  --ink: #141414;
+  --mint: #86f2a8;
+  --lilac: #d8c5f5;
+  --lemon: #fff27a;
+  --sky: #92d6e5;
+  --salmon: #ff9b9b;
+  --orange: #ffc390;
+  --peri: #6f8fd6;
+  --violet: #8b78e0;
+  --rose: #d96a6a;
+  --stripe: #c3c9d6;
+
+  --ok: #2f7a45;
+  --ok-bg: var(--mint);
+  --ok-soft: #d8f5e1;
+
+  --sev-critical: #b3261e;
+  --sev-critical-bg: var(--salmon);
+  --sev-critical-fg: var(--ink);
+  --sev-critical-soft: #fbdfdf;
+  --sev-high: #a3470b;
+  --sev-high-bg: var(--orange);
+  --sev-high-fg: var(--ink);
+  --sev-high-soft: #fde7d4;
+  --sev-medium: #6f5a00;
+  --sev-medium-bg: var(--lemon);
+  --sev-medium-fg: var(--ink);
+  --sev-medium-soft: #fbf5c6;
+  --sev-low: #1f6a80;
+  --sev-low-bg: var(--sky);
+  --sev-low-fg: var(--ink);
+  --sev-low-soft: #d7eef4;
+  --sev-info: #64489f;
+  --sev-info-bg: var(--lilac);
+  --sev-info-fg: var(--ink);
+  --sev-info-soft: #ece2fa;
+
+  --font-ui: 'Urbanist Variable', 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
+  --font-display: 'Urbanist Variable', 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', 'Cascadia Mono', Consolas, monospace;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+
+  --radius: 12px;
+  --radius-md: 18px;
+  --radius-item: 22px;
+  --radius-lg: 26px;
+  --row-height: 36px;
+  --transition: 160ms ease-out;
+  --spring: cubic-bezier(0.2, 0.9, 0.25, 1.25);
+  --shadow-pop: 0 18px 48px -18px rgb(40 55 90 / 0.45);
+  --scroll-thumb: rgb(18 19 23 / 0.22);
+  --scroll-thumb-active: rgb(18 19 23 / 0.38);
+}
+
+/* Dark: chosen in Settings, or "Follow Windows" on a dark Windows. Light is
+   the default, so nothing turns dark until main.ts sets data-theme. */
+@media (prefers-color-scheme: dark) {
+  :root[data-theme='system'] {
+    color-scheme: dark;
+    --bg: #1e1e1e;
+    --glow: #31294f;
+    --glow-2: #251e37;
+    --surface: #2b2a2f;
+    --surface-raised: #3a393e;
+    --surface-alt: #242328;
+    --border: #45444b;
+    --border-strong: #5a5961;
+    --text: #f4f3f7;
+    --text-muted: #b6b5bd;
+    --pill: #ffffff;
+    --pill-fg: #141414;
+    --pill-hover: #e4e3ea;
+    --rail: #2e2d33;
+    --rail-hover: #3a393e;
+    --accent: #93aeea;
+    --accent-hover: #a9bff2;
+    --accent-text: #141414;
+    --accent-soft: #363c52;
+    --accent-ink: #a9bff2;
+    --accent-ink-hover: #c6d4f7;
+    --mint: #7affa1;
+    --lilac: #d5bef2;
+    --lemon: #fff87c;
+    --sky: #87d3e3;
+    --salmon: #ff9494;
+    --orange: #ffbe85;
+    --peri: #93aeea;
+    --violet: #a897f0;
+    --rose: #ee8c8c;
+    --stripe: #4a4857;
+    --ok: #7affa1;
+    --ok-soft: #213f2c;
+    --sev-critical: #ff9494;
+    --sev-critical-soft: #4a2a2c;
+    --sev-high: #ffbe85;
+    --sev-high-soft: #4a3624;
+    --sev-medium: #fff87c;
+    --sev-medium-soft: #46431f;
+    --sev-low: #87d3e3;
+    --sev-low-soft: #233f46;
+    --sev-info: #d5bef2;
+    --sev-info-soft: #3a3049;
+    --shadow-pop: 0 18px 48px -18px rgb(0 0 0 / 0.7);
+    --scroll-thumb: rgb(244 243 247 / 0.2);
+    --scroll-thumb-active: rgb(244 243 247 / 0.36);
+  }
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #1e1e1e;
+  --glow: #31294f;
+  --glow-2: #251e37;
+  --surface: #2b2a2f;
+  --surface-raised: #3a393e;
+  --surface-alt: #242328;
+  --border: #45444b;
+  --border-strong: #5a5961;
+  --text: #f4f3f7;
+  --text-muted: #b6b5bd;
+  --pill: #ffffff;
+  --pill-fg: #141414;
+  --pill-hover: #e4e3ea;
+  --rail: #2e2d33;
+  --rail-hover: #3a393e;
+  --accent: #93aeea;
+  --accent-hover: #a9bff2;
+  --accent-text: #141414;
+  --accent-soft: #363c52;
+  --accent-ink: #a9bff2;
+  --accent-ink-hover: #c6d4f7;
+  --mint: #7affa1;
+  --lilac: #d5bef2;
+  --lemon: #fff87c;
+  --sky: #87d3e3;
+  --salmon: #ff9494;
+  --orange: #ffbe85;
+  --peri: #93aeea;
+  --violet: #a897f0;
+  --rose: #ee8c8c;
+  --stripe: #4a4857;
+  --ok: #7affa1;
+  --ok-soft: #213f2c;
+  --sev-critical: #ff9494;
+  --sev-critical-soft: #4a2a2c;
+  --sev-high: #ffbe85;
+  --sev-high-soft: #4a3624;
+  --sev-medium: #fff87c;
+  --sev-medium-soft: #46431f;
+  --sev-low: #87d3e3;
+  --sev-low-soft: #233f46;
+  --sev-info: #d5bef2;
+  --sev-info-soft: #3a3049;
+  --shadow-pop: 0 18px 48px -18px rgb(0 0 0 / 0.7);
+  --scroll-thumb: rgb(244 243 247 / 0.2);
+  --scroll-thumb-active: rgb(244 243 247 / 0.36);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --transition: 0ms;
+  }
+}
+
+:root[data-motion='off'] {
+  --transition: 0ms;
+}

@@ -1,0 +1,204 @@
+# EN-GRP: Groups and collaboration
+
+area = "EN-GRP"
+
+[[check]]
+id = "EN-GRP-001"
+title = "Dynamic group rules based on user-editable attributes (privilege escalation)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Dynamic groups have membership rules based on attributes that users or inviters control (displayName, mail, otherMails, userPrincipalName or proxyAddresses) and do not limit membership to userType Member. A guest invited with a matching address joins the group automatically."
+impact = "Anyone who can invite a guest, or influence these attributes, can get an account into the group and receive the access, app assignments or roles granted to it."
+attack = [
+  "Reads the dynamic membership rule, for example one matching mail addresses ending in the company domain.",
+  "Gets a guest invited, or changes an attribute it controls, so the account matches the rule.",
+  "Is added to the group automatically and uses the access granted to the group.",
+]
+remediation = [
+  "In the Entra admin center, go to Groups > All groups, open each listed group and edit its dynamic membership rules.",
+  "Add (user.userType -eq \"Member\") to the rule, or base the rule on attributes only administrators or HR synchronization can set, such as employeeId or department.",
+]
+verify = "Get-MgGroup -All -Filter \"groupTypes/any(c:c eq 'DynamicMembership')\" -Property displayName,membershipRule | Select-Object DisplayName, MembershipRule"
+cvss = "AV:N/AC:L/PR:L/UI:N/S:U/C:L/I:L/A:N"
+mitre = ["T1098", "T1078.004"]
+
+[[check.detail.references]]
+title = "Manage rules for dynamic membership groups"
+url = "https://learn.microsoft.com/entra/identity/users/groups-dynamic-membership"
+
+[[check]]
+id = "EN-GRP-002"
+title = "Role-assignable groups count and ownership"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "A role-assignable group has owners who hold no privileged role."
+impact = "Owners can add members, so a non-admin owner can give any account the roles the group holds."
+remediation = [
+  "Remove owners who are not Tier 0 admins, or manage membership through PIM for Groups.",
+]
+verify = "Get-MgGroup -Filter 'isAssignableToRole eq true' -ExpandProperty Owners"
+mitre = ["T1098.003"]
+
+[[check.detail.references]]
+title = "Use Microsoft Entra groups to manage role assignments"
+url = "https://learn.microsoft.com/entra/identity/role-based-access-control/groups-concept"
+
+[[check]]
+id = "EN-GRP-003"
+title = "Groups with guests as owners"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Groups have a guest user as an owner. Owners can add and remove members and change the group's settings."
+impact = "A person outside the organization decides who gets the access granted through the group, and a compromise of that guest's home account lets an attacker add accounts of their choice."
+attack = [
+  "Compromises the guest owner's account in its home tenant.",
+  "Signs in to this tenant and adds an attacker-controlled account to the group.",
+  "Uses the group's access to Teams, SharePoint or applications.",
+]
+remediation = [
+  "In the Entra admin center, go to Groups > All groups, open each listed group and replace the guest owners with member accounts under Owners.",
+  "Keep the guest as a member if they still need access to the group's resources.",
+]
+verify = "Get-MgGroupOwner -GroupId <group-id> -All | Select-Object Id, @{n='UserType';e={$_.AdditionalProperties.userType}}"
+cvss = "AV:N/AC:H/PR:L/UI:N/S:U/C:L/I:L/A:N"
+mitre = ["T1098"]
+
+[[check.detail.references]]
+title = "Restrict guest user access permissions"
+url = "https://learn.microsoft.com/entra/identity/users/users-restrict-guest-permissions"
+
+[[check]]
+id = "EN-GRP-004"
+title = "Microsoft 365 group creation and naming policy"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Any user can create Microsoft 365 groups: the Group.Unified directory setting EnableGroupCreation is true or the setting does not exist."
+impact = "Microsoft 365 groups, Teams and SharePoint sites are created without review, which leads to sprawl, unmanaged sharing and data that nobody owns."
+remediation = [
+  "Create a security group of the users allowed to create Microsoft 365 groups.",
+  "Create or update the Group.Unified directory setting with EnableGroupCreation set to false and GroupCreationAllowedGroupId set to that group's ID.",
+]
+verify = "Invoke-MgGraphRequest -Method GET 'https://graph.microsoft.com/v1.0/groupSettings'"
+
+[[check.detail.references]]
+title = "Manage who can create Microsoft 365 Groups"
+url = "https://learn.microsoft.com/microsoft-365/solutions/manage-creation-of-groups"
+
+[[check]]
+id = "EN-GRP-005"
+title = "Groups granting access to privileged resources with no owners"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "A group that holds a privileged directory role has no owner."
+impact = "Nobody is accountable for who is in the group, so membership reviews and changes have no owner to approve them."
+remediation = [
+  "Name an owner who is a privileged admin, and review the group's membership with access reviews.",
+]
+verify = "Get-MgGroup -GroupId <id> -ExpandProperty Owners"
+
+[[check.detail.references]]
+title = "Securing privileged access"
+url = "https://learn.microsoft.com/security/privileged-access-workstations/overview"
+
+[[check]]
+id = "EN-GRP-006"
+title = "Group expiration policy"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "No group expiration (lifecycle) policy is configured for Microsoft 365 groups."
+impact = "Groups that are no longer used stay forever, together with their members, files and guest access."
+remediation = [
+  "In the Entra admin center, go to Groups > Expiration.",
+  "Set a group lifetime, such as 365 days, an email address for groups without owners, and apply it to all or selected Microsoft 365 groups.",
+]
+verify = "Get-MgGroupLifecyclePolicy"
+
+[[check.detail.references]]
+title = "Configure the expiration policy for Microsoft 365 groups"
+url = "https://learn.microsoft.com/entra/identity/users/groups-lifecycle"
+
+[[check]]
+id = "EN-GRP-007"
+title = "Public Microsoft 365 groups with sensitive membership"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "A public Microsoft 365 group has a name that points to sensitive content, such as finance, HR, legal, payroll or executive."
+impact = "Anyone in the tenant can join a public group and read its mail, files and Teams conversations."
+remediation = [
+  "Make the group private and review its members.",
+  "Apply a sensitivity label that sets privacy for such groups.",
+]
+verify = "Get-MgGroup -Filter \"groupTypes/any(c:c eq 'Unified')\" -Property DisplayName,Visibility"
+
+[[check.detail.references]]
+title = "Microsoft 365 group privacy"
+url = "https://learn.microsoft.com/microsoft-365/admin/create-groups/compare-groups"
+
+[[check]]
+id = "EN-GRP-008"
+title = "Groups with \"membership can be managed by members\""
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "A mail-enabled security group lets anyone join it (MemberJoinRestriction Open)."
+impact = "Any user can add themselves and gain whatever permissions the group holds on mailboxes, sites or apps."
+remediation = [
+  "Set MemberJoinRestriction to Closed or ApprovalRequired on security groups.",
+]
+verify = "Get-DistributionGroup -ResultSize Unlimited | Where-Object { $_.GroupType -match 'SecurityEnabled' -and $_.MemberJoinRestriction -eq 'Open' }"
+mitre = ["T1098"]
+
+[[check.detail.references]]
+title = "Distribution groups"
+url = "https://learn.microsoft.com/exchange/recipients-in-exchange-online/manage-distribution-groups/manage-distribution-groups"
+
+[[check]]
+id = "EN-GRP-009"
+title = "Sensitivity labels on groups enabled"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "The Group.Unified directory setting EnableMIPLabels is not true, so sensitivity labels cannot be applied to Microsoft 365 groups, Teams and sites."
+impact = "Privacy and guest access of new groups are left to the person creating them instead of the label."
+remediation = [
+  "Set EnableMIPLabels to True in the Group.Unified setting and sync labels to Entra (Execute-AzureAdLabelSync).",
+]
+verify = "Get-MgBetaDirectorySetting | Where-Object DisplayName -eq 'Group.Unified' | Select-Object -ExpandProperty Values"
+
+[[check.detail.references]]
+title = "Assign sensitivity labels to Microsoft 365 groups"
+url = "https://learn.microsoft.com/entra/identity/users/groups-assign-sensitivity-labels"
+
+[[check]]
+id = "EN-GRP-010"
+title = "Nested group cycles and empty groups"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "A group has no members and no dynamic rule, or groups are nested in a loop. Graph returns the first 20 members of each group, which is enough for both."
+impact = "Empty groups clutter access reviews and can still hold permissions someone could fill them to gain; nesting loops make effective membership unclear."
+remediation = [
+  "Delete empty groups that are not needed and break nesting loops.",
+]
+verify = "Get-MgGroupMember -GroupId <id>"
+
+[[check.detail.references]]
+title = "Manage groups"
+url = "https://learn.microsoft.com/entra/fundamentals/how-to-manage-groups"

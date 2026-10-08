@@ -1,0 +1,1332 @@
+{
+  "sources": [
+    {
+      "name": "corp.example.com",
+      "kind": "onprem",
+      "read_at": "2026-10-05T14:22:15Z"
+    },
+    {
+      "name": "example.onmicrosoft.com",
+      "kind": "cloud",
+      "read_at": "2026-10-05T14:28:12Z"
+    }
+  ],
+  "objects": [
+    {
+      "id": "d-corp",
+      "kind": "domain",
+      "name": "corp.example.com",
+      "source": "corp.example.com",
+      "tier0": true,
+      "attributes": {
+        "distinguishedName": "DC=corp,DC=example,DC=com",
+        "domainFunctionality": "Windows2016Domain",
+        "forest": "corp.example.com"
+      }
+    },
+    {
+      "id": "ou-users-cn",
+      "kind": "ou",
+      "name": "Users",
+      "source": "corp.example.com",
+      "parent": "d-corp",
+      "attributes": {
+        "distinguishedName": "Users"
+      }
+    },
+    {
+      "id": "ou-computers-cn",
+      "kind": "ou",
+      "name": "Computers",
+      "source": "corp.example.com",
+      "parent": "d-corp",
+      "attributes": {
+        "distinguishedName": "Computers"
+      }
+    },
+    {
+      "id": "ou-dcs",
+      "kind": "ou",
+      "name": "Domain Controllers",
+      "source": "corp.example.com",
+      "parent": "d-corp",
+      "attributes": {
+        "distinguishedName": "Domain Controllers"
+      }
+    },
+    {
+      "id": "ou-t0",
+      "kind": "ou",
+      "name": "Tier 0",
+      "source": "corp.example.com",
+      "parent": "d-corp",
+      "attributes": {
+        "distinguishedName": "Tier 0"
+      }
+    },
+    {
+      "id": "ou-t0-admins",
+      "kind": "ou",
+      "name": "Admins",
+      "source": "corp.example.com",
+      "parent": "ou-t0",
+      "attributes": {
+        "distinguishedName": "Admins"
+      }
+    },
+    {
+      "id": "ou-t0-servers",
+      "kind": "ou",
+      "name": "Servers",
+      "source": "corp.example.com",
+      "parent": "ou-t0",
+      "attributes": {
+        "distinguishedName": "Servers"
+      }
+    },
+    {
+      "id": "ou-svc",
+      "kind": "ou",
+      "name": "Service Accounts",
+      "source": "corp.example.com",
+      "parent": "d-corp",
+      "attributes": {
+        "distinguishedName": "Service Accounts"
+      }
+    },
+    {
+      "id": "ou-servers",
+      "kind": "ou",
+      "name": "Servers",
+      "source": "corp.example.com",
+      "parent": "d-corp",
+      "attributes": {
+        "distinguishedName": "Servers"
+      }
+    },
+    {
+      "id": "ou-people",
+      "kind": "ou",
+      "name": "People",
+      "source": "corp.example.com",
+      "parent": "d-corp",
+      "attributes": {
+        "distinguishedName": "People"
+      }
+    },
+    {
+      "id": "ou-london",
+      "kind": "ou",
+      "name": "London",
+      "source": "corp.example.com",
+      "parent": "ou-people",
+      "attributes": {
+        "distinguishedName": "London"
+      }
+    },
+    {
+      "id": "ou-madrid",
+      "kind": "ou",
+      "name": "Madrid",
+      "source": "corp.example.com",
+      "parent": "ou-people",
+      "attributes": {
+        "distinguishedName": "Madrid"
+      }
+    },
+    {
+      "id": "ou-it",
+      "kind": "ou",
+      "name": "IT",
+      "source": "corp.example.com",
+      "parent": "ou-people",
+      "attributes": {
+        "distinguishedName": "IT"
+      }
+    },
+    {
+      "id": "ou-leavers",
+      "kind": "ou",
+      "name": "Leavers",
+      "source": "corp.example.com",
+      "parent": "ou-people",
+      "attributes": {
+        "distinguishedName": "Leavers"
+      }
+    },
+    {
+      "id": "ou-ws",
+      "kind": "ou",
+      "name": "Workstations",
+      "source": "corp.example.com",
+      "parent": "d-corp",
+      "attributes": {
+        "distinguishedName": "Workstations"
+      }
+    },
+    {
+      "id": "ou-groups",
+      "kind": "ou",
+      "name": "Groups",
+      "source": "corp.example.com",
+      "parent": "d-corp",
+      "attributes": {
+        "distinguishedName": "Groups"
+      }
+    },
+    {
+      "id": "u-administrator",
+      "kind": "user",
+      "name": "Administrator",
+      "source": "corp.example.com",
+      "parent": "ou-users-cn",
+      "display_name": "Built-in administrator",
+      "enabled": true,
+      "tier0": true,
+      "last_logon": "2026-06-02T11:00:00Z",
+      "password_last_set": "2025-11-20T09:00:00Z",
+      "flags": [
+        {
+          "text": "Domain Admins",
+          "level": "crit"
+        }
+      ],
+      "attributes": {
+        "sAMAccountName": "Administrator",
+        "userPrincipalName": "Administrator@corp.example.com",
+        "whenCreated": "2019-02-14",
+        "adminCount": 1
+      }
+    },
+    {
+      "id": "u-krbtgt",
+      "kind": "user",
+      "name": "krbtgt",
+      "source": "corp.example.com",
+      "parent": "ou-users-cn",
+      "display_name": "Key Distribution Center service",
+      "enabled": false,
+      "tier0": true,
+      "last_logon": null,
+      "password_last_set": "2023-07-07T09:14:22Z",
+      "flags": [
+        {
+          "text": "Password 1,186 days old",
+          "level": "warn"
+        }
+      ],
+      "attributes": {
+        "sAMAccountName": "krbtgt",
+        "userPrincipalName": "krbtgt@corp.example.com",
+        "whenCreated": "2019-02-14"
+      }
+    },
+    {
+      "id": "u-adm-jsmith",
+      "kind": "user",
+      "name": "adm-jsmith",
+      "source": "corp.example.com",
+      "parent": "ou-t0-admins",
+      "display_name": "John Smith (admin)",
+      "enabled": true,
+      "tier0": true,
+      "last_logon": "2026-10-04T08:51:00Z",
+      "password_last_set": "2026-03-06T10:00:00Z",
+      "flags": [
+        {
+          "text": "Domain Admins",
+          "level": "crit"
+        },
+        {
+          "text": "Kerberoastable",
+          "level": "warn"
+        }
+      ],
+      "attributes": {
+        "sAMAccountName": "adm-jsmith",
+        "userPrincipalName": "adm-jsmith@corp.example.com",
+        "whenCreated": "2019-02-14",
+        "adminCount": 1,
+        "servicePrincipalName": "MSSQLSvc/sql-old.corp.example.com:1433",
+        "objectSid": "S-1-5-21-3623811015-3361044348-30300820-1167"
+      }
+    },
+    {
+      "id": "u-adm-mlopez",
+      "kind": "user",
+      "name": "adm-mlopez",
+      "source": "corp.example.com",
+      "parent": "ou-t0-admins",
+      "display_name": "Maria Lopez (admin)",
+      "enabled": true,
+      "tier0": true,
+      "last_logon": "2026-10-02T16:10:00Z",
+      "password_last_set": "2026-08-01T10:00:00Z",
+      "flags": [
+        {
+          "text": "Domain Admins",
+          "level": "crit"
+        }
+      ],
+      "attributes": {
+        "sAMAccountName": "adm-mlopez",
+        "userPrincipalName": "adm-mlopez@corp.example.com",
+        "whenCreated": "2019-02-14",
+        "adminCount": 1
+      }
+    },
+    {
+      "id": "u-svc-backup",
+      "kind": "user",
+      "name": "svc-backup",
+      "source": "corp.example.com",
+      "parent": "ou-svc",
+      "display_name": "Backup service",
+      "enabled": true,
+      "tier0": false,
+      "last_logon": "2026-10-05T02:00:00Z",
+      "password_last_set": "2022-12-03T10:00:00Z",
+      "flags": [
+        {
+          "text": "DCSync",
+          "level": "crit"
+        },
+        {
+          "text": "Password never expires",
+          "level": "warn"
+        }
+      ],
+      "attributes": {
+        "sAMAccountName": "svc-backup",
+        "userPrincipalName": "svc-backup@corp.example.com",
+        "whenCreated": "2018-05-02"
+      }
+    },
+    {
+      "id": "u-svc-sql01",
+      "kind": "user",
+      "name": "svc-sql01",
+      "source": "corp.example.com",
+      "parent": "ou-svc",
+      "display_name": "SQL service on APP01",
+      "enabled": true,
+      "tier0": false,
+      "last_logon": "2026-10-05T03:00:00Z",
+      "password_last_set": "2024-01-21T10:00:00Z",
+      "flags": [
+        {
+          "text": "Kerberoastable",
+          "level": "warn"
+        },
+        {
+          "text": "Password never expires",
+          "level": "warn"
+        }
+      ],
+      "attributes": {
+        "sAMAccountName": "svc-sql01",
+        "userPrincipalName": "svc-sql01@corp.example.com",
+        "whenCreated": "2019-02-14",
+        "servicePrincipalName": "MSSQLSvc/app01.corp.example.com:1433"
+      }
+    },
+    {
+      "id": "u-akhan",
+      "kind": "user",
+      "name": "a.khan",
+      "source": "corp.example.com",
+      "parent": "ou-london",
+      "display_name": "Aisha Khan",
+      "enabled": true,
+      "tier0": false,
+      "last_logon": "2026-10-05T07:58:00Z",
+      "password_last_set": "2026-08-25T10:00:00Z",
+      "flags": [
+        {
+          "text": "Synced",
+          "level": ""
+        }
+      ],
+      "attributes": {
+        "sAMAccountName": "a.khan",
+        "userPrincipalName": "a.khan@corp.example.com",
+        "whenCreated": "2019-02-14",
+        "mail": "a.khan@example.com"
+      }
+    },
+    {
+      "id": "u-rlee",
+      "kind": "user",
+      "name": "r.lee",
+      "source": "corp.example.com",
+      "parent": "ou-london",
+      "display_name": "Robin Lee",
+      "enabled": true,
+      "tier0": false,
+      "last_logon": "2026-10-03T09:12:00Z",
+      "password_last_set": "2026-07-20T10:00:00Z",
+      "flags": [
+        {
+          "text": "Synced",
+          "level": ""
+        }
+      ],
+      "attributes": {
+        "sAMAccountName": "r.lee",
+        "userPrincipalName": "r.lee@corp.example.com",
+        "whenCreated": "2019-02-14",
+        "mail": "r.lee@example.com"
+      }
+    },
+    {
+      "id": "u-mgarcia",
+      "kind": "user",
+      "name": "m.garcia",
+      "source": "corp.example.com",
+      "parent": "ou-madrid",
+      "display_name": "Maria Garcia",
+      "enabled": true,
+      "tier0": false,
+      "last_logon": "2026-06-12T08:00:00Z",
+      "password_last_set": "2025-12-08T10:00:00Z",
+      "flags": [
+        {
+          "text": "Stale 115 days",
+          "level": "warn"
+        },
+        {
+          "text": "Synced",
+          "level": ""
+        }
+      ],
+      "attributes": {
+        "sAMAccountName": "m.garcia",
+        "userPrincipalName": "m.garcia@corp.example.com",
+        "whenCreated": "2019-02-14"
+      }
+    },
+    {
+      "id": "u-helpdesk01",
+      "kind": "user",
+      "name": "helpdesk01",
+      "source": "corp.example.com",
+      "parent": "ou-it",
+      "display_name": "Helpdesk shared account",
+      "enabled": true,
+      "tier0": false,
+      "last_logon": "2026-05-30T08:00:00Z",
+      "password_last_set": "2024-12-25T10:00:00Z",
+      "flags": [
+        {
+          "text": "Shared account",
+          "level": "warn"
+        },
+        {
+          "text": "Password never expires",
+          "level": "warn"
+        }
+      ],
+      "attributes": {
+        "sAMAccountName": "helpdesk01",
+        "userPrincipalName": "helpdesk01@corp.example.com",
+        "whenCreated": "2019-02-14"
+      }
+    },
+    {
+      "id": "u-kosei",
+      "kind": "user",
+      "name": "k.osei",
+      "source": "corp.example.com",
+      "parent": "ou-it",
+      "display_name": "Kwame Osei",
+      "enabled": true,
+      "tier0": false,
+      "last_logon": "2026-10-04T12:30:00Z",
+      "password_last_set": "2026-09-23T10:00:00Z",
+      "flags": [
+        {
+          "text": "Synced",
+          "level": ""
+        }
+      ],
+      "attributes": {
+        "sAMAccountName": "k.osei",
+        "userPrincipalName": "k.osei@corp.example.com",
+        "whenCreated": "2019-02-14"
+      }
+    },
+    {
+      "id": "u-tnguyen",
+      "kind": "user",
+      "name": "t.nguyen",
+      "source": "corp.example.com",
+      "parent": "ou-leavers",
+      "display_name": "Tran Nguyen",
+      "enabled": false,
+      "tier0": false,
+      "last_logon": "2026-03-02T17:40:00Z",
+      "password_last_set": "2025-08-21T10:00:00Z",
+      "flags": [
+        {
+          "text": "Disabled",
+          "level": ""
+        },
+        {
+          "text": "Still in IT-Admins",
+          "level": "warn"
+        }
+      ],
+      "attributes": {
+        "sAMAccountName": "t.nguyen",
+        "userPrincipalName": "t.nguyen@corp.example.com",
+        "whenCreated": "2019-02-14"
+      }
+    },
+    {
+      "id": "c-dc01",
+      "kind": "computer",
+      "name": "DC01",
+      "source": "corp.example.com",
+      "parent": "ou-dcs",
+      "enabled": true,
+      "tier0": true,
+      "last_logon": "2026-10-05T06:00:00Z",
+      "flags": [
+        {
+          "text": "Domain controller",
+          "level": ""
+        }
+      ],
+      "attributes": {
+        "dNSHostName": "dc01.corp.example.com",
+        "operatingSystem": "Windows Server 2022 Datacenter"
+      }
+    },
+    {
+      "id": "c-dc02",
+      "kind": "computer",
+      "name": "DC02",
+      "source": "corp.example.com",
+      "parent": "ou-dcs",
+      "enabled": true,
+      "tier0": true,
+      "last_logon": "2026-10-05T06:00:00Z",
+      "flags": [
+        {
+          "text": "Domain controller",
+          "level": ""
+        }
+      ],
+      "attributes": {
+        "dNSHostName": "dc02.corp.example.com",
+        "operatingSystem": "Windows Server 2022 Datacenter"
+      }
+    },
+    {
+      "id": "c-dc03",
+      "kind": "computer",
+      "name": "DC03",
+      "source": "corp.example.com",
+      "parent": "ou-dcs",
+      "enabled": true,
+      "tier0": true,
+      "last_logon": "2026-10-05T06:00:00Z",
+      "flags": [
+        {
+          "text": "Domain controller",
+          "level": ""
+        },
+        {
+          "text": "Not readable",
+          "level": "warn"
+        }
+      ],
+      "attributes": {
+        "dNSHostName": "dc03.corp.example.com",
+        "operatingSystem": "Windows Server 2019 Datacenter"
+      }
+    },
+    {
+      "id": "c-sync01",
+      "kind": "computer",
+      "name": "SYNC01",
+      "source": "corp.example.com",
+      "parent": "ou-t0-servers",
+      "enabled": true,
+      "tier0": true,
+      "last_logon": "2026-10-05T06:00:00Z",
+      "flags": [
+        {
+          "text": "Entra Connect",
+          "level": ""
+        },
+        {
+          "text": "DCSync",
+          "level": "crit"
+        }
+      ],
+      "attributes": {
+        "dNSHostName": "sync01.corp.example.com",
+        "operatingSystem": "Windows Server 2022 Standard"
+      }
+    },
+    {
+      "id": "c-pki01",
+      "kind": "computer",
+      "name": "PKI01",
+      "source": "corp.example.com",
+      "parent": "ou-t0-servers",
+      "enabled": true,
+      "tier0": true,
+      "last_logon": "2026-10-05T06:00:00Z",
+      "flags": [
+        {
+          "text": "Enterprise CA",
+          "level": ""
+        }
+      ],
+      "attributes": {
+        "dNSHostName": "pki01.corp.example.com",
+        "operatingSystem": "Windows Server 2022 Standard"
+      }
+    },
+    {
+      "id": "c-adm-ws01",
+      "kind": "computer",
+      "name": "ADM-WS01",
+      "source": "corp.example.com",
+      "parent": "ou-t0-servers",
+      "enabled": true,
+      "tier0": true,
+      "last_logon": "2026-10-05T06:00:00Z",
+      "flags": [
+        {
+          "text": "Tier 0 PAW",
+          "level": "ok"
+        }
+      ],
+      "attributes": {
+        "dNSHostName": "adm-ws01.corp.example.com",
+        "operatingSystem": "Windows 11 Enterprise"
+      }
+    },
+    {
+      "id": "c-app01",
+      "kind": "computer",
+      "name": "APP01",
+      "source": "corp.example.com",
+      "parent": "ou-servers",
+      "enabled": true,
+      "tier0": false,
+      "last_logon": "2026-10-05T06:00:00Z",
+      "flags": [
+        {
+          "text": "Unconstrained delegation",
+          "level": "crit"
+        }
+      ],
+      "attributes": {
+        "dNSHostName": "app01.corp.example.com",
+        "operatingSystem": "Windows Server 2019 Standard"
+      }
+    },
+    {
+      "id": "c-fs01",
+      "kind": "computer",
+      "name": "FS01",
+      "source": "corp.example.com",
+      "parent": "ou-servers",
+      "enabled": true,
+      "tier0": false,
+      "last_logon": "2026-10-05T06:00:00Z",
+      "flags": [
+        {
+          "text": "Unconstrained delegation",
+          "level": "crit"
+        }
+      ],
+      "attributes": {
+        "dNSHostName": "fs01.corp.example.com",
+        "operatingSystem": "Windows Server 2016 Standard"
+      }
+    },
+    {
+      "id": "c-sql01",
+      "kind": "computer",
+      "name": "SQL01",
+      "source": "corp.example.com",
+      "parent": "ou-servers",
+      "enabled": true,
+      "tier0": false,
+      "last_logon": "2026-10-05T06:00:00Z",
+      "flags": [],
+      "attributes": {
+        "dNSHostName": "sql01.corp.example.com",
+        "operatingSystem": "Windows Server 2022 Standard"
+      }
+    },
+    {
+      "id": "c-ws-lon-014",
+      "kind": "computer",
+      "name": "WS-LON-014",
+      "source": "corp.example.com",
+      "parent": "ou-ws",
+      "enabled": true,
+      "tier0": false,
+      "last_logon": "2026-10-05T06:00:00Z",
+      "flags": [
+        {
+          "text": "No LAPS",
+          "level": "warn"
+        }
+      ],
+      "attributes": {
+        "dNSHostName": "ws-lon-014.corp.example.com",
+        "operatingSystem": "Windows 11 Enterprise"
+      }
+    },
+    {
+      "id": "c-ws-lon-022",
+      "kind": "computer",
+      "name": "WS-LON-022",
+      "source": "corp.example.com",
+      "parent": "ou-ws",
+      "enabled": true,
+      "tier0": false,
+      "last_logon": "2026-10-05T06:00:00Z",
+      "flags": [
+        {
+          "text": "No LAPS",
+          "level": "warn"
+        }
+      ],
+      "attributes": {
+        "dNSHostName": "ws-lon-022.corp.example.com",
+        "operatingSystem": "Windows 11 Enterprise"
+      }
+    },
+    {
+      "id": "c-ws-mad-003",
+      "kind": "computer",
+      "name": "WS-MAD-003",
+      "source": "corp.example.com",
+      "parent": "ou-ws",
+      "enabled": true,
+      "tier0": false,
+      "last_logon": "2026-10-05T06:00:00Z",
+      "flags": [
+        {
+          "text": "No LAPS",
+          "level": "warn"
+        },
+        {
+          "text": "Windows 10",
+          "level": "warn"
+        }
+      ],
+      "attributes": {
+        "dNSHostName": "ws-mad-003.corp.example.com",
+        "operatingSystem": "Windows 10 Enterprise"
+      }
+    },
+    {
+      "id": "g-domain-admins",
+      "kind": "group",
+      "name": "Domain Admins",
+      "source": "corp.example.com",
+      "parent": "ou-users-cn",
+      "tier0": true,
+      "attributes": {
+        "groupScope": "DomainLocal"
+      }
+    },
+    {
+      "id": "g-enterprise-admins",
+      "kind": "group",
+      "name": "Enterprise Admins",
+      "source": "corp.example.com",
+      "parent": "ou-users-cn",
+      "tier0": true,
+      "attributes": {
+        "groupScope": "DomainLocal"
+      }
+    },
+    {
+      "id": "g-administrators",
+      "kind": "group",
+      "name": "Administrators",
+      "source": "corp.example.com",
+      "parent": "ou-users-cn",
+      "tier0": true,
+      "attributes": {
+        "groupScope": "DomainLocal"
+      }
+    },
+    {
+      "id": "g-schema-admins",
+      "kind": "group",
+      "name": "Schema Admins",
+      "source": "corp.example.com",
+      "parent": "ou-users-cn",
+      "tier0": true,
+      "attributes": {
+        "groupScope": "DomainLocal"
+      }
+    },
+    {
+      "id": "g-server-operators",
+      "kind": "group",
+      "name": "Server Operators",
+      "source": "corp.example.com",
+      "parent": "ou-users-cn",
+      "tier0": true,
+      "attributes": {
+        "groupScope": "DomainLocal"
+      }
+    },
+    {
+      "id": "g-protected-users",
+      "kind": "group",
+      "name": "Protected Users",
+      "source": "corp.example.com",
+      "parent": "ou-users-cn",
+      "tier0": false,
+      "attributes": {
+        "groupScope": "DomainLocal"
+      }
+    },
+    {
+      "id": "g-domain-users",
+      "kind": "group",
+      "name": "Domain Users",
+      "source": "corp.example.com",
+      "parent": "ou-users-cn",
+      "tier0": false,
+      "attributes": {
+        "groupScope": "DomainLocal"
+      }
+    },
+    {
+      "id": "g-it-admins",
+      "kind": "group",
+      "name": "IT-Admins",
+      "source": "corp.example.com",
+      "parent": "ou-groups",
+      "tier0": false,
+      "attributes": {
+        "groupScope": "Global",
+        "description": "Server administrators"
+      }
+    },
+    {
+      "id": "g-helpdesk",
+      "kind": "group",
+      "name": "Helpdesk",
+      "source": "corp.example.com",
+      "parent": "ou-groups",
+      "tier0": false,
+      "attributes": {
+        "groupScope": "Global",
+        "description": "First-line support"
+      }
+    },
+    {
+      "id": "g-vpn",
+      "kind": "group",
+      "name": "VPN-Users",
+      "source": "corp.example.com",
+      "parent": "ou-groups",
+      "tier0": false,
+      "attributes": {
+        "groupScope": "Global"
+      }
+    },
+    {
+      "id": "g-rdp",
+      "kind": "group",
+      "name": "Remote Desktop Users",
+      "source": "corp.example.com",
+      "parent": "ou-users-cn",
+      "tier0": false,
+      "attributes": {
+        "groupScope": "DomainLocal"
+      }
+    },
+    {
+      "id": "gpo-ddp",
+      "kind": "gpo",
+      "name": "Default Domain Policy",
+      "source": "corp.example.com",
+      "parent": "d-corp",
+      "flags": [],
+      "attributes": {
+        "linkedTo": "d-corp"
+      }
+    },
+    {
+      "id": "gpo-dc",
+      "kind": "gpo",
+      "name": "Default Domain Controllers Policy",
+      "source": "corp.example.com",
+      "parent": "ou-dcs",
+      "flags": [],
+      "attributes": {
+        "linkedTo": "ou-dcs"
+      }
+    },
+    {
+      "id": "gpo-server",
+      "kind": "gpo",
+      "name": "Server Baseline",
+      "source": "corp.example.com",
+      "parent": "ou-servers",
+      "flags": [],
+      "attributes": {
+        "linkedTo": "ou-servers"
+      }
+    },
+    {
+      "id": "gpo-ws",
+      "kind": "gpo",
+      "name": "Workstation Baseline",
+      "source": "corp.example.com",
+      "parent": "ou-ws",
+      "flags": [],
+      "attributes": {
+        "linkedTo": "ou-ws"
+      }
+    },
+    {
+      "id": "gpo-legacy",
+      "kind": "gpo",
+      "name": "Legacy Local Admin",
+      "source": "corp.example.com",
+      "parent": "ou-ws",
+      "flags": [
+        {
+          "text": "Stores a password",
+          "level": "crit"
+        }
+      ],
+      "attributes": {
+        "linkedTo": "ou-ws"
+      }
+    },
+    {
+      "id": "t-userauth",
+      "kind": "template",
+      "name": "UserAuth-Legacy",
+      "source": "corp.example.com",
+      "parent": "d-corp",
+      "flags": [
+        {
+          "text": "ESC1",
+          "level": "crit"
+        }
+      ],
+      "attributes": {
+        "msPKI-Certificate-Name-Flag": "0x1",
+        "pKIExtendedKeyUsage": "Client Authentication"
+      }
+    },
+    {
+      "id": "t-webserver",
+      "kind": "template",
+      "name": "WebServer",
+      "source": "corp.example.com",
+      "parent": "d-corp",
+      "attributes": {
+        "pKIExtendedKeyUsage": "Server Authentication"
+      }
+    },
+    {
+      "id": "ca-issuing",
+      "kind": "ca",
+      "name": "CORP-ISSUING-CA",
+      "source": "corp.example.com",
+      "parent": "d-corp",
+      "tier0": true,
+      "attributes": {
+        "dNSHostName": "pki01.corp.example.com"
+      }
+    },
+    {
+      "id": "tr-branch",
+      "kind": "trust",
+      "name": "branch.example.com",
+      "source": "corp.example.com",
+      "parent": "d-corp",
+      "attributes": {
+        "trustDirection": "Bidirectional",
+        "trustType": "Forest",
+        "sidFiltering": true
+      }
+    },
+    {
+      "id": "e-admin-rlee",
+      "kind": "user",
+      "name": "admin.r.lee@example.onmicrosoft.com",
+      "source": "example.onmicrosoft.com",
+      "parent": null,
+      "display_name": "Robin Lee (cloud admin)",
+      "enabled": true,
+      "tier0": true,
+      "flags": [
+        {
+          "text": "Global Administrator",
+          "level": "crit"
+        },
+        {
+          "text": "Synced",
+          "level": ""
+        }
+      ],
+      "attributes": {
+        "userPrincipalName": "admin.r.lee@example.onmicrosoft.com"
+      }
+    },
+    {
+      "id": "e-itops",
+      "kind": "user",
+      "name": "it-ops@example.onmicrosoft.com",
+      "source": "example.onmicrosoft.com",
+      "parent": null,
+      "display_name": "IT operations",
+      "enabled": true,
+      "tier0": true,
+      "flags": [
+        {
+          "text": "Global Administrator",
+          "level": "crit"
+        }
+      ],
+      "attributes": {
+        "userPrincipalName": "it-ops@example.onmicrosoft.com"
+      }
+    },
+    {
+      "id": "e-akhan",
+      "kind": "user",
+      "name": "a.khan@example.com",
+      "source": "example.onmicrosoft.com",
+      "parent": null,
+      "display_name": "Aisha Khan",
+      "enabled": true,
+      "tier0": false,
+      "flags": [
+        {
+          "text": "Exchange Administrator",
+          "level": "warn"
+        },
+        {
+          "text": "MFA",
+          "level": "ok"
+        }
+      ],
+      "attributes": {
+        "userPrincipalName": "a.khan@example.com"
+      }
+    },
+    {
+      "id": "e-rlee",
+      "kind": "user",
+      "name": "r.lee@example.com",
+      "source": "example.onmicrosoft.com",
+      "parent": null,
+      "display_name": "Robin Lee",
+      "enabled": true,
+      "tier0": false,
+      "flags": [
+        {
+          "text": "No MFA",
+          "level": "warn"
+        }
+      ],
+      "attributes": {
+        "userPrincipalName": "r.lee@example.com"
+      }
+    },
+    {
+      "id": "e-mgarcia",
+      "kind": "user",
+      "name": "m.garcia@example.com",
+      "source": "example.onmicrosoft.com",
+      "parent": null,
+      "display_name": "Maria Garcia",
+      "enabled": true,
+      "tier0": false,
+      "flags": [
+        {
+          "text": "No MFA",
+          "level": "warn"
+        }
+      ],
+      "attributes": {
+        "userPrincipalName": "m.garcia@example.com"
+      }
+    },
+    {
+      "id": "r-global-admin",
+      "kind": "role",
+      "name": "Global Administrator",
+      "source": "example.onmicrosoft.com",
+      "parent": null,
+      "tier0": true,
+      "attributes": {
+        "roleTemplateId": "62e90394-69f5-4237-9190-012177145e10"
+      }
+    },
+    {
+      "id": "r-exchange-admin",
+      "kind": "role",
+      "name": "Exchange Administrator",
+      "source": "example.onmicrosoft.com",
+      "parent": null,
+      "attributes": {
+        "roleTemplateId": "29232cdf-9323-42fd-ade2-1d097af3e4de"
+      }
+    },
+    {
+      "id": "e-app-helpdesk",
+      "kind": "app",
+      "name": "HelpdeskApp",
+      "source": "example.onmicrosoft.com",
+      "parent": null,
+      "flags": [
+        {
+          "text": "Privileged role",
+          "level": "warn"
+        }
+      ],
+      "attributes": {
+        "appId": "00000000-0000-0000-0000-000000000000"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "u-adm-jsmith",
+      "to": "g-domain-admins",
+      "kind": "MemberOf"
+    },
+    {
+      "from": "u-adm-mlopez",
+      "to": "g-domain-admins",
+      "kind": "MemberOf"
+    },
+    {
+      "from": "u-administrator",
+      "to": "g-domain-admins",
+      "kind": "MemberOf"
+    },
+    {
+      "from": "g-it-admins",
+      "to": "g-domain-admins",
+      "kind": "MemberOf"
+    },
+    {
+      "from": "g-domain-admins",
+      "to": "g-administrators",
+      "kind": "MemberOf"
+    },
+    {
+      "from": "g-enterprise-admins",
+      "to": "g-administrators",
+      "kind": "MemberOf"
+    },
+    {
+      "from": "u-adm-jsmith",
+      "to": "g-it-admins",
+      "kind": "MemberOf"
+    },
+    {
+      "from": "u-tnguyen",
+      "to": "g-it-admins",
+      "kind": "MemberOf"
+    },
+    {
+      "from": "u-adm-jsmith",
+      "to": "g-vpn",
+      "kind": "MemberOf"
+    },
+    {
+      "from": "u-kosei",
+      "to": "g-helpdesk",
+      "kind": "MemberOf"
+    },
+    {
+      "from": "u-helpdesk01",
+      "to": "g-helpdesk",
+      "kind": "MemberOf"
+    },
+    {
+      "from": "g-it-admins",
+      "to": "g-rdp",
+      "kind": "MemberOf"
+    },
+    {
+      "from": "u-akhan",
+      "to": "g-domain-users",
+      "kind": "MemberOf"
+    },
+    {
+      "from": "u-rlee",
+      "to": "g-domain-users",
+      "kind": "MemberOf"
+    },
+    {
+      "from": "u-mgarcia",
+      "to": "g-domain-users",
+      "kind": "MemberOf"
+    },
+    {
+      "from": "u-kosei",
+      "to": "g-domain-users",
+      "kind": "MemberOf"
+    },
+    {
+      "from": "u-adm-mlopez",
+      "to": "g-protected-users",
+      "kind": "MemberOf"
+    },
+    {
+      "from": "g-domain-users",
+      "to": "t-userauth",
+      "kind": "Enroll"
+    },
+    {
+      "from": "t-userauth",
+      "to": "g-domain-admins",
+      "kind": "ESC1",
+      "note": "Any subject, so any account including Domain Admins"
+    },
+    {
+      "from": "ca-issuing",
+      "to": "t-userauth",
+      "kind": "Publishes"
+    },
+    {
+      "from": "g-helpdesk",
+      "to": "c-app01",
+      "kind": "GenericWrite"
+    },
+    {
+      "from": "c-app01",
+      "to": "u-adm-jsmith",
+      "kind": "HasSession",
+      "note": "Signed in 21 Sep 2026"
+    },
+    {
+      "from": "u-svc-backup",
+      "to": "d-corp",
+      "kind": "DCSync"
+    },
+    {
+      "from": "c-sync01",
+      "to": "d-corp",
+      "kind": "DCSync"
+    },
+    {
+      "from": "g-domain-admins",
+      "to": "d-corp",
+      "kind": "GenericAll"
+    },
+    {
+      "from": "g-domain-admins",
+      "to": "c-dc01",
+      "kind": "AdminTo"
+    },
+    {
+      "from": "g-it-admins",
+      "to": "ou-servers",
+      "kind": "GenericAll"
+    },
+    {
+      "from": "u-adm-jsmith",
+      "to": "ou-people",
+      "kind": "ResetPassword"
+    },
+    {
+      "from": "u-adm-jsmith",
+      "to": "gpo-server",
+      "kind": "Owns"
+    },
+    {
+      "from": "g-server-operators",
+      "to": "c-sync01",
+      "kind": "AdminTo"
+    },
+    {
+      "from": "c-sync01",
+      "to": "e-admin-rlee",
+      "kind": "PasswordWriteback"
+    },
+    {
+      "from": "u-rlee",
+      "to": "e-admin-rlee",
+      "kind": "SyncedTo"
+    },
+    {
+      "from": "e-admin-rlee",
+      "to": "r-global-admin",
+      "kind": "HasRole"
+    },
+    {
+      "from": "e-itops",
+      "to": "r-global-admin",
+      "kind": "HasRole"
+    },
+    {
+      "from": "e-akhan",
+      "to": "r-exchange-admin",
+      "kind": "HasRole"
+    },
+    {
+      "from": "u-akhan",
+      "to": "e-akhan",
+      "kind": "SyncedTo"
+    },
+    {
+      "from": "u-mgarcia",
+      "to": "e-mgarcia",
+      "kind": "SyncedTo"
+    },
+    {
+      "from": "c-adm-ws01",
+      "to": "u-adm-jsmith",
+      "kind": "HasSession",
+      "note": "Signed in 4 Oct 2026"
+    },
+    {
+      "from": "c-dc01",
+      "to": "u-adm-jsmith",
+      "kind": "HasSession",
+      "note": "Signed in 29 Sep 2026"
+    },
+    {
+      "from": "gpo-server",
+      "to": "ou-servers",
+      "kind": "GPLink"
+    },
+    {
+      "from": "gpo-ws",
+      "to": "ou-ws",
+      "kind": "GPLink"
+    },
+    {
+      "from": "gpo-legacy",
+      "to": "ou-ws",
+      "kind": "GPLink"
+    },
+    {
+      "from": "gpo-ddp",
+      "to": "d-corp",
+      "kind": "GPLink"
+    },
+    {
+      "from": "gpo-dc",
+      "to": "ou-dcs",
+      "kind": "GPLink"
+    }
+  ]
+}

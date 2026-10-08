@@ -1,0 +1,142 @@
+# AD-BKP: Backup and recovery
+
+area = "AD-BKP"
+
+[[check]]
+id = "AD-BKP-001"
+title = "Last successful system state backup per domain (from dsaSignature / backup metadata)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "The domain partition has not been backed up in the last 7 days, by the last change to dSASignature that a system state backup records."
+impact = "Without recent backups the forest cannot be recovered after ransomware or a destructive attack on AD."
+remediation = [
+  "Back up the system state of at least two DCs per domain daily.",
+  "Keep copies offline and test a restore regularly.",
+]
+verify = "repadmin /showbackup *"
+mitre = ["T1490"]
+
+[[check.detail.references]]
+title = "Active Directory forest recovery: back up a full server"
+url = "https://learn.microsoft.com/windows-server/identity/ad-ds/manage/forest-recovery-guide/ad-forest-recovery-backing-up-a-full-server"
+
+[[check]]
+id = "AD-BKP-002"
+title = "Backup older than tombstone lifetime"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "The last backup of the domain partition is older than the tombstone lifetime, so it cannot be restored."
+impact = "A backup older than the tombstone lifetime would reintroduce deleted objects and is rejected, leaving no usable backup at all."
+remediation = [
+  "Take a system state backup of DCs in each domain now.",
+  "Schedule backups well within the tombstone lifetime.",
+]
+verify = "repadmin /showbackup *"
+mitre = ["T1490"]
+
+[[check.detail.references]]
+title = "Useful shelf life of a system-state backup of Active Directory"
+url = "https://learn.microsoft.com/troubleshoot/windows-server/active-directory/useful-shelf-life-system-state-backup-of-ad"
+
+[[check]]
+id = "AD-BKP-003"
+title = "Backup Operators membership (links to AD-PRIV-005)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Backup Operators has members, directly or through nested groups."
+impact = "Backup Operators can sign in to domain controllers and back up the AD database and registry, from which every password hash can be extracted."
+remediation = [
+  "Remove all members.",
+  "Run backup software as a dedicated account with only the rights the backup agent needs.",
+]
+verify = "Get-ADGroupMember 'Backup Operators' -Recursive"
+mitre = ["T1003"]
+
+[[check]]
+id = "AD-BKP-004"
+title = "DSRM password set and rotated"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Shows when the DSRM administrator password was last set on the domain controllers (event 4794), and flags none in the retained Security log."
+impact = "A DSRM password set at promotion and never changed is often weak or known to former staff; with DsrmAdminLogonBehavior set, it is a local admin login on the DC."
+remediation = [
+  "Set the DSRM password on every DC at least yearly (ntdsutil \"set dsrm password\", or sync it from a managed account).",
+]
+verify = "Get-WinEvent -FilterHashtable @{LogName='Security'; Id=4794}"
+mitre = ["T1078.003"]
+
+[[check.detail.references]]
+title = "Reset the DSRM administrator password"
+url = "https://learn.microsoft.com/troubleshoot/windows-server/active-directory/reset-directory-services-restore-mode-admin-pwd"
+
+[[check]]
+id = "AD-BKP-005"
+title = "Forest recovery plan artifacts (informational questionnaire)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Summarizes what a forest recovery would rely on, from the data collected: the age of the last backup of the domain partition, the tombstone lifetime, the AD Recycle Bin, and the number of domain controllers. Flags a backup older than 7 days, the Recycle Bin off, or a single DC. The written recovery plan and restore tests cannot be read and are left to review with the owner."
+impact = "Without recent backups, the Recycle Bin and a second DC, a ransomware attack or a failed DC can mean rebuilding the forest from nothing."
+remediation = [
+  "Back up at least two DCs per domain daily, keep backups offline, enable the Recycle Bin, and write and test a forest recovery plan.",
+]
+verify = "repadmin /showbackup; Get-ADOptionalFeature 'Recycle Bin Feature'"
+
+[[check.detail.references]]
+title = "AD forest recovery guide"
+url = "https://learn.microsoft.com/windows-server/identity/ad-ds/manage/forest-recovery-guide/ad-forest-recovery-guide"
+
+[[check]]
+id = "AD-BKP-006"
+title = "AD Recycle Bin (links to AD-FND-008)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "The AD Recycle Bin optional feature is not enabled."
+impact = "Without it, deleted objects lose most of their attributes and group memberships, and restoring them needs an authoritative restore from backup."
+remediation = [
+  "Enable the Recycle Bin: Enable-ADOptionalFeature 'Recycle Bin Feature' -Scope ForestOrConfigurationSet -Target <forest>.",
+]
+verify = "Get-ADOptionalFeature 'Recycle Bin Feature' | Select-Object EnabledScopes"
+mitre = ["T1490"]
+
+[[check]]
+id = "AD-BKP-007"
+title = "Backup software service accounts privileges"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Backup software services on domain controllers run as Tier 0 accounts, such as domain admins."
+impact = "The backup service account's password is stored on every machine it runs on and is often reused across the backup infrastructure. A Tier 0 account there exposes the domain to whoever controls the backup system."
+remediation = [
+  "Run backup agents as LocalSystem or a dedicated account with only the rights the backup needs (Backup Operators is also Tier 0 on DCs, so protect it accordingly).",
+  "Treat the backup server as Tier 0.",
+]
+verify = "Get-CimInstance Win32_Service | Where-Object StartName -notmatch 'LocalSystem|NT AUTHORITY' | Select-Object Name, StartName"
+mitre = ["T1078.002"]
+
+[[check]]
+id = "AD-BKP-008"
+title = "Virtual DC snapshot safety (VM-GenerationID support)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "A virtual domain controller does not expose VM-GenerationID (the vmgencounter service is not running)."
+impact = "Without VM-GenerationID, restoring or cloning a snapshot of the DC causes USN rollback: replication silently stops and the directory diverges."
+remediation = [
+  "Run DCs on a hypervisor version that provides VM-GenerationID, and do not restore DC snapshots without it.",
+]
+verify = "Get-Service vmgencounter; Get-CimInstance Win32_ComputerSystem | Select-Object Manufacturer, Model"
+mitre = ["T1490"]

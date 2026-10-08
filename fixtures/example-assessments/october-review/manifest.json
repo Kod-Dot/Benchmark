@@ -1,0 +1,13 @@
+{
+  "name": "October review",
+  "tool_version": "0.1.0",
+  "catalog_version": "2026.10",
+  "scope": {
+    "domains": [
+      "corp.example.com"
+    ],
+    "tenant": "example.onmicrosoft.com"
+  },
+  "started_at": "2026-10-05T14:20:05Z",
+  "finished_at": "2026-10-05T14:32:40Z"
+}

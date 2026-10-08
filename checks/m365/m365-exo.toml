@@ -1,0 +1,1003 @@
+# M365-EXO: Exchange Online
+
+area = "M365-EXO"
+
+[[check]]
+id = "M365-EXO-001"
+title = "Modern authentication enabled organization-wide"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "OAuth2ClientProfileEnabled is false in the Exchange Online organization configuration, so Outlook and other clients do not use modern authentication (OAuth 2.0) to connect to Exchange Online."
+impact = "Clients that cannot use modern authentication do not get multi-factor authentication, Conditional Access or token-based sign-in, and users get repeated password prompts that encourage weaker habits."
+attack = [
+  "Collects or guesses a user's password, for example through password spraying.",
+  "Signs in through a client that does not use modern authentication, so the sign-in is not covered by MFA or Conditional Access.",
+  "Reads the user's mail and contacts.",
+]
+remediation = [
+  "Turn on modern authentication with Set-OrganizationConfig -OAuth2ClientProfileEnabled $true.",
+  "Make sure Outlook clients are recent versions that support modern authentication.",
+]
+frameworks = [
+  "CIS Microsoft 365 Foundations Benchmark",
+  "NIST 800-53 IA-2",
+]
+verify = '''
+Get-OrganizationConfig | Select-Object OAuth2ClientProfileEnabled'''
+cvss = "AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:L/A:N"
+mitre = ["T1078.004", "T1110.003"]
+
+[[check.detail.references]]
+title = "Enable or disable modern authentication for Outlook in Exchange Online"
+url = "https://learn.microsoft.com/exchange/clients-and-mobile-in-exchange-online/enable-or-disable-modern-authentication-in-exchange-online"
+
+[[check.detail.references]]
+title = "Set-OrganizationConfig"
+url = "https://learn.microsoft.com/powershell/module/exchange/set-organizationconfig"
+
+[[check]]
+id = "M365-EXO-002"
+title = "Basic/legacy auth protocols still enabled per mailbox (POP, IMAP, SMTP AUTH, EWS, ActiveSync)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "One or more mailboxes have POP or IMAP enabled, or can use SMTP AUTH (the mailbox setting SmtpClientAuthenticationDisabled is false, or it is unset and the tenant allows SMTP AUTH). The finding lists those mailboxes. Counts of mailboxes with EWS and ActiveSync enabled are shown as evidence only."
+impact = "POP, IMAP and SMTP AUTH are protocols commonly used by older clients and scripts, and are frequent targets for password spraying. Every mailbox that keeps them enabled adds a sign-in and mail-access path that most users do not need."
+attack = [
+  "Sprays common passwords against many accounts over IMAP, POP or SMTP AUTH.",
+  "Downloads the mailbox of an account it signs in to over IMAP or POP.",
+  "Sends phishing mail from the compromised mailbox over SMTP AUTH.",
+]
+remediation = [
+  "Disable POP and IMAP on mailboxes that do not need them with Set-CASMailbox -PopEnabled $false -ImapEnabled $false.",
+  "Disable SMTP AUTH on mailboxes with Set-CASMailbox -SmtpClientAuthenticationDisabled $true, and keep it enabled only for named devices or applications that still need it.",
+  "Set the defaults for new mailboxes in the CAS mailbox plan (Set-CASMailboxPlan) so the protocols start disabled.",
+  "Block legacy authentication clients with a Conditional Access policy.",
+]
+frameworks = [
+  "CIS Microsoft 365 Foundations Benchmark",
+  "NIST 800-53 CM-7",
+]
+verify = '''
+Get-EXOCASMailbox -ResultSize Unlimited -Properties PopEnabled, ImapEnabled, SmtpClientAuthenticationDisabled |
+  Where-Object { $_.PopEnabled -or $_.ImapEnabled -or $_.SmtpClientAuthenticationDisabled -eq $false } |
+  Select-Object PrimarySmtpAddress, PopEnabled, ImapEnabled, SmtpClientAuthenticationDisabled'''
+cvss = "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:L/A:N"
+mitre = ["T1110.003", "T1078.004"]
+
+[[check.detail.references]]
+title = "Deprecation of Basic authentication in Exchange Online"
+url = "https://learn.microsoft.com/exchange/clients-and-mobile-in-exchange-online/deprecation-of-basic-authentication-exchange-online"
+
+[[check.detail.references]]
+title = "Get-EXOCASMailbox"
+url = "https://learn.microsoft.com/powershell/module/exchange/get-exocasmailbox"
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1110.003: Password Spraying"
+url = "https://attack.mitre.org/techniques/T1110/003/"
+
+[[check]]
+id = "M365-EXO-003"
+title = "SMTP AUTH enabled tenant-wide"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "SmtpClientAuthenticationDisabled is false in the transport configuration, so authenticated SMTP client submission (SMTP AUTH) is allowed for every mailbox that does not override the setting."
+impact = "SMTP AUTH accepts a user name and password for sending mail. A leaked or guessed password can be used to send mail from the account, and the protocol is a common target for password spraying."
+attack = [
+  "Sprays common passwords against accounts over SMTP AUTH.",
+  "Sends phishing or invoice fraud mail from a mailbox it signed in to, so the mail comes from a trusted internal sender.",
+]
+remediation = [
+  "Disable SMTP AUTH for the organization with Set-TransportConfig -SmtpClientAuthenticationDisabled $true.",
+  "Enable it only on the specific mailboxes that still need it (Set-CASMailbox -SmtpClientAuthenticationDisabled $false), and plan to move those devices or applications to OAuth or a connector.",
+]
+frameworks = [
+  "CIS Microsoft 365 Foundations Benchmark",
+  "NIST 800-53 CM-7",
+]
+verify = '''
+Get-TransportConfig | Select-Object SmtpClientAuthenticationDisabled'''
+cvss = "AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:L/A:N"
+mitre = ["T1110.003", "T1078.004"]
+
+[[check.detail.references]]
+title = "Enable or disable authenticated client SMTP submission (SMTP AUTH) in Exchange Online"
+url = "https://learn.microsoft.com/exchange/clients-and-mobile-in-exchange-online/authenticated-client-smtp-submission"
+
+[[check]]
+id = "M365-EXO-004"
+title = "External auto-forwarding allowed (remote domains, outbound spam policy)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "An outbound spam policy in force (the default policy or one applied by an enabled rule) has AutoForwardingMode set to On, and at least one remote domain has AutoForwardEnabled set to true. Together these let mailboxes automatically forward mail to external recipients."
+impact = "A compromised mailbox, or a user who sets up forwarding, can silently send a copy of every message to an outside address. The copies keep flowing after a password reset until the forwarding is found and removed."
+attack = [
+  "Signs in to a user's mailbox with a stolen password or token.",
+  "Adds an inbox rule or mailbox forwarding to an external address it controls.",
+  "Receives copies of all incoming mail, including password resets and invoices, without signing in again.",
+]
+remediation = [
+  "In the Microsoft Defender portal, go to Email & collaboration > Policies & rules > Threat policies > Anti-spam, open each outbound policy and set Automatic forwarding rules to Off, Forwarding is disabled (Set-HostedOutboundSpamFilterPolicy -AutoForwardingMode Off).",
+  "Create a separate outbound policy with forwarding On only for the users who have an approved business need.",
+  "Set AutoForwardEnabled to false on the default remote domain (Set-RemoteDomain Default -AutoForwardEnabled $false) and on other remote domains that do not need it.",
+]
+frameworks = [
+  "CIS Microsoft 365 Foundations Benchmark",
+  "NIST 800-53 AC-4",
+]
+verify = '''
+Get-HostedOutboundSpamFilterPolicy | Select-Object Name, IsDefault, AutoForwardingMode
+Get-RemoteDomain | Select-Object Name, DomainName, AutoForwardEnabled'''
+cvss = "AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N"
+mitre = ["T1078.004"]
+
+[[check.detail.references]]
+title = "Control automatic external email forwarding in Microsoft 365"
+url = "https://learn.microsoft.com/defender-office-365/outbound-spam-policies-external-email-forwarding"
+
+[[check.detail.references]]
+title = "Remote domains in Exchange Online"
+url = "https://learn.microsoft.com/exchange/mail-flow-best-practices/remote-domains/remote-domains"
+
+[[check]]
+id = "M365-EXO-005"
+title = "Mailbox forwarding rules to external addresses (ForwardingSmtpAddress)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "One or more mailboxes have ForwardingSmtpAddress set to an address whose domain is not one of the organization's accepted domains, so mail to the mailbox is forwarded outside the organization."
+impact = "Every message sent to the mailbox, possibly including confidential data, password reset links and invoices, is copied or redirected to an external address. Forwarding set by an attacker keeps working after the account's password is reset."
+attack = [
+  "Signs in to a user's mailbox with a stolen password or token.",
+  "Sets mailbox forwarding to an external address it controls, often keeping a copy in the mailbox so the user notices nothing.",
+  "Reads the forwarded mail to plan invoice fraud or further phishing.",
+]
+remediation = [
+  "Confirm with each mailbox owner whether the forwarding is expected; treat unexplained forwarding as a possible compromise and investigate the account's sign-ins.",
+  "Remove unwanted forwarding with Set-Mailbox -ForwardingSmtpAddress $null -DeliverToMailboxAndForward $false.",
+  "Block external automatic forwarding in the outbound spam policy (see M365-EXO-004).",
+]
+frameworks = [
+  "CIS Microsoft 365 Foundations Benchmark",
+  "NIST 800-53 AC-4",
+]
+verify = '''
+Get-EXOMailbox -ResultSize Unlimited -Properties ForwardingSmtpAddress, DeliverToMailboxAndForward |
+  Where-Object { $_.ForwardingSmtpAddress } |
+  Select-Object PrimarySmtpAddress, ForwardingSmtpAddress, DeliverToMailboxAndForward'''
+cvss = "AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N"
+mitre = ["T1078.004"]
+
+[[check.detail.references]]
+title = "Configure email forwarding for a mailbox"
+url = "https://learn.microsoft.com/exchange/recipients-in-exchange-online/manage-user-mailboxes/configure-email-forwarding"
+
+[[check.detail.references]]
+title = "Control automatic external email forwarding in Microsoft 365"
+url = "https://learn.microsoft.com/defender-office-365/outbound-spam-policies-external-email-forwarding"
+
+[[check]]
+id = "M365-EXO-006"
+title = "Inbox rules forwarding, deleting or hiding mail (compromise indicator)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "An enabled inbox rule forwards or redirects mail outside the organization's domains, deletes messages, or moves them to folders users rarely open (RSS, Conversation History, Archive) and marks them read. Up to 500 mailboxes are read."
+impact = "These rules are the classic sign of a compromised mailbox: attackers forward mail out and hide replies from the real owner."
+remediation = [
+  "Review each rule with the mailbox owner, remove those they did not create, and reset the account's credentials and sessions.",
+]
+verify = "Get-InboxRule -Mailbox <user> | Format-List Name, Enabled, ForwardTo, RedirectTo, DeleteMessage, MoveToFolder"
+mitre = ["T1564"]
+
+[[check.detail.references]]
+title = "Detect and remediate Outlook rules injection"
+url = "https://learn.microsoft.com/defender-office-365/detect-and-remediate-outlook-rules-forms-attack"
+
+[[check]]
+id = "M365-EXO-007"
+title = "Mailbox auditing enabled by default and audit bypass accounts"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Mailbox auditing is turned off for the organization (AuditDisabled is true in the organization configuration), or one or more accounts have a mailbox audit bypass association (AuditBypassEnabled is true), so their actions in mailboxes are not logged."
+impact = "Without mailbox audit records, investigators cannot tell which messages an attacker read, sent or deleted. An account with audit bypass can access mailboxes without leaving any mailbox audit record."
+attack = [
+  "Gains control of an account that has audit bypass, or operates in a tenant with mailbox auditing off.",
+  "Reads, sends or deletes mail in the mailboxes it can access.",
+  "Leaves no mailbox audit records for investigators to follow.",
+]
+remediation = [
+  "Turn mailbox auditing on by default with Set-OrganizationConfig -AuditDisabled $false.",
+  "Review every audit bypass association and remove those without a documented reason with Set-MailboxAuditBypassAssociation -AuditBypassEnabled $false.",
+]
+frameworks = [
+  "CIS Microsoft 365 Foundations Benchmark",
+  "NIST 800-53 AU-2",
+  "NIST 800-53 AU-12",
+]
+verify = '''
+Get-OrganizationConfig | Select-Object AuditDisabled
+Get-MailboxAuditBypassAssociation -ResultSize Unlimited | Where-Object { $_.AuditBypassEnabled } | Select-Object Name'''
+cvss = "AV:N/AC:H/PR:H/UI:N/S:U/C:L/I:L/A:N"
+mitre = ["T1078.004"]
+
+[[check.detail.references]]
+title = "Manage mailbox auditing"
+url = "https://learn.microsoft.com/purview/audit-mailboxes"
+
+[[check.detail.references]]
+title = "Get-MailboxAuditBypassAssociation"
+url = "https://learn.microsoft.com/powershell/module/exchange/get-mailboxauditbypassassociation"
+
+[[check]]
+id = "M365-EXO-008"
+title = "Unified audit log ingestion enabled"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "UnifiedAuditLogIngestionEnabled is false in the admin audit log configuration, so user and admin activity across Microsoft 365 is not recorded in the unified audit log."
+impact = "Without the unified audit log there is no record of sign-ins to mailboxes, file access, sharing, mail rule changes or admin actions to investigate a compromise or prove what was accessed."
+attack = [
+  "Compromises an account in a tenant where the unified audit log is off.",
+  "Reads mail, downloads files and changes settings.",
+  "Leaves no audit records, so the scope of the breach cannot be determined.",
+]
+remediation = [
+  "In the Microsoft Purview portal, go to Audit and select Start recording user and admin activity.",
+  "Or run Set-AdminAuditLogConfig -UnifiedAuditLogIngestionEnabled $true in Exchange Online PowerShell.",
+  "Forward audit records to a SIEM and set a retention period that meets your investigation needs.",
+]
+frameworks = [
+  "CIS Microsoft 365 Foundations Benchmark",
+  "NIST 800-53 AU-2",
+  "NIST 800-53 AU-12",
+]
+verify = '''
+Get-AdminAuditLogConfig | Select-Object UnifiedAuditLogIngestionEnabled'''
+cvss = "AV:N/AC:H/PR:H/UI:N/S:U/C:L/I:L/A:N"
+
+[[check.detail.references]]
+title = "Turn auditing on or off"
+url = "https://learn.microsoft.com/purview/audit-log-enable-disable"
+
+[[check]]
+id = "M365-EXO-009"
+title = "Full Access / Send As / Send on Behalf permissions granted to unexpected users"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Full Access, Send As or Send on Behalf is granted to an external guest, on an admin's mailbox, or Full Access to one account over ten or more mailboxes. Full Access is read for up to 500 mailboxes."
+impact = "Delegated access lets the trustee read or send as the mailbox owner; broad or external grants are a common persistence and fraud route."
+remediation = [
+  "Remove grants that are not needed and review the rest with the mailbox owners.",
+]
+verify = "Get-EXOMailboxPermission -Identity <mailbox>; Get-EXORecipientPermission -Identity <mailbox>"
+mitre = ["T1098"]
+
+[[check.detail.references]]
+title = "Manage mailbox permissions"
+url = "https://learn.microsoft.com/exchange/recipients-in-exchange-online/manage-permissions-for-recipients"
+
+[[check]]
+id = "M365-EXO-010"
+title = "Application access policies for apps with Mail.* application permissions (RBAC for Applications)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "One or more non-Microsoft applications have application permissions to mailbox data (Mail.*, MailboxSettings.*, Calendars.*, Contacts.* or full_access_as_app), and no application access policy (Get-ApplicationAccessPolicy) limits the app id to a set of mailboxes. Application permissions apply to every mailbox in the organization by default."
+impact = "Anyone holding the application's secret or certificate can read or send mail, calendars and contacts for every mailbox in the tenant, including executives, without any user signing in."
+attack = [
+  "Steals the client secret or certificate of an application with mailbox application permissions, or adds its own credential to the app.",
+  "Requests an app-only token for Microsoft Graph or Exchange Web Services.",
+  "Reads or exports mail from any mailbox in the organization.",
+]
+remediation = [
+  "Remove mailbox application permissions the application does not need, or replace them with delegated permissions.",
+  "Scope each remaining application to the mailboxes it needs with RBAC for Applications (New-ManagementScope and New-ManagementRoleAssignment for the app's service principal), which replaces application access policies.",
+  "Until RBAC for Applications is in place, limit the app with New-ApplicationAccessPolicy -AccessRight RestrictAccess and a mail-enabled security group of allowed mailboxes.",
+  "Review who can manage the application's credentials in Microsoft Entra ID.",
+]
+frameworks = [
+  "CIS Microsoft 365 Foundations Benchmark",
+  "NIST 800-53 AC-6",
+]
+verify = '''
+Get-ApplicationAccessPolicy | Select-Object AppId, AccessRight, ScopeName
+Get-ManagementRoleAssignment -RoleAssigneeType ServicePrincipal | Select-Object Role, RoleAssigneeName, CustomResourceScope'''
+cvss = "AV:N/AC:L/PR:H/UI:N/S:C/C:H/I:H/A:N"
+mitre = ["T1528", "T1098.001", "T1550"]
+
+[[check.detail.references]]
+title = "Role Based Access Control for Applications in Exchange Online"
+url = "https://learn.microsoft.com/exchange/permissions-exo/application-rbac"
+
+[[check.detail.references]]
+title = "Limiting application permissions to specific Exchange Online mailboxes"
+url = "https://learn.microsoft.com/graph/auth-limit-mailbox-access"
+
+[[check]]
+id = "M365-EXO-011"
+title = "EWS / Graph impersonation role assignments"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "One or more principals are assigned the ApplicationImpersonation management role. This role lets an account or application act as any mailbox user it is scoped to through Exchange Web Services, and by default the scope is the whole organization."
+impact = "A compromised account or application with ApplicationImpersonation can read, send and delete mail as any user, which gives full access to the organization's mail."
+attack = [
+  "Compromises the account or the credentials of the service that holds ApplicationImpersonation.",
+  "Connects to Exchange Web Services and impersonates a target mailbox.",
+  "Reads or exports mail from any mailbox in the role's scope.",
+]
+remediation = [
+  "Remove ApplicationImpersonation assignments that are no longer needed with Remove-ManagementRoleAssignment.",
+  "Move the remaining applications to Microsoft Graph with application permissions scoped through RBAC for Applications.",
+  "If an assignment must stay, scope it to a management scope containing only the required mailboxes.",
+]
+frameworks = [
+  "CIS Microsoft 365 Foundations Benchmark",
+  "NIST 800-53 AC-6",
+]
+verify = '''
+Get-ManagementRoleAssignment -Role ApplicationImpersonation | Select-Object Name, RoleAssignee, RecipientWriteScope, CustomRecipientWriteScope'''
+cvss = "AV:N/AC:L/PR:H/UI:N/S:C/C:H/I:H/A:N"
+mitre = ["T1078.004", "T1098.003"]
+
+[[check.detail.references]]
+title = "Get-ManagementRoleAssignment"
+url = "https://learn.microsoft.com/powershell/module/exchange/get-managementroleassignment"
+
+[[check.detail.references]]
+title = "Role Based Access Control for Applications in Exchange Online"
+url = "https://learn.microsoft.com/exchange/permissions-exo/application-rbac"
+
+[[check]]
+id = "M365-EXO-012"
+title = "Exchange admin role groups membership (Organization Management, etc.)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "The Organization Management, Recipient Management, Discovery Management, Compliance Management, Records Management or Hygiene Management role groups have direct members. Direct members are added in Exchange Online itself, unlike the Entra-linked members (named like TenantAdmins_-123456) that come from Microsoft Entra roles."
+impact = "Direct members hold powerful Exchange permissions, such as changing mail flow, granting mailbox access or searching all mailboxes, that do not appear in Microsoft Entra role reviews, Privileged Identity Management or access reviews, so they are easily forgotten."
+attack = [
+  "Compromises an account that was added directly to an Exchange role group.",
+  "Uses the role to grant itself mailbox permissions, create transport rules or run content searches.",
+  "Keeps that access unnoticed because it is not visible in Entra role assignments.",
+]
+remediation = [
+  "Review the direct members of each role group and remove those without a current need with Remove-RoleGroupMember.",
+  "Grant Exchange administration through Microsoft Entra roles (Exchange Administrator) managed in Privileged Identity Management instead of direct role group membership.",
+  "Review the remaining direct members on a schedule.",
+]
+frameworks = [
+  "CIS Microsoft 365 Foundations Benchmark",
+  "NIST 800-53 AC-2",
+  "NIST 800-53 AC-6",
+]
+verify = '''
+'Organization Management','Recipient Management','Discovery Management','Compliance Management','Records Management','Hygiene Management' |
+  ForEach-Object { $g = $_; Get-RoleGroupMember -Identity $g | Select-Object @{n='RoleGroup';e={$g}}, Name, RecipientType }'''
+cvss = "AV:N/AC:L/PR:H/UI:N/S:U/C:H/I:H/A:L"
+mitre = ["T1098.003", "T1069.003"]
+
+[[check.detail.references]]
+title = "Permissions in Exchange Online"
+url = "https://learn.microsoft.com/exchange/permissions-exo/permissions-exo"
+
+[[check]]
+id = "M365-EXO-013"
+title = "Shared mailboxes with sign-in enabled"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "One or more shared mailboxes have an enabled Microsoft Entra user account, so someone who knows or sets the account's password can sign in to the shared mailbox directly instead of through delegated access."
+impact = "Shared mailbox accounts are rarely covered by MFA or monitored like normal users. A direct sign-in bypasses the per-user access model, and actions taken in the mailbox cannot be tied to a person."
+attack = [
+  "Finds a shared mailbox account and sprays common passwords against it.",
+  "Signs in directly as the shared mailbox.",
+  "Reads and sends mail from it without being linked to a named user.",
+]
+remediation = [
+  "Block sign-in for each shared mailbox account in the Microsoft 365 admin center (Users > Active users, select the account, Block sign-in) or with Update-MgUser -AccountEnabled:$false.",
+  "Give users access to the shared mailbox through Full Access and Send As permissions instead.",
+]
+frameworks = [
+  "CIS Microsoft 365 Foundations Benchmark",
+  "NIST 800-53 AC-2",
+]
+verify = '''
+Get-Mailbox -RecipientTypeDetails SharedMailbox -ResultSize Unlimited |
+  Select-Object PrimarySmtpAddress, AccountDisabled'''
+cvss = "AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:L/A:N"
+mitre = ["T1078.004", "T1110.003"]
+
+[[check.detail.references]]
+title = "About shared mailboxes"
+url = "https://learn.microsoft.com/microsoft-365/admin/email/about-shared-mailboxes"
+
+[[check]]
+id = "M365-EXO-014"
+title = "Anti-phishing policy: impersonation protection, mailbox intelligence, spoof intelligence"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "An anti-phishing policy in force is missing one or more protections: spoof intelligence, mailbox intelligence, mailbox intelligence based impersonation protection, or user and domain impersonation protection."
+impact = "Mail that impersonates executives, partners or the organization's own domains is more likely to reach inboxes, which raises the success rate of phishing and business email compromise."
+attack = [
+  "Registers a lookalike domain or display name of an executive or a trusted partner.",
+  "Sends payment or credential requests that impersonate that person.",
+  "Gets a user to reply, pay or enter credentials.",
+]
+remediation = [
+  "In the Microsoft Defender portal, go to Email & collaboration > Policies & rules > Threat policies > Anti-phishing and edit the policies in force.",
+  "Turn on spoof intelligence, mailbox intelligence and intelligence for impersonation protection (Set-AntiPhishPolicy -EnableSpoofIntelligence $true -EnableMailboxIntelligence $true -EnableMailboxIntelligenceProtection $true).",
+  "Add executives and other high-value users to user impersonation protection, and add owned and partner domains to domain impersonation protection, with a quarantine action.",
+  "Or adopt the Standard or Strict preset security policy (see M365-EXO-026).",
+]
+frameworks = [
+  "CIS Microsoft 365 Foundations Benchmark",
+  "NIST 800-53 SI-8",
+]
+verify = '''
+Get-AntiPhishPolicy | Select-Object Name, Enabled, EnableSpoofIntelligence, EnableMailboxIntelligence,
+  EnableMailboxIntelligenceProtection, EnableTargetedUserProtection, EnableTargetedDomainsProtection, EnableOrganizationDomainsProtection'''
+cvss = "AV:N/AC:L/PR:N/UI:R/S:U/C:H/I:L/A:N"
+mitre = ["T1566.002"]
+
+[[check.detail.references]]
+title = "Anti-phishing policies in Microsoft 365"
+url = "https://learn.microsoft.com/defender-office-365/anti-phishing-policies-about"
+
+[[check]]
+id = "M365-EXO-015"
+title = "Safe Links policy coverage"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "No Safe Links policy in force checks links in email, or a policy in force does not scan URLs in real time (ScanUrls) or lets users click through to the original URL (AllowClickThrough)."
+impact = "Links in phishing mail are not checked at click time, so a link that was harmless at delivery and turned malicious later still reaches users, and warnings can be ignored."
+attack = [
+  "Sends mail with a link that points to a harmless page at delivery time.",
+  "Switches the page to a credential phishing site after the mail is delivered.",
+  "Collects the passwords or session tokens of users who click.",
+]
+remediation = [
+  "In the Microsoft Defender portal, go to Email & collaboration > Policies & rules > Threat policies > Safe Links and create or edit a policy that covers all recipients.",
+  "Turn on link checking for email, real-time URL scanning and scanning before delivery, and turn off Let users click through to the original URL (Set-SafeLinksPolicy -EnableSafeLinksForEmail $true -ScanUrls $true -AllowClickThrough $false).",
+  "Or adopt the Standard or Strict preset security policy (see M365-EXO-026).",
+]
+frameworks = [
+  "CIS Microsoft 365 Foundations Benchmark",
+  "NIST 800-53 SI-3",
+]
+verify = '''
+Get-SafeLinksPolicy | Select-Object Name, EnableSafeLinksForEmail, ScanUrls, AllowClickThrough
+Get-SafeLinksRule | Select-Object Name, SafeLinksPolicy, State'''
+cvss = "AV:N/AC:L/PR:N/UI:R/S:U/C:H/I:L/A:N"
+mitre = ["T1566.002"]
+
+[[check.detail.references]]
+title = "Safe Links in Microsoft Defender for Office 365"
+url = "https://learn.microsoft.com/defender-office-365/safe-links-about"
+
+[[check]]
+id = "M365-EXO-016"
+title = "Safe Attachments policy coverage and dynamic delivery"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "No Safe Attachments policy in force is enabled with an action other than Allow, or Safe Attachments for SharePoint, OneDrive and Microsoft Teams is off (EnableATPForSPOTeamsODB is false in the ATP policy)."
+impact = "Attachments and shared files are not detonated in a sandbox before users open them, so new or targeted malware that signature scanning misses can reach users."
+attack = [
+  "Sends a weaponized document that common antivirus does not yet detect, or uploads it to a shared SharePoint or Teams location.",
+  "Waits for a user to open the file.",
+  "Runs code on the user's device and steals credentials or tokens.",
+]
+remediation = [
+  "In the Microsoft Defender portal, go to Email & collaboration > Policies & rules > Threat policies > Safe Attachments and create or edit a policy that covers all recipients with the Block or Dynamic Delivery action.",
+  "Turn on Safe Attachments for SharePoint, OneDrive and Microsoft Teams in the global settings (Set-AtpPolicyForO365 -EnableATPForSPOTeamsODB $true).",
+  "Or adopt the Standard or Strict preset security policy (see M365-EXO-026).",
+]
+frameworks = [
+  "CIS Microsoft 365 Foundations Benchmark",
+  "NIST 800-53 SI-3",
+]
+verify = '''
+Get-SafeAttachmentPolicy | Select-Object Name, Enable, Action
+Get-SafeAttachmentRule | Select-Object Name, SafeAttachmentPolicy, State
+Get-AtpPolicyForO365 | Select-Object EnableATPForSPOTeamsODB'''
+cvss = "AV:N/AC:L/PR:N/UI:R/S:U/C:H/I:H/A:L"
+
+[[check.detail.references]]
+title = "Safe Attachments in Microsoft Defender for Office 365"
+url = "https://learn.microsoft.com/defender-office-365/safe-attachments-about"
+
+[[check]]
+id = "M365-EXO-017"
+title = "Anti-malware policy: common attachment filter, ZAP enabled"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "An anti-malware policy in force has the common attachments filter off (EnableFileFilter is false) or zero-hour auto purge off (ZapEnabled is false)."
+impact = "Without the common attachments filter, file types often used to deliver malware (scripts, executables, disk images) reach mailboxes. Without ZAP, malware identified after delivery stays in the inbox."
+attack = [
+  "Sends an attachment of a type commonly used for malware, such as a script or disk image.",
+  "Gets a user to open it before or after detections catch up.",
+  "Runs code on the user's device.",
+]
+remediation = [
+  "In the Microsoft Defender portal, go to Email & collaboration > Policies & rules > Threat policies > Anti-malware and edit the policies in force.",
+  "Turn on the common attachments filter and zero-hour auto purge (Set-MalwareFilterPolicy -EnableFileFilter $true -ZapEnabled $true).",
+]
+frameworks = [
+  "CIS Microsoft 365 Foundations Benchmark",
+  "NIST 800-53 SI-3",
+]
+verify = '''
+Get-MalwareFilterPolicy | Select-Object Name, IsDefault, EnableFileFilter, ZapEnabled'''
+cvss = "AV:N/AC:L/PR:N/UI:R/S:U/C:H/I:H/A:L"
+
+[[check.detail.references]]
+title = "Anti-malware protection in EOP"
+url = "https://learn.microsoft.com/defender-office-365/anti-malware-protection-about"
+
+[[check.detail.references]]
+title = "Zero-hour auto purge (ZAP) in Exchange Online"
+url = "https://learn.microsoft.com/defender-office-365/zero-hour-auto-purge"
+
+[[check]]
+id = "M365-EXO-018"
+title = "Anti-spam policies: bulk threshold, allowed sender domains lists"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "An anti-spam policy in force has a bulk complaint level threshold (BulkThreshold) above 6, or has entries in its allowed senders (AllowedSenders) or allowed sender domains (AllowedSenderDomains) lists."
+impact = "A high bulk threshold lets more bulk and marketing mail reach inboxes. Senders and domains on the allow lists skip spam filtering, so spoofed or compromised mail from them is delivered."
+attack = [
+  "Finds a sender or domain on the organization's allow list, for example from a partner relationship.",
+  "Spoofs that sender or uses its compromised mailbox to send phishing mail.",
+  "The mail skips spam filtering and lands in the inbox.",
+]
+remediation = [
+  "In the Microsoft Defender portal, go to Email & collaboration > Policies & rules > Threat policies > Anti-spam and edit the inbound policies in force.",
+  "Set the bulk email threshold to 6 or lower (Set-HostedContentFilterPolicy -BulkThreshold 6).",
+  "Remove entries from the allowed senders and allowed domains lists; use the Tenant Allow/Block List for specific false positives instead.",
+]
+frameworks = [
+  "CIS Microsoft 365 Foundations Benchmark",
+  "NIST 800-53 SI-8",
+]
+verify = '''
+Get-HostedContentFilterPolicy | Select-Object Name, IsDefault, BulkThreshold, AllowedSenders, AllowedSenderDomains'''
+cvss = "AV:N/AC:H/PR:N/UI:R/S:U/C:L/I:L/A:N"
+mitre = ["T1566.002"]
+
+[[check.detail.references]]
+title = "Configure anti-spam policies in EOP"
+url = "https://learn.microsoft.com/defender-office-365/anti-spam-policies-configure"
+
+[[check.detail.references]]
+title = "Create safe sender lists in EOP"
+url = "https://learn.microsoft.com/defender-office-365/create-safe-sender-lists-in-office-365"
+
+[[check]]
+id = "M365-EXO-019"
+title = "Allowed sender/domain lists containing your own domain or public domains"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "An anti-spam policy's allowed senders or allowed sender domains list contains one of the organization's own accepted domains or a public mail provider domain such as gmail.com or outlook.com."
+impact = "Anyone who sends from a public mail provider, or who spoofs the organization's own domain, skips spam filtering. Mail that pretends to come from colleagues is delivered straight to the inbox."
+attack = [
+  "Spoofs an internal sender address in the organization's own domain, or opens a free account at an allowed public provider.",
+  "Sends phishing mail that skips spam filtering because the domain is allowed.",
+  "Gets users to trust the internal-looking mail and enter credentials or approve payments.",
+]
+remediation = [
+  "Remove the organization's own domains and all public mail provider domains from the allowed sender and allowed domain lists (Set-HostedContentFilterPolicy -AllowedSenderDomains @{Remove='domain'}).",
+  "Use the Tenant Allow/Block List for specific, reviewed false positives instead of domain-wide allow entries.",
+]
+frameworks = [
+  "CIS Microsoft 365 Foundations Benchmark",
+  "NIST 800-53 SI-8",
+]
+verify = '''
+Get-HostedContentFilterPolicy | Select-Object Name, AllowedSenderDomains, AllowedSenders
+Get-AcceptedDomain | Select-Object DomainName'''
+cvss = "AV:N/AC:L/PR:N/UI:R/S:U/C:H/I:L/A:N"
+mitre = ["T1566.002"]
+
+[[check.detail.references]]
+title = "Create safe sender lists in EOP"
+url = "https://learn.microsoft.com/defender-office-365/create-safe-sender-lists-in-office-365"
+
+[[check]]
+id = "M365-EXO-020"
+title = "Transport rules bypassing filtering (SCL -1) or redirecting mail"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "One or more enabled mail flow (transport) rules set the spam confidence level to -1, set headers that skip Defender processing (such as X-MS-Exchange-Organization-SkipSafeLinksProcessing or SkipSafeAttachmentProcessing), or redirect, blind copy or copy mail to external addresses."
+impact = "Mail matched by a bypass rule is delivered without spam, phishing, Safe Links or Safe Attachments checks. A rule that copies or redirects mail to an outside address sends the organization's mail out silently, and is a common persistence method after an admin account is compromised."
+attack = [
+  "Finds a rule that bypasses filtering for a trusted sender, IP range or header, and sends phishing mail that matches it.",
+  "With an admin account, creates a rule that blind copies selected mail to an external address it controls.",
+  "Receives the copied mail or lands malicious mail in inboxes without filtering.",
+]
+remediation = [
+  "In the Exchange admin center, go to Mail flow > Rules and review each rule that sets SCL to -1, sets Skip headers or redirects or copies mail outside the organization.",
+  "Remove or disable rules without a documented reason; narrow the remaining bypass rules to specific, authenticated senders instead of domains or headers that can be spoofed.",
+  "Use the advanced delivery policy for third-party phishing simulations and security mailboxes instead of SCL -1 rules.",
+]
+frameworks = [
+  "CIS Microsoft 365 Foundations Benchmark",
+  "NIST 800-53 AC-4",
+  "NIST 800-53 SI-8",
+]
+verify = '''
+Get-TransportRule | Where-Object { $_.State -eq 'Enabled' -and ($_.SetSCL -eq -1 -or $_.SetHeaderName -or $_.RedirectMessageTo -or $_.BlindCopyTo -or $_.CopyTo) } |
+  Select-Object Name, Priority, SetSCL, SetHeaderName, SetHeaderValue, RedirectMessageTo, BlindCopyTo, CopyTo'''
+cvss = "AV:N/AC:L/PR:N/UI:R/S:U/C:H/I:L/A:N"
+mitre = ["T1566.002", "T1078.004"]
+
+[[check.detail.references]]
+title = "Mail flow rules (transport rules) in Exchange Online"
+url = "https://learn.microsoft.com/exchange/security-and-compliance/mail-flow-rules/mail-flow-rules"
+
+[[check]]
+id = "M365-EXO-021"
+title = "Connectors: inbound connectors without TLS/cert restriction, outbound to unknown smarthosts"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "An inbound connector does not require TLS (RequireTls is false) or does not restrict senders by certificate name or source IP address, or an outbound connector that routes mail to a smart host has no TLS settings."
+impact = "An inbound connector without a certificate or IP restriction can be matched by mail an attacker sends, which may then be treated as trusted partner or on-premises mail. Outbound mail to a smart host without TLS can be read or changed in transit."
+attack = [
+  "Finds a partner or on-premises inbound connector that is not tied to a certificate or IP range.",
+  "Sends mail that matches the connector so it is treated as trusted.",
+  "Or intercepts outbound mail to a smart host that is sent without TLS.",
+]
+remediation = [
+  "In the Exchange admin center, go to Mail flow > Connectors and edit each inbound connector to require TLS and to accept mail only from the partner's certificate name (TlsSenderCertificateName) or IP ranges (SenderIPAddresses).",
+  "Set outbound connectors that use a smart host to always use TLS and validate the certificate (Set-OutboundConnector -TlsSettings DomainValidation or CertificateValidation).",
+  "Remove connectors that are no longer used.",
+]
+frameworks = [
+  "NIST 800-53 SC-8",
+  "NIST 800-53 AC-4",
+]
+verify = '''
+Get-InboundConnector | Select-Object Name, Enabled, ConnectorType, RequireTls, RestrictDomainsToCertificate, RestrictDomainsToIPAddresses, TlsSenderCertificateName, SenderIPAddresses
+Get-OutboundConnector | Select-Object Name, Enabled, UseMXRecord, SmartHosts, TlsSettings, TlsDomain'''
+cvss = "AV:N/AC:H/PR:N/UI:N/S:U/C:L/I:L/A:N"
+mitre = ["T1557", "T1199"]
+
+[[check.detail.references]]
+title = "Configure mail flow using connectors in Exchange Online"
+url = "https://learn.microsoft.com/exchange/mail-flow-best-practices/use-connectors-to-configure-mail-flow/use-connectors-to-configure-mail-flow"
+
+[[check]]
+id = "M365-EXO-022"
+title = "SPF records for all accepted domains"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "An accepted domain has no SPF record, more than one SPF record, an SPF record ending in +all or ?all, or an SPF record with no all mechanism, based on a DNS lookup of the domain's TXT records."
+impact = "Receiving mail servers cannot tell which servers may send mail for the domain, so mail spoofing the domain is more likely to be accepted, both by partners and by the organization's own users."
+attack = [
+  "Looks up the domain's SPF record and sees that it is missing or permissive.",
+  "Sends phishing mail with the organization's domain in the sender address from its own server.",
+  "Receiving servers accept the mail because SPF does not reject it.",
+]
+remediation = [
+  "Publish exactly one TXT record starting with v=spf1 for each accepted domain that lists the servers allowed to send, including include:spf.protection.outlook.com for Exchange Online.",
+  "End the record with -all (or ~all while DMARC enforcement is in place).",
+  "For domains that never send mail, publish v=spf1 -all.",
+]
+frameworks = [
+  "CIS Microsoft 365 Foundations Benchmark",
+  "NIST 800-53 SI-8",
+]
+verify = '''
+Get-AcceptedDomain | ForEach-Object { Resolve-DnsName -Name $_.DomainName -Type TXT | Where-Object { $_.Strings -like 'v=spf1*' } | Select-Object Name, Strings }'''
+cvss = "AV:N/AC:L/PR:N/UI:R/S:U/C:L/I:L/A:N"
+mitre = ["T1566.002"]
+
+[[check.detail.references]]
+title = "Set up SPF to identify valid email sources for your Microsoft 365 domain"
+url = "https://learn.microsoft.com/defender-office-365/email-authentication-spf-configure"
+
+[[check]]
+id = "M365-EXO-023"
+title = "DKIM enabled for all accepted domains"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "DKIM signing is not enabled for one or more accepted domains (no DKIM signing configuration exists or Enabled is false in Get-DkimSigningConfig)."
+impact = "Outgoing mail from the domain is not signed, so receivers cannot verify that it came from the organization and was not changed. DMARC can then only rely on SPF, which breaks when mail is forwarded."
+attack = [
+  "Sends mail that spoofs a domain without DKIM signing.",
+  "Relies on receivers being unable to tell genuine and spoofed mail apart when SPF alignment fails.",
+]
+remediation = [
+  "In the Microsoft Defender portal, go to Email & collaboration > Policies & rules > Threat policies > Email authentication settings > DKIM.",
+  "Publish the two selector CNAME records for each domain, then enable signing (Set-DkimSigningConfig -Identity domain -Enabled $true).",
+  "Rotate DKIM keys periodically.",
+]
+frameworks = [
+  "CIS Microsoft 365 Foundations Benchmark",
+  "NIST 800-53 SI-8",
+]
+verify = '''
+Get-DkimSigningConfig | Select-Object Domain, Enabled, Status'''
+cvss = "AV:N/AC:H/PR:N/UI:R/S:U/C:L/I:L/A:N"
+mitre = ["T1566.002"]
+
+[[check.detail.references]]
+title = "Set up DKIM to sign mail from your Microsoft 365 domain"
+url = "https://learn.microsoft.com/defender-office-365/email-authentication-dkim-configure"
+
+[[check]]
+id = "M365-EXO-024"
+title = "DMARC records and policy strength (p=none vs quarantine/reject)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "An accepted domain has no DMARC record at _dmarc.<domain>, more than one DMARC record, an invalid record, a policy of p=none, or a pct value below 100."
+impact = "Without an enforced DMARC policy, receiving servers deliver mail that spoofs the domain's exact sender address. Attackers use this for phishing and invoice fraud against both customers and employees."
+attack = [
+  "Looks up the domain's DMARC record and sees that it is missing or set to p=none.",
+  "Sends mail with the organization's exact domain in the From address.",
+  "Recipients see a genuine-looking sender and act on the message.",
+]
+remediation = [
+  "Publish one TXT record at _dmarc.<domain> starting with v=DMARC1 and a rua address to collect aggregate reports.",
+  "After reviewing reports and fixing legitimate senders, move the policy to p=quarantine and then p=reject, with pct=100 (or no pct tag).",
+  "For domains that never send mail, publish p=reject straight away.",
+]
+frameworks = [
+  "CIS Microsoft 365 Foundations Benchmark",
+  "NIST 800-53 SI-8",
+]
+verify = '''
+Get-AcceptedDomain | ForEach-Object { Resolve-DnsName -Name "_dmarc.$($_.DomainName)" -Type TXT -ErrorAction SilentlyContinue | Select-Object Name, Strings }'''
+cvss = "AV:N/AC:L/PR:N/UI:R/S:U/C:L/I:H/A:N"
+mitre = ["T1566.002"]
+
+[[check.detail.references]]
+title = "Set up DMARC to validate the From address domain for senders in Microsoft 365"
+url = "https://learn.microsoft.com/defender-office-365/email-authentication-dmarc-configure"
+
+[[check]]
+id = "M365-EXO-025"
+title = "MTA-STS and TLS-RPT (informational)"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "An accepted domain has no MTA-STS record (TXT at _mta-sts.<domain>) or no TLS reporting record (TXT at _smtp._tls.<domain>)."
+impact = "Without MTA-STS, sending servers fall back to unencrypted delivery if TLS fails, so an attacker on the network path can strip TLS and read inbound mail. Without TLS-RPT, the organization is not told when TLS delivery to it fails."
+attack = [
+  "Takes a position on the network path between a sending server and the organization's MX.",
+  "Strips the STARTTLS offer so the sender falls back to plain text.",
+  "Reads or changes the mail in transit.",
+]
+remediation = [
+  "Publish an MTA-STS policy file at https://mta-sts.<domain>/.well-known/mta-sts.txt listing the domain's MX hosts, and a TXT record at _mta-sts.<domain> with v=STSv1 and a policy id.",
+  "Start in testing mode, then move to enforce.",
+  "Publish a TXT record at _smtp._tls.<domain> with v=TLSRPTv1 and a rua address to receive TLS failure reports.",
+]
+frameworks = [
+  "NIST 800-53 SC-8",
+]
+verify = '''
+Get-AcceptedDomain | ForEach-Object {
+  Resolve-DnsName -Name "_mta-sts.$($_.DomainName)" -Type TXT -ErrorAction SilentlyContinue | Select-Object Name, Strings
+  Resolve-DnsName -Name "_smtp._tls.$($_.DomainName)" -Type TXT -ErrorAction SilentlyContinue | Select-Object Name, Strings }'''
+cvss = "AV:A/AC:H/PR:N/UI:N/S:U/C:L/I:L/A:N"
+mitre = ["T1557", "T1040"]
+
+[[check.detail.references]]
+title = "Enhancing mail flow with MTA-STS"
+url = "https://learn.microsoft.com/purview/enhancing-mail-flow-with-mta-sts"
+
+[[check]]
+id = "M365-EXO-026"
+title = "Preset security policies (Standard/Strict) adoption"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Neither the Standard nor the Strict preset security policy is enabled (no enabled rule found with Get-EOPProtectionPolicyRule), so protection depends entirely on custom and default policies."
+impact = "Custom policies tend to drift from Microsoft's recommended settings over time, and new protections are not applied automatically. Preset policies keep anti-spam, anti-malware, anti-phishing, Safe Links and Safe Attachments settings at the recommended values."
+remediation = [
+  "In the Microsoft Defender portal, go to Email & collaboration > Policies & rules > Threat policies > Preset security policies.",
+  "Turn on the Standard protection preset for all users, and the Strict preset for executives and other high-value users.",
+  "Review custom policies that would take precedence and remove those that weaken the preset settings.",
+]
+frameworks = [
+  "CIS Microsoft 365 Foundations Benchmark",
+  "Microsoft Secure Score",
+]
+verify = '''
+Get-EOPProtectionPolicyRule | Select-Object Name, State, Priority
+Get-ATPProtectionPolicyRule | Select-Object Name, State, Priority'''
+cvss = "AV:N/AC:H/PR:N/UI:R/S:U/C:L/I:L/A:N"
+mitre = ["T1566.002"]
+
+[[check.detail.references]]
+title = "Preset security policies in EOP and Microsoft Defender for Office 365"
+url = "https://learn.microsoft.com/defender-office-365/preset-security-policies"
+
+[[check]]
+id = "M365-EXO-027"
+title = "Quarantine policies and user release permissions"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "An anti-spam or anti-malware policy sends high-confidence phishing or malware to a quarantine policy that lets users release the message themselves."
+impact = "Users can release real phishing and malware from quarantine into their inbox."
+remediation = [
+  "Use AdminOnlyAccessPolicy (or a request-release policy) for high-confidence phishing and malware.",
+]
+verify = "Get-HostedContentFilterPolicy | Select-Object Name, HighConfidencePhishQuarantineTag; Get-QuarantinePolicy"
+
+[[check.detail.references]]
+title = "Quarantine policies"
+url = "https://learn.microsoft.com/defender-office-365/quarantine-policies"
+
+[[check]]
+id = "M365-EXO-028"
+title = "OWA policies: external storage providers, attachment download on unmanaged devices"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "One or more Outlook on the web mailbox policies have AdditionalStorageProvidersAvailable set to true, so users can connect third-party storage services (such as Dropbox or Google Drive) in Outlook on the web. The ConditionalAccessPolicy setting, which limits attachment download on unmanaged devices, is shown as evidence."
+impact = "Users can save or attach files to storage outside the organization's control, which makes data leaks, deliberate or accidental, harder to prevent and to detect."
+attack = [
+  "Signs in to Outlook on the web as a user, or acts as a malicious insider.",
+  "Connects a personal storage provider.",
+  "Saves mail attachments to it, outside the organization's data loss prevention and audit.",
+]
+remediation = [
+  "Turn off third-party storage providers in each OWA mailbox policy with Set-OwaMailboxPolicy -AdditionalStorageProvidersAvailable $false.",
+  "Set ConditionalAccessPolicy to ReadOnly or ReadOnlyPlusAttachmentsBlocked and pair it with a Conditional Access policy that uses app enforced restrictions for unmanaged devices.",
+]
+frameworks = [
+  "CIS Microsoft 365 Foundations Benchmark",
+  "NIST 800-53 AC-4",
+]
+verify = '''
+Get-OwaMailboxPolicy | Select-Object Name, AdditionalStorageProvidersAvailable, ConditionalAccessPolicy'''
+cvss = "AV:N/AC:H/PR:L/UI:N/S:U/C:L/I:N/A:N"
+
+[[check.detail.references]]
+title = "Set-OwaMailboxPolicy"
+url = "https://learn.microsoft.com/powershell/module/exchange/set-owamailboxpolicy"
+
+[[check]]
+id = "M365-EXO-029"
+title = "Mail flow to/from deprecated hybrid Exchange servers"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "An Exchange server in AD runs a version that is out of support (anything before Exchange Server Subscription Edition), and is flagged when Exchange Online has on-premises connectors."
+impact = "Out-of-support Exchange gets no security fixes; Exchange servers have been the entry point of many breaches and hold high rights in AD."
+remediation = [
+  "Upgrade to Exchange Server SE, or remove the last Exchange server once management tools no longer need it.",
+]
+verify = "Get-ExchangeServer | Select-Object Name, AdminDisplayVersion"
+
+[[check.detail.references]]
+title = "Exchange Server SE"
+url = "https://learn.microsoft.com/exchange/new-features/build-numbers-and-release-dates"
+
+[[check]]
+id = "M365-EXO-030"
+title = "Customer Lockbox enabled"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "CustomerLockBoxEnabled is false in the organization configuration, so Microsoft engineers can access customer content during a support case without the organization's explicit approval."
+impact = "The organization has no approval step or record of its own for Microsoft support access to its mailbox content, which some regulatory and contractual requirements expect."
+remediation = [
+  "In the Microsoft 365 admin center, go to Settings > Org settings > Security & privacy > Customer lockbox and select Require approval for all data access requests.",
+  "Name the approvers (Customer Lockbox access approver role) and make sure they watch for requests.",
+]
+frameworks = [
+  "CIS Microsoft 365 Foundations Benchmark",
+  "NIST 800-53 AC-3",
+]
+verify = '''
+Get-OrganizationConfig | Select-Object CustomerLockBoxEnabled'''
+
+[[check.detail.references]]
+title = "Microsoft Purview Customer Lockbox"
+url = "https://learn.microsoft.com/purview/customer-lockbox-requests"
+
+[[check]]
+id = "M365-EXO-031"
+title = "Mailboxes on litigation hold / retention (informational)"
+status = "implemented"
+severity = "info"
+
+[check.detail]
+description = "A count of user mailboxes with litigation hold enabled. This check is informational and always passes."
+impact = "No direct risk. The count shows how much mail is preserved for legal and investigation needs; mailboxes without a hold can be emptied by a user or an attacker without a recoverable copy."
+remediation = [
+  "Compare the count with your legal and retention requirements, and apply litigation hold or a Microsoft Purview retention policy where needed (Set-Mailbox -LitigationHoldEnabled $true).",
+]
+frameworks = [
+  "NIST 800-53 AU-11",
+]
+verify = '''
+Get-EXOMailbox -RecipientTypeDetails UserMailbox -ResultSize Unlimited -Properties LitigationHoldEnabled |
+  Group-Object LitigationHoldEnabled | Select-Object Name, Count'''
+
+[[check.detail.references]]
+title = "Create a litigation hold"
+url = "https://learn.microsoft.com/purview/ediscovery-create-a-litigation-hold"
+
+[[check]]
+id = "M365-EXO-032"
+title = "Calendar external sharing and free/busy detail exposure"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "A sharing policy lets users share calendar details (CalendarSharingFreeBusyDetail or CalendarSharingFreeBusyReviewer) or contacts with any domain (*) or with anonymous users."
+impact = "Users can publish meeting subjects, locations and attendees to anyone. Attackers use this information to map the organization, learn who works with whom, and time and target phishing messages."
+attack = [
+  "Finds calendars that users have shared publicly or with any external domain.",
+  "Reads meeting subjects, locations and attendees.",
+  "Uses the details to craft convincing phishing or social engineering messages.",
+]
+remediation = [
+  "In the Exchange admin center, go to Organization > Sharing and edit each sharing policy.",
+  "Limit sharing with all domains and anonymous users to free/busy time only (CalendarSharingFreeBusySimple), or remove those entries, with Set-SharingPolicy -Domains.",
+  "Allow more detailed sharing only with named partner domains.",
+]
+frameworks = [
+  "CIS Microsoft 365 Foundations Benchmark",
+  "NIST 800-53 AC-21",
+]
+verify = '''
+Get-SharingPolicy | Select-Object Name, Enabled, Default, Domains'''
+cvss = "AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N"
+mitre = ["T1087.004"]
+
+[[check.detail.references]]
+title = "Sharing policies in Exchange Online"
+url = "https://learn.microsoft.com/exchange/sharing/sharing-policies/sharing-policies"

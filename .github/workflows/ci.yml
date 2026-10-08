@@ -1,0 +1,307 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  core:
+    name: Rust core and catalog
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+      - run: cargo clippy -p dca-core --all-targets -- -D warnings
+      - run: cargo test -p dca-core
+      - name: Catalog loads and validates
+        run: cargo run -q -p dca-core --bin catalog-summary > /dev/null
+      - name: Large directory (130,000 objects) analyzed within budget
+        run: cargo test --release -p dca-core -- --ignored large_directory --nocapture
+
+  ui:
+    name: User interface
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci
+      - run: npm run check
+      - run: npm run build
+      - name: No example data in what ships
+        run: node ../tools/check-no-fixture-data.mjs
+      - name: Cloud requests and fields match Microsoft's Graph schema
+        run: node ../tools/check-graph-schema.mjs
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Preview data from the example assessments
+        run: cargo run -q -p dca-core --bin preview-data
+      - name: Install Chromium for the accessibility check
+        run: npx playwright-core install --with-deps chromium
+      - name: Accessibility (axe-core, WCAG 2.1 AA, light and dark)
+        run: node tests/a11y.mjs
+
+  collectors:
+    name: Collectors (read-only guard and lint)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read-only guard
+        shell: pwsh
+        run: ./tools/Test-CollectorsReadOnly.ps1
+      - name: PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          $results = Invoke-ScriptAnalyzer -Path collectors -Recurse -Severity Error,Warning
+          $results | Format-Table -AutoSize
+          if ($results) { throw "PSScriptAnalyzer found $($results.Count) issue(s)." }
+      - name: Collector helpers (Windows PowerShell 5.1)
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File tools\Test-CollectorHelpers.ps1
+      - name: Collector helpers (PowerShell 7)
+        shell: pwsh
+        run: ./tools/Test-CollectorHelpers.ps1
+      - name: Windows PowerShell 5.1 parses every collector
+        shell: powershell
+        run: |
+          Get-ChildItem collectors -Recurse -Include *.ps1 | ForEach-Object {
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$null, [ref]$errors) | Out-Null
+            if ($errors) { $errors | ForEach-Object { Write-Host $_ }; throw "Parse errors in $($_.Name)" }
+          }
+
+  live-windows:
+    name: Collectors on a real Windows Server
+    runs-on: windows-latest
+    needs: [collectors]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # A real CA to read: a standalone root CA with web enrollment over HTTP
+      # and EDITF_ATTRIBUTESUBJECTALTNAME2 on (ESC6), so the CA checks see
+      # weak settings set the way an administrator would set them.
+      - name: Install a standalone certification authority (lab)
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Install-WindowsFeature ADCS-Cert-Authority, ADCS-Web-Enrollment -IncludeManagementTools | Out-Null
+          Install-AdcsCertificationAuthority -CAType StandaloneRootCA -CACommonName 'DCA Lab CA' -Force | Out-Null
+          Install-AdcsWebEnrollment -Force | Out-Null
+          & certutil.exe -setreg policy\EditFlags +EDITF_ATTRIBUTESUBJECTALTNAME2 | Out-Null
+          Restart-Service CertSvc
+          Get-Service CertSvc | Format-Table -AutoSize
+      - name: Read this machine with the shipped collector scripts (Windows PowerShell 5.1)
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File tools\Read-LocalMachine.ps1 -OutDir "$env:RUNNER_TEMP\live"
+      - name: The analysis understands every part it returned
+        shell: pwsh
+        run: |
+          $env:DCA_LIVE_DIR = "$env:RUNNER_TEMP\live"
+          cargo test -p dca-core -- --ignored live_windows_replies --nocapture
+          if ($LASTEXITCODE) { throw "The live replies were not understood." }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-windows-replies-${{ github.sha }}
+          path: ${{ runner.temp }}/live/*
+
+  lab-domain:
+    name: Checks against a real Active Directory domain (Samba)
+    runs-on: ubuntu-24.04
+    needs: [core]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Samba AD
+        run: |
+          sudo apt-get update -q
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q samba samba-ad-dc samba-ad-provision winbind ldb-tools ldap-utils
+          sudo systemctl stop samba-ad-dc smbd nmbd winbind 2>/dev/null || true
+          sudo systemctl mask samba-ad-dc smbd nmbd winbind
+          # .NET 8 (PowerShell 7.4) looks for OpenLDAP 2.5 by its versioned name.
+          lib=/usr/lib/x86_64-linux-gnu
+          [ -e $lib/libldap-2.5.so.0 ] || sudo ln -s $lib/libldap.so.2 $lib/libldap-2.5.so.0
+          [ -e $lib/liblber-2.5.so.0 ] || sudo ln -s $lib/liblber.so.2 $lib/liblber-2.5.so.0
+      - name: Build the lab domain and seed it
+        run: |
+          sudo tools/lab/start-domain.sh
+          sudo tools/lab/seed.sh
+          # A readable copy of SYSVOL for the collector (Samba keeps it root-only).
+          sudo cp -r /var/lib/samba/sysvol/corp.example.com "$RUNNER_TEMP/sysvol"
+          sudo chown -R "$(id -u):$(id -g)" "$RUNNER_TEMP/sysvol"
+      - name: Read the domain with the shipped collector (PowerShell 7, LDAP and SYSVOL)
+        shell: pwsh
+        run: |
+          $c = New-Object pscredential('Administrator@corp.example.com', (ConvertTo-SecureString 'Passw0rd!Lab' -AsPlainText -Force))
+          $out = Join-Path $env:RUNNER_TEMP 'lab'
+          ./collectors/Invoke-DCACollect.ps1 -Domain corp.example.com -Server 127.0.0.1 -Credential $c -Sources 'ldap,sysvol' -SysvolPath (Join-Path $env:RUNNER_TEMP 'sysvol') -OutDir $out -Bundle (Join-Path $env:RUNNER_TEMP 'lab-domain.zip') |
+            Tee-Object -Variable log | Where-Object { $_ -notmatch '"progress"' }
+          $errors = @($log | Where-Object { $_ -match '"type":"error"' })
+          if ($errors) { throw "The collector reported $($errors.Count) error(s)." }
+      - name: Every expectation holds and every collected area is understood
+        run: |
+          DCA_LAB_DIR="$RUNNER_TEMP/lab" cargo test -p dca-core --lib -- --ignored live_lab_domain --nocapture
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lab-domain-${{ github.sha }}
+          path: ${{ runner.temp }}/lab-domain.zip
+
+  live-tenant:
+    name: Cloud checks against a real Microsoft 365 tenant
+    runs-on: ubuntu-24.04
+    needs: [core]
+    # Runs when a test tenant is configured as repository secrets:
+    # DCA_TENANT (the tenant's .onmicrosoft.com domain), DCA_CLIENT_ID (an
+    # app registration with read-only application permissions), and either
+    # DCA_CERT_PFX (base64 of a .pfx, with DCA_CERT_PASSWORD) or
+    # DCA_CLIENT_SECRET. Exchange Online is read only with the certificate.
+    env:
+      DCA_TENANT: ${{ secrets.DCA_TENANT }}
+      DCA_CLIENT_ID: ${{ secrets.DCA_CLIENT_ID }}
+      DCA_CLIENT_SECRET: ${{ secrets.DCA_CLIENT_SECRET }}
+      DCA_CERT_PFX: ${{ secrets.DCA_CERT_PFX }}
+      DCA_CERT_PASSWORD: ${{ secrets.DCA_CERT_PASSWORD }}
+    steps:
+      - name: No test tenant configured
+        if: env.DCA_TENANT == ''
+        run: echo "Set the DCA_TENANT, DCA_CLIENT_ID and DCA_CERT_PFX (or DCA_CLIENT_SECRET) secrets to check the cloud collector and rules against a real tenant."
+      - uses: actions/checkout@v4
+        if: env.DCA_TENANT != ''
+      - uses: dtolnay/rust-toolchain@stable
+        if: env.DCA_TENANT != ''
+      - uses: Swatinem/rust-cache@v2
+        if: env.DCA_TENANT != ''
+      - name: Install ExchangeOnlineManagement
+        if: env.DCA_TENANT != '' && env.DCA_CERT_PFX != ''
+        shell: pwsh
+        run: Install-Module ExchangeOnlineManagement -MinimumVersion 3.0 -Force -Scope CurrentUser
+      - name: Read the tenant with the shipped collector (app sign-in)
+        if: env.DCA_TENANT != ''
+        shell: pwsh
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP 'tenant'
+          $collect = @{ Tenant = $env:DCA_TENANT; ClientId = $env:DCA_CLIENT_ID; SignIn = 'App'; OutDir = $out; Bundle = (Join-Path $env:RUNNER_TEMP 'tenant.zip') }
+          $sources = 'graph,graph-logs,arm'
+          if ($env:DCA_CERT_PFX) {
+            $pfx = Join-Path $env:RUNNER_TEMP 'app.pfx'
+            [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:DCA_CERT_PFX))
+            $collect.CertificatePath = $pfx
+            $sources += ',exo'
+          }
+          ./collectors/Invoke-DCAEntra.ps1 @collect -Sources $sources | Where-Object { $_ -notmatch '"progress"' }
+      - name: Every area the tenant returned is understood
+        if: env.DCA_TENANT != ''
+        run: DCA_TENANT_DIR="$RUNNER_TEMP/tenant" cargo test -p dca-core --lib -- --ignored live_tenant --nocapture
+
+  app-windows:
+    name: Windows app (MSI)
+    runs-on: windows-latest
+    needs: [core, ui, collectors, live-windows, lab-domain]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Build the password tool
+        # Shipped into the install dir (Program Files) as BenchmarkPassword.exe
+        # via bundle.resources. The app crate's build validates that resource,
+        # so the exe must exist before dcassessor is compiled or bundled.
+        run: cargo build --release -p dca-core --bin benchmark-password
+      - name: The password tool launches
+        shell: pwsh
+        run: |
+          # With no account on the runner it prints guidance and exits 1,
+          # before asking for any password, which proves it links and runs.
+          # That expected exit 1 must not fail the step, so check the output.
+          $out = '' | & target/release/benchmark-password.exe 2>&1 | Out-String
+          Write-Host $out
+          if ($out -notmatch 'Benchmark password tool') { throw "The password tool did not launch." }
+          exit 0
+      - run: cargo clippy -p dcassessor -- -D warnings
+      - name: Build MSI
+        working-directory: app
+        run: |
+          npm ci
+          npx tauri build
+      - name: Command line works from the built app
+        shell: pwsh
+        run: |
+          $exe = 'target/release/Benchmark.exe'
+          & $exe list | Out-Host
+          if ($LASTEXITCODE) { throw "list exited with $LASTEXITCODE" }
+          # Example data, to check the embedded report pages are found.
+          & $exe export fixtures/example-assessments/october-review --out "$env:RUNNER_TEMP/dca-reports" --reports technical,dashboard,raw --formats html,json | Out-Host
+          if ($LASTEXITCODE) { throw "export exited with $LASTEXITCODE" }
+          $html = Get-ChildItem "$env:RUNNER_TEMP/dca-reports" -Recurse -Filter *.html
+          if ($html.Count -lt 2) { throw "Expected two HTML reports, found $($html.Count)" }
+          # PDFs, printed by the Microsoft Edge that ships with Windows.
+          $pdfOut = Join-Path $env:RUNNER_TEMP 'dca pdf reports'
+          $warn = & $exe export fixtures/example-assessments/october-review --out $pdfOut --reports executive,technical --formats pdf 2>&1 | Out-String
+          Write-Host $warn
+          if ($LASTEXITCODE) { throw "PDF export exited with $LASTEXITCODE" }
+          if ($warn -match 'Warning') { throw "PDF export warned: $warn" }
+          $pdf = Get-ChildItem $pdfOut -Recurse -Filter *.pdf
+          if ($pdf.Count -ne 2) { throw "Expected two PDF reports, found $($pdf.Count)" }
+          $pdf | ForEach-Object {
+            $head = [System.Text.Encoding]::ASCII.GetString([System.IO.File]::ReadAllBytes($_.FullName), 0, 4)
+            if ($head -ne '%PDF') { throw "$($_.Name) is not a PDF" }
+            Write-Host "$($_.Name): $([math]::Round($_.Length / 1KB)) KB"
+          }
+      - name: Check installer size
+        shell: pwsh
+        run: |
+          $msi = Get-ChildItem target/release/bundle/msi/*.msi | Select-Object -First 1
+          $mb = [math]::Round($msi.Length / 1MB, 1)
+          Write-Host "$($msi.Name): $mb MB"
+          # Size budget from the app plan (section 2).
+          if ($msi.Length -gt 25MB) { throw "Installer is $mb MB, over the 25 MB budget." }
+      - name: Portable ZIP, catalog ZIP and SHA-256 hashes
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value
+          $dist = Join-Path $env:RUNNER_TEMP 'dist'
+          $portable = Join-Path $env:RUNNER_TEMP 'portable'
+          New-Item -ItemType Directory -Force -Path $dist, $portable | Out-Null
+          # Portable: the app, the catalog and the collectors side by side,
+          # which is where the app looks for them.
+          Copy-Item target/release/Benchmark.exe (Join-Path $portable 'Benchmark.exe')
+          Copy-Item target/release/benchmark-password.exe (Join-Path $portable 'BenchmarkPassword.exe')
+          Copy-Item -Recurse checks, collectors $portable
+          Copy-Item README.md $portable
+          Compress-Archive -Path (Join-Path $portable '*') -DestinationPath (Join-Path $dist "Benchmark-$version-portable.zip")
+          Compress-Archive -Path checks/* -DestinationPath (Join-Path $dist "checks-catalog-$version.zip")
+          Copy-Item target/release/bundle/msi/*.msi $dist
+          Get-ChildItem $dist -File | Sort-Object Name | ForEach-Object {
+            '{0}  {1}' -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant(), $_.Name
+          } | Set-Content -Path (Join-Path $dist 'SHA256SUMS.txt') -Encoding ascii
+          Get-Content (Join-Path $dist 'SHA256SUMS.txt')
+          # The portable build finds its catalog in its own folder.
+          & (Join-Path $portable 'Benchmark.exe') export fixtures/example-assessments/october-review --out (Join-Path $env:RUNNER_TEMP 'portable-check') --reports raw --formats json | Out-Host
+          if ($LASTEXITCODE) { throw "The portable build's command line exited with $LASTEXITCODE" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Benchmark-${{ github.sha }}
+          path: ${{ runner.temp }}/dist/*

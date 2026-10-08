@@ -1,0 +1,826 @@
+# HUNT-AD: On-prem hunt
+
+area = "HUNT-AD"
+
+[[check]]
+id = "HUNT-AD-001"
+title = "DCSync performed by a non-DC (event 4662 with replication GUIDs)"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "Reads event 4662 (an operation was performed on an object) with access mask 0x100 (control access) whose properties name a directory replication right: DS-Replication-Get-Changes (1131f6aa-…), DS-Replication-Get-Changes-All (1131f6ad-…) or DS-Replication-Get-Changes-In-Filtered-Set (89e95b76-…), on every domain controller over the collector's event window (EventDays, 7 days by default). Requests by SYSTEM and by the domain controllers' own computer accounts are excluded, and Entra Connect connector accounts (names starting MSOL_, AAD_ or SYNC_) are shown separately as expected. Every other account is listed with its request count; a computer account from outside this domain is flagged to confirm it is a DC of another domain. The events need Audit Directory Service Access (success) and an auditing entry (SACL) for the replication rights on the domain head. Seeing nothing only means nothing was logged, not that no replication was requested."
+impact = "A finding is something to investigate, not proof of compromise: a backup, identity or monitoring product with replication rights can produce the same events. A real DCSync means someone pulled password hashes from the directory, including the krbtgt key, which lets them sign in as any account and forge Kerberos tickets until those keys are changed."
+attack = [
+  "Gets an account that holds the replication rights, such as a Domain Admin or an account granted them through a delegation mistake.",
+  "From any domain-joined or network-reachable machine, asks a domain controller to replicate account secrets over the directory replication protocol (DRSUAPI), as Mimikatz lsadump::dcsync or Impacket secretsdump do.",
+  "Uses the NTLM hashes and Kerberos keys it received to sign in as any account, or forges golden tickets with the krbtgt key.",
+]
+remediation = [
+  "Investigate each listed account: find out which machine it requested replication from (the 4624 logon on the same DC just before the 4662), and whether a product or person is known to use it for replication.",
+  "If nobody can account for it, treat the domain as compromised: disable the account, isolate the source machine, and plan a reset of krbtgt (twice, with replication in between) and of every privileged password.",
+  "Then contain: remove the replication rights from every account that is not a domain controller or the Entra Connect connector account.",
+]
+frameworks = [
+  "NIST 800-53 AU-6",
+  "NIST 800-53 SI-4",
+  "NIST 800-53 IR-4",
+]
+verify = '''
+foreach ($dc in (Get-ADDomainController -Filter *).HostName) {
+  Get-WinEvent -ComputerName $dc -LogName Security -FilterXPath "*[System[EventID=4662 and TimeCreated[timediff(@SystemTime) <= 604800000]]] and *[EventData[Data[@Name='AccessMask']='0x100']]" -ErrorAction SilentlyContinue |
+    Where-Object { $_.Message -match '1131f6aa-9c07-11d1-f79f-00c04fc2dcd2|1131f6ad-9c07-11d1-f79f-00c04fc2dcd2|89e95b76-444d-4c62-991a-0facbeda640c' } |
+    ForEach-Object { $x = [xml]$_.ToXml(); [pscustomobject]@{ DC = $dc; Time = $_.TimeCreated; Account = ($x.Event.EventData.Data | Where-Object Name -eq 'SubjectUserName').'#text' } }
+}'''
+cvss = "AV:N/AC:L/PR:H/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1003.006"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1003.006: OS Credential Dumping: DCSync"
+url = "https://attack.mitre.org/techniques/T1003/006/"
+
+[[check.detail.references]]
+title = "4662(S, F): An operation was performed on an object"
+url = "https://learn.microsoft.com/en-us/previous-versions/windows/it-pro/windows-10/security/threat-protection/auditing/event-4662"
+
+[[check]]
+id = "HUNT-AD-002"
+title = "Kerberoasting patterns (one account requesting RC4 service tickets for many services)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Reads successful service ticket requests (event 4769, status 0x0) with RC4 encryption (ticket encryption type 0x17) on every domain controller over the collector's event window (EventDays, 7 days by default). Tickets for computer accounts (service names ending in $) and for krbtgt are left out. An account is listed when it requested RC4 tickets for 5 or more distinct services in the window, with the services and source addresses. Up to the newest 5,000 matching events are read per DC. The events need Audit Kerberos Service Ticket Operations (success). Seeing nothing only means nothing was logged, not that no tickets were requested."
+impact = "A finding is something to investigate, not proof of compromise: old clients or applications that only support RC4 can produce the same pattern. A real Kerberoast means someone holds tickets they can crack offline to recover the passwords of service accounts, which are often privileged and rarely changed."
+attack = [
+  "Signs in as any domain user and lists accounts with a service principal name (SPN).",
+  "Requests a service ticket for each of them, asking for RC4 so the ticket is encrypted with the account's NT hash (Rubeus kerberoast, Impacket GetUserSPNs).",
+  "Cracks the tickets offline and signs in as the service accounts whose passwords fall.",
+]
+remediation = [
+  "Investigate each listed account: confirm with its user whether they ran a tool that lists services, and check the source addresses against known servers and admin workstations.",
+  "If the requests were not legitimate, reset the passwords of the service accounts named in the finding to long random values (or move them to group managed service accounts), and look for sign-ins as those accounts since.",
+  "Then contain: set msDS-SupportedEncryptionTypes to AES only on service accounts, and remove SPNs that are no longer used.",
+]
+frameworks = [
+  "NIST 800-53 AU-6",
+  "NIST 800-53 SI-4",
+  "NIST 800-53 IA-5",
+]
+verify = '''
+foreach ($dc in (Get-ADDomainController -Filter *).HostName) {
+  Get-WinEvent -ComputerName $dc -LogName Security -FilterXPath "*[System[EventID=4769 and TimeCreated[timediff(@SystemTime) <= 604800000]]] and *[EventData[Data[@Name='TicketEncryptionType']='0x17' and Data[@Name='Status']='0x0']]" -ErrorAction SilentlyContinue |
+    ForEach-Object { $d = @{}; ([xml]$_.ToXml()).Event.EventData.Data | ForEach-Object { $d[$_.Name] = $_.'#text' }; [pscustomobject]@{ Account = $d.TargetUserName; Service = $d.ServiceName } } |
+    Where-Object { $_.Service -notmatch '\$$' -and $_.Service -ne 'krbtgt' } |
+    Group-Object Account | Where-Object { ($_.Group.Service | Sort-Object -Unique).Count -ge 5 } | Select-Object Name, Count
+}'''
+cvss = "AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:N"
+mitre = ["T1558.003"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1558.003: Steal or Forge Kerberos Tickets: Kerberoasting"
+url = "https://attack.mitre.org/techniques/T1558/003/"
+
+[[check.detail.references]]
+title = "4769(S, F): A Kerberos service ticket was requested"
+url = "https://learn.microsoft.com/en-us/previous-versions/windows/it-pro/windows-10/security/threat-protection/auditing/event-4769"
+
+[[check]]
+id = "HUNT-AD-003"
+title = "AS-REP roasting: tickets issued without Kerberos pre-authentication (4768)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Reads successful ticket-granting ticket requests (event 4768, status 0x0) with pre-authentication type 0, meaning the domain controller issued a ticket without pre-authentication, on every domain controller over the collector's event window (EventDays, 7 days by default). There is no threshold and no exclusion: every account that received such a ticket is listed with its count and source addresses. The events need Audit Kerberos Authentication Service (success). Seeing nothing only means nothing was logged, not that no such tickets were issued."
+impact = "A finding is something to investigate, not proof of compromise: an old system that needs 'Do not require Kerberos preauthentication' produces the same events. Otherwise someone asked for the account's ticket without knowing its password, and can crack the encrypted part offline to recover the password."
+attack = [
+  "Lists accounts with 'Do not require Kerberos preauthentication' set, which any domain user can read, or simply tries a list of user names.",
+  "Requests a ticket for each of them without pre-authentication (Rubeus asreproast, Impacket GetNPUsers).",
+  "Cracks the encrypted part of the reply offline and signs in with the recovered passwords.",
+]
+remediation = [
+  "Investigate each listed account and source address: confirm whether a known system signs in as that account without pre-authentication.",
+  "If not, reset the account's password to a long random value and look for sign-ins as that account since the ticket was issued.",
+  "Then contain: clear 'Do not require Kerberos preauthentication' on every account that does not strictly need it.",
+]
+frameworks = [
+  "NIST 800-53 AU-6",
+  "NIST 800-53 SI-4",
+  "NIST 800-53 IA-2",
+]
+verify = '''
+foreach ($dc in (Get-ADDomainController -Filter *).HostName) {
+  Get-WinEvent -ComputerName $dc -LogName Security -FilterXPath "*[System[EventID=4768 and TimeCreated[timediff(@SystemTime) <= 604800000]]] and *[EventData[Data[@Name='PreAuthType']='0' and Data[@Name='Status']='0x0']]" -ErrorAction SilentlyContinue |
+    ForEach-Object { $d = @{}; ([xml]$_.ToXml()).Event.EventData.Data | ForEach-Object { $d[$_.Name] = $_.'#text' }; [pscustomobject]@{ DC = $dc; Time = $_.TimeCreated; Account = $d.TargetUserName; From = $d.IpAddress } }
+}
+Get-ADUser -Filter 'DoesNotRequirePreAuth -eq $true' | Select-Object SamAccountName'''
+cvss = "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N"
+mitre = ["T1558.004"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1558.004: Steal or Forge Kerberos Tickets: AS-REP Roasting"
+url = "https://attack.mitre.org/techniques/T1558/004/"
+
+[[check.detail.references]]
+title = "4768(S, F): A Kerberos authentication ticket (TGT) was requested"
+url = "https://learn.microsoft.com/en-us/previous-versions/windows/it-pro/windows-10/security/threat-protection/auditing/event-4768"
+
+[[check]]
+id = "HUNT-AD-004"
+title = "Password spraying (4625/4771 failures across many accounts from one source)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Reads failed sign-ins on every domain controller over the collector's event window (EventDays, 7 days by default): event 4625 (an account failed to log on) and event 4771 (Kerberos pre-authentication failed) with failure code 0x18, a wrong password; other 4771 codes are not password guesses and are left out. Failures are grouped by source address, and a source is listed when it failed to sign in as 10 or more different accounts. Failures without an address are grouped as an unknown source. Up to the newest 5,000 matching events are read per DC. The events need Audit Logon (failure) and Audit Kerberos Authentication Service (failure). Seeing nothing only means nothing was logged, not that no spray happened; NTLM credential checks (event 4776) are not read."
+impact = "A finding is something to investigate, not proof of compromise: a terminal server, proxy or misconfigured service can fail for many users from one address. A real spray means someone is guessing common passwords across the domain, and any account with a weak password may already be in their hands."
+attack = [
+  "Collects user names from the directory, the web or earlier leaks.",
+  "Tries one or two common passwords against every account from the same machine, staying under the lockout threshold.",
+  "Signs in with the accounts where a guess worked.",
+]
+remediation = [
+  "Investigate each listed source: identify the machine behind the address and whether it hosts many users, such as a terminal server or proxy.",
+  "Look for successful sign-ins (4624, 4768) from the same address to the accounts it tried; for any you find, confirm with the user and reset the password if it was not them.",
+  "Then contain: isolate the source machine if it is not legitimate, enforce a password policy or banned-password list that rejects common passwords, and keep a lockout threshold.",
+]
+frameworks = [
+  "NIST 800-53 AU-6",
+  "NIST 800-53 SI-4",
+  "NIST 800-53 AC-7",
+]
+verify = '''
+foreach ($dc in (Get-ADDomainController -Filter *).HostName) {
+  Get-WinEvent -ComputerName $dc -LogName Security -FilterXPath "*[System[(EventID=4625 or EventID=4771) and TimeCreated[timediff(@SystemTime) <= 604800000]]]" -ErrorAction SilentlyContinue |
+    ForEach-Object { $d = @{}; ([xml]$_.ToXml()).Event.EventData.Data | ForEach-Object { $d[$_.Name] = $_.'#text' }; if ($_.Id -eq 4625 -or $d.Status -eq '0x18') { [pscustomobject]@{ From = $d.IpAddress; Account = $d.TargetUserName } } } |
+    Group-Object From | Where-Object { ($_.Group.Account | Sort-Object -Unique).Count -ge 10 } | Select-Object Name, Count
+}'''
+cvss = "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:L/A:N"
+mitre = ["T1110.003"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1110.003: Brute Force: Password Spraying"
+url = "https://attack.mitre.org/techniques/T1110/003/"
+
+[[check.detail.references]]
+title = "4625(F): An account failed to log on"
+url = "https://learn.microsoft.com/en-us/previous-versions/windows/it-pro/windows-10/security/threat-protection/auditing/event-4625"
+
+[[check.detail.references]]
+title = "4771(F): Kerberos pre-authentication failed"
+url = "https://learn.microsoft.com/en-us/previous-versions/windows/it-pro/windows-10/security/threat-protection/auditing/event-4771"
+
+[[check]]
+id = "HUNT-AD-005"
+title = "Brute force against single accounts and lockout storms (4625/4771/4740)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Reads the same failed sign-ins as the password spray hunt (event 4625, and event 4771 with failure code 0x18) and the account lockouts (event 4740) on every domain controller over the collector's event window (EventDays, 7 days by default). An account is listed when it failed 25 or more sign-ins from one source address. When the domain logged 10 or more lockouts in the window, every locked-out account is also listed with the computer it was locked from; fewer lockouts are counted but not listed. The events need Audit Logon (failure), Audit Kerberos Authentication Service (failure) and Audit User Account Management (success). Seeing nothing only means nothing was logged, not that no guessing happened."
+impact = "A finding is something to investigate, not proof of compromise: a phone or service still using an old password fails over and over and locks its account. Real guessing aims to recover one account's password, and a lockout storm can also be used to deny users access."
+attack = [
+  "Picks a target account, often a known admin or service account.",
+  "Tries many passwords against it from one machine, or locks many accounts on purpose to disrupt the business.",
+  "Signs in once a guess works, or uses the disruption to cover other activity.",
+]
+remediation = [
+  "Investigate each listed account and source: identify the device behind the address or caller computer, and ask the user whether a device still holds an old password.",
+  "If the source is not known, check for a successful sign-in after the failures; if one exists, reset the password and review what the account did.",
+  "Then contain: fix or retire the device using old credentials, isolate an unknown source, and keep a lockout threshold with a reasonable reset time.",
+]
+frameworks = [
+  "NIST 800-53 AU-6",
+  "NIST 800-53 SI-4",
+  "NIST 800-53 AC-7",
+]
+verify = '''
+foreach ($dc in (Get-ADDomainController -Filter *).HostName) {
+  Get-WinEvent -ComputerName $dc -FilterHashtable @{ LogName = 'Security'; Id = 4740; StartTime = (Get-Date).AddDays(-7) } -ErrorAction SilentlyContinue |
+    ForEach-Object { $d = @{}; ([xml]$_.ToXml()).Event.EventData.Data | ForEach-Object { $d[$_.Name] = $_.'#text' }; [pscustomobject]@{ DC = $dc; Time = $_.TimeCreated; Account = $d.TargetUserName; CallerComputer = $d.TargetDomainName } }
+}'''
+cvss = "AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:L/A:L"
+mitre = ["T1110"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1110: Brute Force"
+url = "https://attack.mitre.org/techniques/T1110/"
+
+[[check.detail.references]]
+title = "4740(S): A user account was locked out"
+url = "https://learn.microsoft.com/en-us/previous-versions/windows/it-pro/windows-10/security/threat-protection/auditing/event-4740"
+
+[[check.detail.references]]
+title = "4625(F): An account failed to log on"
+url = "https://learn.microsoft.com/en-us/previous-versions/windows/it-pro/windows-10/security/threat-protection/auditing/event-4625"
+
+[[check]]
+id = "HUNT-AD-006"
+title = "Golden ticket indicators (TGS without prior TGT, abnormal ticket lifetimes)"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "Service tickets were issued for accounts whose domain is written in lower case. Tickets the KDC issues carry the realm in upper case; tools that forge golden tickets often do not."
+impact = "A golden ticket gives the attacker any identity in the domain for as long as the krbtgt key stays the same."
+remediation = [
+  "Investigate the accounts and source addresses.",
+  "If forgery is confirmed, reset the krbtgt password twice and follow the incident response process.",
+]
+verify = "Get-WinEvent -FilterHashtable @{LogName='Security';Id=4769} | Where-Object { $_.Properties[1].Value -cmatch '[a-z]' }"
+mitre = ["T1558.001"]
+
+[[check]]
+id = "HUNT-AD-007"
+title = "Silver ticket / forged PAC indicators (KDC PAC validation events)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "The KDC logged events 35 to 38: tickets with missing PAC fields (PAC_REQUESTOR or PAC_ATTRIBUTES)."
+impact = "Tickets issued by current DCs carry these fields. Their absence points to forged (silver or golden) tickets or to very old tickets from before the 2021 updates."
+remediation = [
+  "Identify the accounts and clients named in the events.",
+  "Once no legitimate client is affected, move PacRequestorEnforcement to enforcement.",
+]
+verify = "Get-WinEvent -FilterHashtable @{LogName='System';ProviderName='Microsoft-Windows-Kerberos-Key-Distribution-Center';Id=35,36,37,38}"
+mitre = ["T1558"]
+
+[[check]]
+id = "HUNT-AD-008"
+title = "NTLM network logons of privileged accounts on DCs (pass-the-hash indicator, 4624)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Reads successful network logons (event 4624, logon type 3) that used the NTLM package on every domain controller over the collector's event window (EventDays, 7 days by default); anonymous logons are left out. An account is listed when it is a privileged user (a recursive member of a Tier 0 admin group: Domain Admins, Enterprise Admins, Schema Admins, Administrators, the operator groups, DnsAdmins and similar) or a Tier 0 user account, with the workstations and addresses it signed in from. Logons of other accounts are only counted. Up to the newest 5,000 matching events are read per DC. The events need Audit Logon (success). Seeing nothing only means nothing was logged, not that no NTLM was used."
+impact = "A finding is something to investigate, not proof of compromise: scripts, old tools and access by IP address instead of name fall back to NTLM. But NTLM is what pass-the-hash and NTLM relay use: an attacker who has an admin's NT hash, or relays its authentication, signs in to a domain controller without ever knowing the password."
+attack = [
+  "Steals an admin's NT hash from the memory of a machine the admin used, or coerces and relays the admin's authentication.",
+  "Authenticates to a domain controller over SMB or RPC with the hash or the relayed session (Mimikatz sekurlsa::pth, Impacket psexec or wmiexec with -hashes).",
+  "Runs commands on the DC or dumps the directory with the admin's rights.",
+]
+remediation = [
+  "Investigate each listed account and source: confirm with the admin whether they worked from that machine at that time and which tool they used.",
+  "If they did not, treat the account as compromised: reset its password (twice for accounts that may hold Kerberos keys in memory), check the source machine for credential theft tools, and review what the account did.",
+  "Then contain: add admins to Protected Users, which blocks NTLM for them, make admins use Kerberos by name rather than IP address, and restrict NTLM on DCs where audit shows it is no longer needed.",
+]
+frameworks = [
+  "NIST 800-53 AU-6",
+  "NIST 800-53 SI-4",
+  "NIST 800-53 AC-6",
+]
+verify = '''
+$admins = (Get-ADGroupMember 'Domain Admins' -Recursive).SID.Value
+foreach ($dc in (Get-ADDomainController -Filter *).HostName) {
+  Get-WinEvent -ComputerName $dc -LogName Security -FilterXPath "*[System[EventID=4624 and TimeCreated[timediff(@SystemTime) <= 604800000]]] and *[EventData[Data[@Name='LogonType']='3' and Data[@Name='AuthenticationPackageName']='NTLM']]" -ErrorAction SilentlyContinue |
+    ForEach-Object { $d = @{}; ([xml]$_.ToXml()).Event.EventData.Data | ForEach-Object { $d[$_.Name] = $_.'#text' }; if ($admins -contains $d.TargetUserSid) { [pscustomobject]@{ DC = $dc; Time = $_.TimeCreated; Account = $d.TargetUserName; Workstation = $d.WorkstationName; From = $d.IpAddress } } }
+}'''
+cvss = "AV:N/AC:H/PR:N/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1550", "T1078.002", "T1557.001"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1550: Use Alternate Authentication Material"
+url = "https://attack.mitre.org/techniques/T1550/"
+
+[[check.detail.references]]
+title = "4624(S): An account was successfully logged on"
+url = "https://learn.microsoft.com/en-us/previous-versions/windows/it-pro/windows-10/security/threat-protection/auditing/event-4624"
+
+[[check]]
+id = "HUNT-AD-009"
+title = "DCShadow: domain controller (nTDSDSA) objects created for servers that are not DCs of this domain (5137)"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "Reads directory object creations (event 5137) of class nTDSDSA, the NTDS Settings object that makes a server a replication partner, on every domain controller over the collector's event window (EventDays, 7 days by default). A creation is listed when the server object it sits under does not match the computer account of a domain controller of this domain. Creations for this domain's own DCs, such as a planned promotion, are only counted. A DC of another domain in the forest being promoted also appears, so check that first. The events need Audit Directory Service Changes (success), and are written only where the configuration partition's SACL audits object creation. Seeing nothing only means nothing was logged, not that no rogue DC was registered."
+impact = "A finding is something to investigate, not proof of compromise. A real DCShadow means someone with Domain Admin or SYSTEM on a DC registered a machine as a temporary domain controller and pushed changes (SID history, group membership, ACLs) through replication, which bypasses the usual change auditing on the real DCs."
+attack = [
+  "Gets Domain Admin or equivalent rights.",
+  "Registers an ordinary machine as a domain controller by creating its nTDSDSA object and the replication SPNs (Mimikatz lsadump::dcshadow).",
+  "Pushes forged changes to the real DCs through replication, then removes the registration.",
+]
+remediation = [
+  "Investigate each listed object: identify the server named in the DN, who created it (shown in the finding) and whether a DC promotion was planned at that time.",
+  "If not, treat the domain as compromised: isolate the server, review replication metadata (repadmin /showobjmeta) of sensitive objects for changes that originated from it, and reverse them.",
+  "Then contain: reset the credentials of the account that created the object and plan a krbtgt reset, since the attacker already held Tier 0 rights.",
+]
+frameworks = [
+  "NIST 800-53 AU-6",
+  "NIST 800-53 SI-4",
+  "NIST 800-53 IR-4",
+]
+verify = '''
+foreach ($dc in (Get-ADDomainController -Filter *).HostName) {
+  Get-WinEvent -ComputerName $dc -LogName Security -FilterXPath "*[System[EventID=5137 and TimeCreated[timediff(@SystemTime) <= 604800000]]] and *[EventData[Data[@Name='ObjectClass']='nTDSDSA']]" -ErrorAction SilentlyContinue |
+    ForEach-Object { $d = @{}; ([xml]$_.ToXml()).Event.EventData.Data | ForEach-Object { $d[$_.Name] = $_.'#text' }; [pscustomobject]@{ DC = $dc; Time = $_.TimeCreated; By = $d.SubjectUserName; Object = $d.ObjectDN } }
+}
+Get-ADObject -SearchBase "CN=Sites,$((Get-ADRootDSE).configurationNamingContext)" -LDAPFilter '(objectClass=nTDSDSA)' | Select-Object DistinguishedName'''
+cvss = "AV:N/AC:L/PR:H/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1207", "T1098"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1207: Rogue Domain Controller"
+url = "https://attack.mitre.org/techniques/T1207/"
+
+[[check.detail.references]]
+title = "5137(S): A directory service object was created"
+url = "https://learn.microsoft.com/en-us/previous-versions/windows/it-pro/windows-10/security/threat-protection/auditing/event-5137"
+
+[[check]]
+id = "HUNT-AD-010"
+title = "Permission changes on AdminSDHolder or the domain head (5136)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Reads directory attribute changes (event 5136, value added) to nTSecurityDescriptor on CN=AdminSDHolder or on the domain head (a DN made only of DC= parts) on every domain controller over the collector's event window (EventDays, 7 days by default). Every change is listed with the object, who made it and how often; changes by admins are not excluded, since these permissions rarely change. The events need Audit Directory Service Changes (success) and the default SACLs on AdminSDHolder and the domain head. Seeing nothing only means nothing was logged, not that the permissions did not change."
+impact = "A finding is something to investigate, not proof of compromise: installing Exchange or other directory-aware products, or a planned delegation, changes these permissions. A malicious change on AdminSDHolder is copied to every protected admin account within an hour, and one on the domain head can grant replication rights (DCSync) or full control of the domain."
+attack = [
+  "Gets rights to write the permissions of AdminSDHolder or the domain head, for example as a Domain Admin or through a misconfigured delegation.",
+  "Adds an entry giving an account it controls full control on AdminSDHolder, or replication rights on the domain head.",
+  "Keeps control of every admin account, or dumps the directory with DCSync, even after its original access is removed.",
+]
+remediation = [
+  "Investigate each change: confirm with the person who made it, shown in the finding, that it was a planned change, and compare the current permissions with a known-good baseline.",
+  "If it was not planned, remove the added entries, check the accounts they named for use since the change, and look for DCSync (HUNT-AD-001) by those accounts.",
+  "Then contain: limit who can write these permissions to the Tier 0 admins, and alert on every 5136 for nTSecurityDescriptor on these objects.",
+]
+frameworks = [
+  "NIST 800-53 AU-6",
+  "NIST 800-53 SI-4",
+  "NIST 800-53 AC-6",
+]
+verify = '''
+foreach ($dc in (Get-ADDomainController -Filter *).HostName) {
+  Get-WinEvent -ComputerName $dc -LogName Security -FilterXPath "*[System[EventID=5136 and TimeCreated[timediff(@SystemTime) <= 604800000]]] and *[EventData[Data[@Name='AttributeLDAPDisplayName']='nTSecurityDescriptor']]" -ErrorAction SilentlyContinue |
+    ForEach-Object { $d = @{}; ([xml]$_.ToXml()).Event.EventData.Data | ForEach-Object { $d[$_.Name] = $_.'#text' }; if ($d.ObjectDN -like 'CN=AdminSDHolder,*' -or $d.ObjectDN -like 'DC=*') { [pscustomobject]@{ DC = $dc; Time = $_.TimeCreated; By = $d.SubjectUserName; Object = $d.ObjectDN } } }
+}'''
+cvss = "AV:N/AC:L/PR:H/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1098", "T1003.006"]
+
+[[check.detail.references]]
+title = "5136(S): A directory service object was modified"
+url = "https://learn.microsoft.com/en-us/previous-versions/windows/it-pro/windows-10/security/threat-protection/auditing/event-5136"
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1098: Account Manipulation"
+url = "https://attack.mitre.org/techniques/T1098/"
+
+[[check]]
+id = "HUNT-AD-011"
+title = "New members added to Tier 0 groups (4728/4732/4756) in the window"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Reads group membership additions to global (event 4728), domain local and built-in (event 4732) and universal (event 4756) security groups on every domain controller over the collector's event window (EventDays, 7 days by default). An addition is listed when the group is a Tier 0 group: Domain Admins, Domain Controllers, Schema Admins, Enterprise Admins, Key Admins, Enterprise Key Admins, Administrators, Account Operators, Server Operators, Print Operators, Backup Operators or DnsAdmins. Additions by admins are not excluded. Additions to other groups are only counted. The events need Audit Security Group Management (success). Seeing nothing only means nothing was logged, not that no one was added."
+impact = "A finding is something to investigate, not proof of compromise: admins join and leave these groups through normal change processes. An unplanned addition gives the member control of the domain, and is a common last step of an attack and a common way to keep access."
+attack = [
+  "Gets rights to change the membership of a Tier 0 group, as an admin or through a delegation or ACL mistake.",
+  "Adds an account it controls to Domain Admins, Administrators or an operator group.",
+  "Uses the account's new rights to take over domain controllers, or keeps it as a backdoor.",
+]
+remediation = [
+  "Investigate each addition: confirm it against an approved change, and check with the person who made it, shown in the finding.",
+  "If it was not approved, remove the member, reset its password, and review what it did while it was a member; also check the account that made the change.",
+  "Then contain: keep Tier 0 group membership minimal, and alert on every addition to these groups.",
+]
+frameworks = [
+  "NIST 800-53 AU-6",
+  "NIST 800-53 AC-2",
+  "NIST 800-53 AC-6",
+]
+verify = '''
+foreach ($dc in (Get-ADDomainController -Filter *).HostName) {
+  Get-WinEvent -ComputerName $dc -FilterHashtable @{ LogName = 'Security'; Id = 4728, 4732, 4756; StartTime = (Get-Date).AddDays(-7) } -ErrorAction SilentlyContinue |
+    ForEach-Object { $d = @{}; ([xml]$_.ToXml()).Event.EventData.Data | ForEach-Object { $d[$_.Name] = $_.'#text' }; [pscustomobject]@{ DC = $dc; Time = $_.TimeCreated; Group = $d.TargetUserName; Member = $d.MemberName; By = $d.SubjectUserName } }
+}'''
+cvss = "AV:N/AC:L/PR:H/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1098", "T1078.002"]
+
+[[check.detail.references]]
+title = "4728(S): A member was added to a security-enabled global group"
+url = "https://learn.microsoft.com/en-us/previous-versions/windows/it-pro/windows-10/security/threat-protection/auditing/event-4728"
+
+[[check.detail.references]]
+title = "4732(S): A member was added to a security-enabled local group"
+url = "https://learn.microsoft.com/en-us/previous-versions/windows/it-pro/windows-10/security/threat-protection/auditing/event-4732"
+
+[[check.detail.references]]
+title = "4756(S): A member was added to a security-enabled universal group"
+url = "https://learn.microsoft.com/en-us/previous-versions/windows/it-pro/windows-10/security/threat-protection/auditing/event-4756"
+
+[[check]]
+id = "HUNT-AD-012"
+title = "GPO changes outside change windows"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Group Policy objects were changed on weekends or outside 06:00-19:00 UTC on weekdays (event 5136 on groupPolicyContainer objects)."
+impact = "Changes outside working hours are a common sign of an attacker deploying code or settings through Group Policy."
+remediation = [
+  "Confirm each change with its owner.",
+  "Adjust the window in the report if the organisation works other hours.",
+]
+verify = "Get-WinEvent -FilterHashtable @{LogName='Security';Id=5136} | Where-Object { $_.Message -match 'groupPolicyContainer' }"
+mitre = ["T1484.001"]
+
+[[check]]
+id = "HUNT-AD-013"
+title = "Services installed outside standard folders and scheduled tasks created by people on DCs (7045/4698)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Reads service installations (event 7045 from the Service Control Manager in the System log) and scheduled task creations (event 4698 in the Security log) on every domain controller over the collector's event window (EventDays, 7 days by default). A service is listed when its program is outside C:\\Windows, %SystemRoot%, System32, C:\\Program Files, C:\\Program Files (x86) and the Windows Defender folder under C:\\ProgramData, or when it matches a known attack tool (see HUNT-AD-024); only the program path is collected, never its arguments. A task is listed when it was created by an account that is not a computer account (a person or service account), or when a computer account created a task with an 8-letter random name in the root folder. Event 7045 is always written to the System log; event 4698 needs Audit Other Object Access Events (success). Seeing nothing only means nothing was logged, not that nothing was installed."
+impact = "A finding is something to investigate, not proof of compromise: agents, backup and monitoring tools install services and admins create tasks. A malicious service or task on a DC runs as SYSTEM on the most sensitive server in the domain and is a common way to run tools and keep access."
+attack = [
+  "Gets admin rights on a domain controller.",
+  "Installs a service or creates a scheduled task, remotely or locally, that runs its program from a writable folder such as C:\\Users or C:\\Temp.",
+  "Runs credential theft or remote control tools as SYSTEM, and keeps the service or task as a way back in.",
+]
+remediation = [
+  "Investigate each listed service and task: identify the program and who installed it, and confirm with the server or product owner that it is expected on a DC.",
+  "If it is not, stop and disable it only after collecting the program file and the related logs, then treat the DC as compromised: look for the account that created it and what else it did.",
+  "Then contain: keep DCs free of non-essential software, and alert on 7045 and 4698 on DCs.",
+]
+frameworks = [
+  "NIST 800-53 AU-6",
+  "NIST 800-53 CM-7",
+  "NIST 800-53 SI-4",
+]
+verify = '''
+foreach ($dc in (Get-ADDomainController -Filter *).HostName) {
+  Get-WinEvent -ComputerName $dc -FilterHashtable @{ LogName = 'System'; ProviderName = 'Service Control Manager'; Id = 7045; StartTime = (Get-Date).AddDays(-7) } -ErrorAction SilentlyContinue |
+    ForEach-Object { $d = @{}; ([xml]$_.ToXml()).Event.EventData.Data | ForEach-Object { $d[$_.Name] = $_.'#text' }; [pscustomobject]@{ DC = $dc; Time = $_.TimeCreated; Service = $d.ServiceName; Image = $d.ImagePath; Account = $d.AccountName } }
+  Get-WinEvent -ComputerName $dc -FilterHashtable @{ LogName = 'Security'; Id = 4698; StartTime = (Get-Date).AddDays(-7) } -ErrorAction SilentlyContinue |
+    ForEach-Object { $d = @{}; ([xml]$_.ToXml()).Event.EventData.Data | ForEach-Object { $d[$_.Name] = $_.'#text' }; [pscustomobject]@{ DC = $dc; Time = $_.TimeCreated; Task = $d.TaskName; By = $d.SubjectUserName } }
+}'''
+cvss = "AV:N/AC:L/PR:H/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1543.003", "T1053.005", "T1078.002"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1543.003: Create or Modify System Process: Windows Service"
+url = "https://attack.mitre.org/techniques/T1543/003/"
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1053.005: Scheduled Task/Job: Scheduled Task"
+url = "https://attack.mitre.org/techniques/T1053/005/"
+
+[[check.detail.references]]
+title = "4698(S): A scheduled task was created"
+url = "https://learn.microsoft.com/en-us/previous-versions/windows/it-pro/windows-10/security/threat-protection/auditing/event-4698"
+
+[[check]]
+id = "HUNT-AD-014"
+title = "Security log cleared (1102) or audit policy changed directly, not by the DC itself (4719)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Reads Security log clears (event 1102) and system audit policy changes (event 4719) on every domain controller over the collector's event window (EventDays, 7 days by default). Every log clear is listed with the account that cleared it. An audit policy change is listed unless it was made by SYSTEM, a computer account or a domain controller of this domain, which is how Group Policy applies audit settings; what remains are direct changes, for example with auditpol. Event 1102 is always written; event 4719 needs Audit Audit Policy Change (success). Seeing nothing only means nothing was logged, not that the logs or the policy were not touched."
+impact = "A finding is something to investigate, not proof of compromise: an admin may clear a full log or test an audit setting. On a DC, though, a cleared log or a switched-off audit category is a classic way to hide an attack, and removes the evidence every other hunt here relies on."
+attack = [
+  "Gets admin rights on a domain controller.",
+  "Turns off the audit categories that would record its next steps (auditpol /set), or clears the Security log after acting (wevtutil cl Security, Clear-EventLog).",
+  "Carries on with the attack, leaving little or no trace in the DC's logs.",
+]
+remediation = [
+  "Investigate each event: confirm with the account shown in the finding why it cleared the log or changed the policy, and check other DCs and any central log store (SIEM) for events from the cleared period.",
+  "If nobody can account for it, treat the DC as compromised and look for the activity that was hidden, using copies of the logs held elsewhere.",
+  "Then contain: forward DC Security logs to a central store, set the audit policy through Group Policy with 'Force audit policy subcategory settings' enabled, and alert on 1102 and on 4719 not made by SYSTEM.",
+]
+frameworks = [
+  "NIST 800-53 AU-6",
+  "NIST 800-53 AU-9",
+  "NIST 800-53 SI-4",
+]
+verify = '''
+foreach ($dc in (Get-ADDomainController -Filter *).HostName) {
+  Get-WinEvent -ComputerName $dc -FilterHashtable @{ LogName = 'Security'; Id = 1102, 4719; StartTime = (Get-Date).AddDays(-7) } -ErrorAction SilentlyContinue |
+    Select-Object @{n='DC';e={$dc}}, TimeCreated, Id, @{n='By';e={ ([xml]$_.ToXml()).SelectSingleNode("//*[local-name()='SubjectUserName']").InnerText }}
+}'''
+cvss = "AV:N/AC:L/PR:H/UI:N/S:U/C:N/I:H/A:N"
+mitre = ["T1070.001", "T1562.002"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1070.001: Indicator Removal: Clear Windows Event Logs"
+url = "https://attack.mitre.org/techniques/T1070/001/"
+
+[[check.detail.references]]
+title = "1102(S): The audit log was cleared"
+url = "https://learn.microsoft.com/en-us/previous-versions/windows/it-pro/windows-10/security/threat-protection/auditing/event-1102"
+
+[[check.detail.references]]
+title = "4719(S): System audit policy was changed"
+url = "https://learn.microsoft.com/en-us/previous-versions/windows/it-pro/windows-10/security/threat-protection/auditing/event-4719"
+
+[[check]]
+id = "HUNT-AD-015"
+title = "SID history added or attempted (4765/4766)"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "Reads SID history additions (event 4765) and failed attempts (event 4766) on every domain controller over the collector's event window (EventDays, 7 days by default). Every event is listed with the account, the SIDs added and who added them; there is no exclusion, since SID history should only change during a planned migration. The events need Audit User Account Management (success and failure). Seeing nothing only means nothing was logged, not that no SID history was added; SID history written through replication, as DCShadow does, or by editing the database offline, does not produce these events."
+impact = "A finding is something to investigate, not proof of compromise: a domain migration with ADMT adds SID history legitimately. Outside a migration, an account that gains the SID of an admin group in its SID history gets that group's rights everywhere, without being a member of it."
+attack = [
+  "Gets Domain Admin rights or SYSTEM on a DC.",
+  "Adds the SID of Domain Admins, Enterprise Admins or another privileged principal to the SID history of an ordinary account (Mimikatz sid::add).",
+  "Signs in as the ordinary account, which now carries admin rights while appearing in no admin group.",
+]
+remediation = [
+  "Investigate each event: confirm it against a planned migration, and check who added the SID history, shown in the finding.",
+  "If it was not planned, clear the added SID history (with an approved change, as a Tier 0 admin), reset the account's password, and review what it did; treat the account that added it as compromised.",
+  "Then contain: once migrations are finished, enable SID filtering on trusts and alert on 4765 and 4766.",
+]
+frameworks = [
+  "NIST 800-53 AU-6",
+  "NIST 800-53 AC-2",
+  "NIST 800-53 SI-4",
+]
+verify = '''
+foreach ($dc in (Get-ADDomainController -Filter *).HostName) {
+  Get-WinEvent -ComputerName $dc -FilterHashtable @{ LogName = 'Security'; Id = 4765, 4766; StartTime = (Get-Date).AddDays(-7) } -ErrorAction SilentlyContinue |
+    ForEach-Object { $d = @{}; ([xml]$_.ToXml()).Event.EventData.Data | ForEach-Object { $d[$_.Name] = $_.'#text' }; [pscustomobject]@{ DC = $dc; Time = $_.TimeCreated; Id = $_.Id; Account = $d.TargetUserName; Sids = $d.SidList; By = $d.SubjectUserName } }
+}
+Get-ADUser -LDAPFilter '(sIDHistory=*)' -Properties sIDHistory | Select-Object SamAccountName, sIDHistory'''
+cvss = "AV:N/AC:L/PR:H/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1134.005"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1134.005: Access Token Manipulation: SID-History Injection"
+url = "https://attack.mitre.org/techniques/T1134/005/"
+
+[[check.detail.references]]
+title = "4765(S): SID History was added to an account"
+url = "https://learn.microsoft.com/en-us/previous-versions/windows/it-pro/windows-10/security/threat-protection/auditing/event-4765"
+
+[[check.detail.references]]
+title = "4766(F): An attempt to add SID History to an account failed"
+url = "https://learn.microsoft.com/en-us/previous-versions/windows/it-pro/windows-10/security/threat-protection/auditing/event-4766"
+
+[[check]]
+id = "HUNT-AD-016"
+title = "Shadow credentials: msDS-KeyCredentialLink written by someone other than the account, a DC or Entra Connect (5136)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Reads directory attribute changes (event 5136, value added) to msDS-KeyCredentialLink on every domain controller over the collector's event window (EventDays, 7 days by default). A change is listed unless it was made by SYSTEM, a domain controller, an Entra Connect connector account (names starting MSOL_, AAD_ or SYNC_), or the account itself, as Windows Hello for Business and device registration do. The events need Audit Directory Service Changes (success), and are written only where the object's SACL audits writes to this attribute. Seeing nothing only means nothing was logged, not that no key credential was added."
+impact = "A finding is something to investigate, not proof of compromise: some provisioning tools write key credentials for users. A key credential added by someone else lets them request a Kerberos ticket and the NT hash of the target account with a certificate they hold (PKINIT), without changing or knowing its password."
+attack = [
+  "Gets write access to msDS-KeyCredentialLink of a user or computer, for example through GenericWrite delegated by mistake or a relayed authentication.",
+  "Adds a key credential it generated to the target (Whisker, pyWhisker, Certipy shadow).",
+  "Requests a Kerberos ticket as the target with the matching private key, and recovers its NT hash.",
+]
+remediation = [
+  "Investigate each listed change: confirm with the account shown in the finding why it wrote the key credential, and compare the target's current key credentials with known devices.",
+  "If it was not legitimate, remove the added key credential, reset the target's password, and review sign-ins as the target since the change.",
+  "Then contain: remove write access to msDS-KeyCredentialLink from accounts that do not need it, and alert on 5136 for this attribute by unexpected accounts.",
+]
+frameworks = [
+  "NIST 800-53 AU-6",
+  "NIST 800-53 SI-4",
+  "NIST 800-53 IA-5",
+]
+verify = '''
+foreach ($dc in (Get-ADDomainController -Filter *).HostName) {
+  Get-WinEvent -ComputerName $dc -LogName Security -FilterXPath "*[System[EventID=5136 and TimeCreated[timediff(@SystemTime) <= 604800000]]] and *[EventData[Data[@Name='AttributeLDAPDisplayName']='msDS-KeyCredentialLink' and Data[@Name='OperationType']='%%14674']]" -ErrorAction SilentlyContinue |
+    ForEach-Object { $d = @{}; ([xml]$_.ToXml()).Event.EventData.Data | ForEach-Object { $d[$_.Name] = $_.'#text' }; [pscustomobject]@{ DC = $dc; Time = $_.TimeCreated; Object = $d.ObjectDN; By = $d.SubjectUserName } }
+}'''
+cvss = "AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:N"
+mitre = ["T1556", "T1098"]
+
+[[check.detail.references]]
+title = "5136(S): A directory service object was modified"
+url = "https://learn.microsoft.com/en-us/previous-versions/windows/it-pro/windows-10/security/threat-protection/auditing/event-5136"
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1556: Modify Authentication Process"
+url = "https://attack.mitre.org/techniques/T1556/"
+
+[[check]]
+id = "HUNT-AD-017"
+title = "Certificate requests with SAN for privileged users (AD CS event 4886/4887)"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "The CA issued a certificate in the last 90 days that an account requested for a privileged user's name: through a subject alternative name in the request attributes (ESC6) or an issued UPN that differs from the requester. Read from the CA database on each CA."
+impact = "Whoever requested it can sign in as that privileged user with the certificate until it expires, even after password resets."
+remediation = [
+  "Revoke the certificate, find how it was issued (template or CA setting), and investigate the requester.",
+]
+verify = "certutil -view -restrict \"NotBefore>=<date>\" -out \"RequesterName,UPN,CertificateTemplate\""
+mitre = ["T1649"]
+
+[[check.detail.references]]
+title = "Certified Pre-Owned (SpecterOps)"
+url = "https://specterops.io/wp-content/uploads/sites/3/2022/06/Certified_Pre-Owned.pdf"
+
+[[check]]
+id = "HUNT-AD-018"
+title = "NTDS.dit access or shadow copy creation on DCs"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "ntdsutil, vssadmin, esentutl, diskshadow or wbadmin ran on a domain controller (event 4688)."
+impact = "These tools are used to copy NTDS.dit through a shadow copy, which gives every password hash in the domain offline."
+remediation = [
+  "Confirm each run was a planned backup or maintenance.",
+  "If not, treat it as a domain compromise.",
+]
+verify = "Get-WinEvent -FilterHashtable @{LogName='Security';Id=4688} | Where-Object { $_.Message -match 'ntdsutil|vssadmin|esentutl|diskshadow|wbadmin' }"
+mitre = ["T1003"]
+
+[[check]]
+id = "HUNT-AD-019"
+title = "LSASS access by unexpected processes (if Sysmon/EDR data available)"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "Processes other than the expected system and security processes opened LSASS on a domain controller (Sysmon event 10). Not assessed when Sysmon is not installed."
+impact = "Reading LSASS memory gives the credentials of every account signed in to the DC."
+remediation = [
+  "Investigate the processes listed.",
+  "Turn on LSA protection (RunAsPPL) and Credential Guard where supported.",
+]
+verify = "Get-WinEvent -LogName Microsoft-Windows-Sysmon/Operational -FilterXPath '*[System[EventID=10]]' | Where-Object { $_.Message -match 'lsass.exe' }"
+mitre = ["T1003.001"]
+
+[[check]]
+id = "HUNT-AD-020"
+title = "Coercion attempts: EFS, print spooler or DFS RPC pipes opened on DCs (5145)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Reads detailed file share access checks (event 5145) on the IPC$ share for the named pipes efsrpc (EFS RPC, PetitPotam), spoolss (print spooler, PrinterBug) and netdfs (DFS RPC, DFSCoerce) on every domain controller over the collector's event window (EventDays, 7 days by default). Every source address is listed per pipe with the accounts it connected as; there is no threshold. Print clients use the spooler pipe legitimately when a DC shares printers, while the EFS pipe has no routine use on a DC. PetitPotam over the lsarpc pipe is not covered. Up to the newest 5,000 matching events are read per DC. The events need Audit Detailed File Share (success). Seeing nothing only means nothing was logged, not that no coercion was attempted."
+impact = "A finding is something to investigate, not proof of compromise. A real coercion makes the DC authenticate to a machine the attacker controls, which relays it, for example to AD CS web enrollment to get a certificate for the DC, or captures it on a host with unconstrained delegation; either way the attacker can then act as the DC and replicate the directory."
+attack = [
+  "Signs in as any domain user, or uses an anonymous session where allowed.",
+  "Calls an EFS, print spooler or DFS RPC method on the DC that makes it connect to a path on the attacker's machine (PetitPotam, SpoolSample, DFSCoerce).",
+  "Relays the DC's authentication to AD CS or LDAP, or captures its ticket, and uses it to impersonate the DC.",
+]
+remediation = [
+  "Investigate each listed source: identify the machine and whether it is a print client or management server with a reason to use these pipes on a DC.",
+  "If not, isolate it and look for relayed authentication around the same time: certificates issued to DC accounts on the CAs, and logons of DC computer accounts from unusual addresses.",
+  "Then contain: disable the Print Spooler service on DCs, block the EFS and DFS RPC interfaces with RPC filters where not needed, and require Extended Protection for Authentication on AD CS web enrollment.",
+]
+frameworks = [
+  "NIST 800-53 AU-6",
+  "NIST 800-53 SI-4",
+  "NIST 800-53 CM-7",
+]
+verify = '''
+foreach ($dc in (Get-ADDomainController -Filter *).HostName) {
+  Get-WinEvent -ComputerName $dc -LogName Security -FilterXPath "*[System[EventID=5145 and TimeCreated[timediff(@SystemTime) <= 604800000]]] and *[EventData[Data[@Name='RelativeTargetName']='efsrpc' or Data[@Name='RelativeTargetName']='spoolss' or Data[@Name='RelativeTargetName']='netdfs']]" -ErrorAction SilentlyContinue |
+    ForEach-Object { $d = @{}; ([xml]$_.ToXml()).Event.EventData.Data | ForEach-Object { $d[$_.Name] = $_.'#text' }; [pscustomobject]@{ DC = $dc; Time = $_.TimeCreated; Pipe = $d.RelativeTargetName; From = $d.IpAddress; Account = $d.SubjectUserName } }
+}'''
+cvss = "AV:N/AC:L/PR:L/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1187", "T1557.001"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1187: Forced Authentication"
+url = "https://attack.mitre.org/techniques/T1187/"
+
+[[check.detail.references]]
+title = "5145(S, F): A network share object was checked to see whether client can be granted desired access"
+url = "https://learn.microsoft.com/en-us/previous-versions/windows/it-pro/windows-10/security/threat-protection/auditing/event-5145"
+
+[[check.detail.references]]
+title = "KB5005413: Mitigating NTLM Relay Attacks on Active Directory Certificate Services (AD CS)"
+url = "https://support.microsoft.com/help/5005413"
+
+[[check]]
+id = "HUNT-AD-021"
+title = "Anomalous logon of admin accounts to non-Tier 0 machines"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Privileged accounts received service tickets for computers outside Tier 0 (event 4769), meaning they were used on those computers."
+impact = "Credentials used on a lower-tier computer can be stolen by anyone who controls it, which leads straight to Tier 0."
+remediation = [
+  "Use separate accounts per tier.",
+  "Deny Tier 0 accounts logon to lower tiers with GPO user rights or authentication policy silos.",
+]
+verify = "Get-WinEvent -FilterHashtable @{LogName='Security';Id=4769} | Where-Object { $_.Message -match '<admin account>' }"
+mitre = ["T1078.002"]
+
+[[check]]
+id = "HUNT-AD-022"
+title = "SPNs added to user accounts by non-admins (5136), with follow-up RC4 ticket requests"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Reads directory attribute changes (event 5136, value added) to servicePrincipalName on objects of class user on every domain controller over the collector's event window (EventDays, 7 days by default). A change is listed unless it was made by SYSTEM, a default admin principal, a Tier 0 account or a domain controller. For each listed account, the hunt also checks the Kerberoasting events (4769 with RC4, see HUNT-AD-002) for an RC4 service ticket requested for that account, and says so. The events need Audit Directory Service Changes (success), and are written only where the object's SACL audits writes to this attribute; the follow-up needs Audit Kerberos Service Ticket Operations (success). Seeing nothing only means nothing was logged, not that no SPN was added."
+impact = "A finding is something to investigate, not proof of compromise: application owners with delegated rights add SPNs for new services. An SPN added by someone with write access to a user, followed by an RC4 ticket request, is targeted Kerberoasting: the attacker gets a crackable ticket for an account that had no SPN before."
+attack = [
+  "Gets write access to an account's servicePrincipalName, for example through GenericWrite or GenericAll delegated by mistake.",
+  "Adds a made-up SPN to the account and requests an RC4 service ticket for it (targeted Kerberoasting).",
+  "Removes the SPN again and cracks the ticket offline to recover the account's password.",
+]
+remediation = [
+  "Investigate each listed change: confirm with the account shown in the finding why it added the SPN, and whether the SPN is still there and used by a service.",
+  "If it was not legitimate, remove the SPN, reset the target account's password to a long random value, and review sign-ins as that account since; pay most attention to entries where an RC4 ticket followed.",
+  "Then contain: remove write access to servicePrincipalName on user accounts from accounts that do not need it, and set AES-only encryption on service accounts.",
+]
+frameworks = [
+  "NIST 800-53 AU-6",
+  "NIST 800-53 SI-4",
+  "NIST 800-53 AC-6",
+]
+verify = '''
+foreach ($dc in (Get-ADDomainController -Filter *).HostName) {
+  Get-WinEvent -ComputerName $dc -LogName Security -FilterXPath "*[System[EventID=5136 and TimeCreated[timediff(@SystemTime) <= 604800000]]] and *[EventData[Data[@Name='AttributeLDAPDisplayName']='servicePrincipalName' and Data[@Name='ObjectClass']='user' and Data[@Name='OperationType']='%%14674']]" -ErrorAction SilentlyContinue |
+    ForEach-Object { $d = @{}; ([xml]$_.ToXml()).Event.EventData.Data | ForEach-Object { $d[$_.Name] = $_.'#text' }; [pscustomobject]@{ DC = $dc; Time = $_.TimeCreated; Object = $d.ObjectDN; Spn = $d.AttributeValue; By = $d.SubjectUserName } }
+}'''
+cvss = "AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:N"
+mitre = ["T1558.003", "T1098"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1558.003: Steal or Forge Kerberos Tickets: Kerberoasting"
+url = "https://attack.mitre.org/techniques/T1558/003/"
+
+[[check.detail.references]]
+title = "5136(S): A directory service object was modified"
+url = "https://learn.microsoft.com/en-us/previous-versions/windows/it-pro/windows-10/security/threat-protection/auditing/event-5136"
+
+[[check.detail.references]]
+title = "4769(S, F): A Kerberos service ticket was requested"
+url = "https://learn.microsoft.com/en-us/previous-versions/windows/it-pro/windows-10/security/threat-protection/auditing/event-4769"
+
+[[check]]
+id = "HUNT-AD-023"
+title = "Replication metadata timeline: objects changed on unexpected DCs or at odd times"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Replication metadata shows a recent change to a sensitive object that originated on a server that is not a current domain controller, or between midnight and 5 am UTC."
+impact = "Changes from an unknown replication partner are the signature of DCShadow; changes at night deserve a look."
+remediation = [
+  "Identify the originating server and the change, and investigate both.",
+]
+verify = "repadmin /showobjmeta <DC> \"<object DN>\""
+mitre = ["T1207"]
+
+[[check.detail.references]]
+title = "DCShadow"
+url = "https://attack.mitre.org/techniques/T1207/"
+
+[[check]]
+id = "HUNT-AD-024"
+title = "Known attack-tool artifacts on DCs (PsExec-style services, Mimikatz drivers, atexec tasks)"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "Reads service installations (event 7045 from the Service Control Manager in the System log) and scheduled task creations (event 4698) on every domain controller over the collector's event window (EventDays, 7 days by default). A service is listed when its name or program contains a default name of a remote execution or credential theft tool: PSEXESVC (PsExec), PAExec, RemComSvc (RemCom), CSExecSvc (CSExec), winexesvc (winexe), mimidrv, mimikatz or mimilib (Mimikatz), BTOBTO (Impacket smbexec), gsecdump, WCEService (Windows Credential Editor), pwdump or fgexec (fgdump); or when its program is a command shell (%COMSPEC%, cmd.exe or PowerShell), as Impacket's and Metasploit's PsExec variants install it. A task is listed when its name is 8 random letters in the root folder, as Impacket atexec creates it. Only names and program paths are matched, never arguments, so a renamed tool is not found. Event 7045 is always written; event 4698 needs Audit Other Object Access Events (success). Seeing nothing only means nothing was logged, not that no tool ran."
+impact = "A finding is something to investigate, not proof of compromise: admins use PsExec legitimately, and a tool may install a service that runs a shell. On a DC, though, these artifacts usually mean someone ran commands remotely as SYSTEM or loaded credential theft tools on the server that holds every password hash in the domain."
+attack = [
+  "Gets admin credentials or an NT hash that is valid on a domain controller.",
+  "Runs commands on the DC remotely through a temporary service (PsExec, Impacket psexec or smbexec) or scheduled task (atexec).",
+  "Dumps credentials from LSASS or the directory database, often loading Mimikatz or its driver to get past protections.",
+]
+remediation = [
+  "Investigate each listed artifact: find the account and source machine that installed it (the 4624 logon just before it on the same DC), and confirm with that admin whether they used the tool.",
+  "If nobody can account for it, treat the domain as compromised: isolate the source machine, collect the DC's logs and memory, and plan a reset of krbtgt (twice) and of every privileged password.",
+  "Then contain: block remote service creation and admin logons to DCs from anything but Tier 0 admin workstations, and alert on 7045 and 4698 on DCs.",
+]
+frameworks = [
+  "NIST 800-53 AU-6",
+  "NIST 800-53 SI-4",
+  "NIST 800-53 IR-4",
+]
+verify = '''
+$tools = 'psexesvc|paexec|remcomsvc|csexecsvc|winexesvc|mimidrv|mimikatz|mimilib|btobto|gsecdump|wceservice|pwdump|fgexec|%comspec%|cmd\.exe|powershell'
+foreach ($dc in (Get-ADDomainController -Filter *).HostName) {
+  Get-WinEvent -ComputerName $dc -FilterHashtable @{ LogName = 'System'; ProviderName = 'Service Control Manager'; Id = 7045; StartTime = (Get-Date).AddDays(-7) } -ErrorAction SilentlyContinue |
+    ForEach-Object { $d = @{}; ([xml]$_.ToXml()).Event.EventData.Data | ForEach-Object { $d[$_.Name] = $_.'#text' }; if ("$($d.ServiceName) $($d.ImagePath)" -match $tools) { [pscustomobject]@{ DC = $dc; Time = $_.TimeCreated; Service = $d.ServiceName; Image = $d.ImagePath } } }
+  Get-WinEvent -ComputerName $dc -FilterHashtable @{ LogName = 'Security'; Id = 4698; StartTime = (Get-Date).AddDays(-7) } -ErrorAction SilentlyContinue |
+    ForEach-Object { $d = @{}; ([xml]$_.ToXml()).Event.EventData.Data | ForEach-Object { $d[$_.Name] = $_.'#text' }; if ($d.TaskName -cmatch '^\\[A-Za-z]{8}$') { [pscustomobject]@{ DC = $dc; Time = $_.TimeCreated; Task = $d.TaskName; By = $d.SubjectUserName } } }
+}'''
+cvss = "AV:N/AC:L/PR:H/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1569.002", "T1543.003", "T1053.005", "T1003"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1569.002: System Services: Service Execution"
+url = "https://attack.mitre.org/techniques/T1569/002/"
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1003.001: OS Credential Dumping: LSASS Memory"
+url = "https://attack.mitre.org/techniques/T1003/001/"
+
+[[check.detail.references]]
+title = "4698(S): A scheduled task was created"
+url = "https://learn.microsoft.com/en-us/previous-versions/windows/it-pro/windows-10/security/threat-protection/auditing/event-4698"

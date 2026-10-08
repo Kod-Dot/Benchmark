@@ -1,0 +1,356 @@
+# AD-ACC: Account hygiene
+
+area = "AD-ACC"
+
+[[check]]
+id = "AD-ACC-001"
+title = "Stale enabled users (no logon in 90 days, using lastLogonTimestamp)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Enabled user accounts have not signed in for more than 90 days according to lastLogonTimestamp."
+impact = "Unused accounts are not watched by anyone. Their passwords may be old or shared, and their use by an attacker goes unnoticed."
+remediation = [
+  "Confirm with HR or the account owner, then disable the accounts and move them to a quarantine OU.",
+  "Delete them after the retention period.",
+]
+frameworks = [
+  "CIS Controls 5.3",
+]
+cvss = "AV:N/AC:H/PR:N/UI:N/S:U/C:L/I:L/A:N"
+mitre = ["T1078.002"]
+
+[[check.detail.references]]
+title = "Search-ADAccount"
+url = "https://learn.microsoft.com/powershell/module/activedirectory/search-adaccount"
+
+[[check]]
+id = "AD-ACC-002"
+title = "Stale enabled computers"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Enabled computer accounts have not logged on for more than 90 days."
+impact = "Stale computer accounts can be taken over and used to authenticate to the domain, and they inflate the attack surface."
+remediation = [
+  "Disable stale computer accounts, move them to a holding OU, then delete them after a grace period.",
+]
+verify = "Search-ADAccount -AccountInactive -ComputersOnly -TimeSpan 90.00:00:00"
+mitre = ["T1078"]
+
+[[check]]
+id = "AD-ACC-003"
+title = "Disabled accounts not cleaned up"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Disabled user accounts last signed in (or, if they never signed in, were created) more than 365 days ago and are still in the directory. The built-in Guest and krbtgt accounts are skipped. Groups the account is still a direct member of, apart from Domain Users, are listed."
+impact = "A disabled account keeps its group memberships and permissions. Anyone who enables it again, by mistake or on purpose, restores all of that access at once, and old accounts are rarely watched."
+remediation = [
+  "Confirm with HR or the account owner that the account is no longer needed.",
+  "Remove the account from its groups, then delete it after your retention period.",
+  "If an account must be kept, move it to a quarantine OU and record why.",
+]
+frameworks = [
+  "CIS Controls 5.3",
+  "NIST 800-53 AC-2",
+]
+verify = '''
+Get-ADUser -Filter 'Enabled -eq $false' -Properties LastLogonDate, whenCreated, MemberOf |
+  Where-Object { $last = if ($_.LastLogonDate) { $_.LastLogonDate } else { $_.whenCreated }; $last -lt (Get-Date).AddDays(-365) } |
+  Select-Object Name, LastLogonDate, whenCreated, @{n='Groups';e={$_.MemberOf -join '; '}}'''
+mitre = ["T1078.002"]
+
+[[check.detail.references]]
+title = "Search-ADAccount"
+url = "https://learn.microsoft.com/powershell/module/activedirectory/search-adaccount"
+
+[[check]]
+id = "AD-ACC-004"
+title = "Accounts expired but enabled"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Accounts have passed their expiry date but are still enabled."
+impact = "The expiry date already blocks sign-in, but the enabled account is clutter that can be reactivated by changing one attribute."
+remediation = [
+  "Disable expired accounts and remove them after review.",
+]
+verify = "Search-ADAccount -AccountExpired"
+
+[[check]]
+id = "AD-ACC-005"
+title = "Computers with very old pwdLastSet (machine password not rotating)"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Computers that are still in use have machine passwords older than 90 days. Windows changes them every 30 days by default."
+impact = "A machine password that does not rotate points at a disabled rotation policy or a broken machine, and a stolen machine secret stays valid."
+remediation = [
+  "Check the \"Domain member: Disable machine account password changes\" and \"Maximum machine account password age\" policies on these computers.",
+]
+verify = "Get-ADComputer -Filter 'Enabled -eq $true' -Properties PasswordLastSet, LastLogonTimestamp"
+
+[[check]]
+id = "AD-ACC-006"
+title = "Accounts with SID History (and SID History from the same domain)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Objects have SID history. SID history adds the old SIDs to the user's token, with all the access those SIDs had."
+impact = "SID history from the same domain (for example an admin group's SID) is a known persistence technique that gives hidden privileges. SID history from migrations keeps access that should have been re-granted."
+remediation = [
+  "Remove SID history once migrations are finished and access has been re-granted to the new SIDs.",
+  "Investigate any SID history that belongs to this domain: it does not come from a migration.",
+]
+verify = "Get-ADObject -LDAPFilter '(sIDHistory=*)' -Properties sIDHistory"
+mitre = ["T1134.005"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1134.005"
+url = "https://attack.mitre.org/techniques/T1134/005/"
+
+[[check]]
+id = "AD-ACC-007"
+title = "Accounts with non-standard primaryGroupID"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Accounts have a primary group other than the default (Domain Users, Domain Computers or Domain Controllers)."
+impact = "A non-default primary group grants membership that does not show in the group's member list, and is sometimes used to hide privileges."
+remediation = [
+  "Set the primary group back to the default and add explicit membership where it is needed.",
+]
+verify = "Get-ADUser -LDAPFilter '(!(primaryGroupID=513))' -Properties primaryGroupID"
+mitre = ["T1098"]
+
+[[check]]
+id = "AD-ACC-008"
+title = "Enabled users sharing a display name"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Two or more enabled user accounts have the same display name, compared without case and surrounding spaces. Accounts with no display name are skipped."
+impact = "Duplicate accounts usually mean one person holds several enabled accounts, or an old account was left behind when a new one was made. Extra accounts are more for an attacker to use and make access reviews unreliable."
+remediation = [
+  "For each set, confirm with the owner which account is in use.",
+  "Disable and then delete leftover accounts.",
+  "Where one person needs a second account, such as a separate admin account, give it a display name that shows its purpose.",
+]
+frameworks = [
+  "NIST 800-53 AC-2",
+]
+verify = '''
+Get-ADUser -Filter 'Enabled -eq $true' -Properties DisplayName | Where-Object DisplayName |
+  Group-Object { $_.DisplayName.Trim() } | Where-Object Count -gt 1 |
+  Select-Object Name, @{n='Accounts';e={$_.Group.SamAccountName -join ', '}}'''
+mitre = ["T1078.002"]
+
+[[check]]
+id = "AD-ACC-009"
+title = "Users with userAccountControl anomalies (DONT_EXPIRE, TRUSTED_FOR_DELEGATION, etc.)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Enabled user accounts have a risky userAccountControl flag: password never expires, trusted for delegation (unconstrained or with protocol transition), DES-only Kerberos keys, or reversible password encryption. krbtgt is skipped."
+impact = "Each flag weakens the account: passwords that never expire are not rotated, delegation flags let the account impersonate others, DES keys are trivially broken, and reversibly encrypted passwords can be recovered in clear text."
+remediation = [
+  "Clear the flag unless the account has a documented need for it.",
+  "Move service accounts that need non-expiring passwords to group managed service accounts.",
+  "Replace unconstrained delegation with resource-based constrained delegation.",
+]
+frameworks = [
+  "NIST 800-53 IA-5",
+  "NIST 800-53 AC-2",
+]
+verify = "Get-ADUser -Filter 'Enabled -eq $true' -Properties UserAccountControl | Where-Object { $_.UserAccountControl -band (0x10000 -bor 0x80000 -bor 0x1000000 -bor 0x200000 -bor 0x80) }"
+mitre = ["T1078.002", "T1558"]
+
+[[check]]
+id = "AD-ACC-010"
+title = "Pre-Windows 2000 compatible access group members (Everyone / Anonymous)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Pre-Windows 2000 Compatible Access contains Everyone, Anonymous Logon or Authenticated Users. The group can read most attributes of every user and group."
+impact = "With Everyone or Anonymous Logon, anyone on the network can enumerate the directory without credentials."
+remediation = [
+  "Remove Everyone and Anonymous Logon from the group.",
+  "Remove Authenticated Users once legacy applications that need it are identified.",
+]
+verify = "Get-ADGroupMember 'Pre-Windows 2000 Compatible Access'"
+mitre = ["T1087.002", "T1069.002"]
+
+[[check]]
+id = "AD-ACC-011"
+title = "Pre-created computer accounts with default passwords (pre-2000 computers)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Enabled computer accounts other than domain controllers have the PASSWD_NOTREQD flag set and have never signed in (no lastLogonTimestamp). This is how an account looks when it was pre-created with the \"Assign this computer account as a pre-Windows 2000 computer\" option, which sets a predictable default password."
+impact = "An account with a predictable password gives anyone on the network a working domain account without stealing any credential. It can be used to read the directory and as a starting point for other attacks."
+remediation = [
+  "Delete computer accounts that were pre-created and never used.",
+  "For an account that is still needed, reset it (right-click, Reset Account) and join the computer, so it sets its own random password.",
+  "Clear the PASSWD_NOTREQD flag on the remaining accounts.",
+  "Stop using the pre-Windows 2000 option when pre-creating computer accounts.",
+]
+frameworks = [
+  "NIST 800-53 IA-5",
+  "NIST 800-53 AC-2",
+]
+verify = '''
+Get-ADComputer -LDAPFilter '(&(userAccountControl:1.2.840.113556.1.4.803:=32)(!(userAccountControl:1.2.840.113556.1.4.803:=2))(!(lastLogonTimestamp=*)))' -Properties whenCreated, userAccountControl |
+  Select-Object Name, whenCreated, userAccountControl'''
+cvss = "AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:L/A:N"
+mitre = ["T1078.002"]
+
+[[check]]
+id = "AD-ACC-012"
+title = "Weak explicit certificate mappings (altSecurityIdentities)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "User or computer accounts have an X509 certificate mapping in altSecurityIdentities that uses a weak form: issuer and subject, subject only, RFC822 email, or an unrecognized form. Strong forms (issuer and serial number, SubjectKeyIdentifier, SHA1 public key) are counted but not flagged, and Kerberos name mappings are ignored."
+impact = "With a weak mapping, a domain controller accepts any trusted certificate whose name matches, not one specific certificate. Anyone who can get such a certificate from a CA the domain trusts can sign in as the mapped account. KB5014754 treats these forms as weak."
+remediation = [
+  "Replace each weak mapping with a strong one: X509:<I>issuer<SR>serial, X509:<SKI>, or X509:<SHA1-PUKEY>.",
+  "Remove mappings that are no longer used.",
+  "Move domain controllers to Full Enforcement mode for certificate binding once no weak mappings remain.",
+]
+frameworks = [
+  "NIST 800-53 IA-5",
+]
+verify = '''
+Get-ADObject -LDAPFilter '(altSecurityIdentities=*)' -Properties altSecurityIdentities |
+  Select-Object Name, ObjectClass, @{n='Mappings';e={$_.altSecurityIdentities -join '; '}}'''
+cvss = "AV:N/AC:H/PR:L/UI:N/S:U/C:H/I:H/A:H"
+mitre = ["T1649", "T1078.002"]
+
+[[check.detail.references]]
+title = "KB5014754: Certificate-based authentication changes on Windows domain controllers"
+url = "https://support.microsoft.com/help/5014754"
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1649: Steal or Forge Authentication Certificates"
+url = "https://attack.mitre.org/techniques/T1649/"
+
+[[check]]
+id = "AD-ACC-013"
+title = "Key credentials (Shadow Credentials) on admin and Tier 0 accounts"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Admin accounts, or Tier 0 accounts that are not domain controllers, have a value in msDS-KeyCredentialLink. Only which accounts have the attribute is collected, never the keys. Other accounts with key credentials are counted but not listed."
+impact = "A key credential lets its holder sign in as the account with a key instead of a password. Windows Hello for Business adds them legitimately, but a key added by someone with write access to the account (Shadow Credentials) is a hidden way to sign in as that admin that survives a password change."
+remediation = [
+  "For each listed account, confirm that every key credential belongs to a Windows Hello for Business or FIDO device the owner uses.",
+  "Remove key credentials that cannot be explained, then investigate who added them.",
+  "Review who has write access to msDS-KeyCredentialLink on admin and Tier 0 accounts.",
+]
+frameworks = [
+  "NIST 800-53 AC-6",
+]
+verify = '''
+Get-ADObject -LDAPFilter '(&(msDS-KeyCredentialLink=*)(adminCount=1))' | Select-Object Name, ObjectClass, DistinguishedName'''
+mitre = ["T1556", "T1098", "T1078.002"]
+
+[[check.detail.references]]
+title = "MITRE ATT&CK T1556: Modify Authentication Process"
+url = "https://attack.mitre.org/techniques/T1556/"
+
+[[check]]
+id = "AD-ACC-014"
+title = "Objects with logonHours or userWorkstations restrictions inventory"
+status = "implemented"
+severity = "info"
+
+[check.detail]
+description = "Inventory of user and computer accounts with logon hours or a sign-in workstation list (userWorkstations). Also lists privileged accounts that have no workstation restriction."
+impact = "Workstation restrictions limit where a stolen privileged credential can be used. Privileged accounts without one can sign in to any computer, including exposed workstations."
+remediation = [
+  "Restrict privileged accounts to the administrative workstations or servers they use.",
+  "Review existing restrictions and remove ones that point at retired computers.",
+]
+verify = "Get-ADUser -Filter * -Properties userWorkstations, logonHours | Where-Object { $_.userWorkstations -or $_.logonHours }"
+mitre = ["T1078.002"]
+
+[[check]]
+id = "AD-ACC-015"
+title = "Orphaned foreign security principals"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Foreign security principals from a domain that is not a trusted domain remain in groups."
+impact = "They point at accounts in domains that were removed or whose trust was deleted. They add noise to access reviews, and if the SID is ever reissued the new account inherits the access."
+remediation = [
+  "Remove the orphaned principals from the groups they are in.",
+  "Delete unused entries from CN=ForeignSecurityPrincipals.",
+]
+verify = "Get-ADObject -SearchBase \"CN=ForeignSecurityPrincipals,$((Get-ADDomain).DistinguishedName)\" -Filter * | Select-Object Name, DistinguishedName"
+mitre = ["T1098"]
+
+[[check]]
+id = "AD-ACC-016"
+title = "Empty custom groups"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Groups created in this domain (RID 1000 or higher) have no members and are not protected by AdminSDHolder (adminCount is not 1). Built-in groups are skipped."
+impact = "Empty groups still hold whatever permissions they were granted. They clutter access reviews, and adding a member to one can silently grant access nobody remembers."
+remediation = [
+  "Check where each group is used: ACLs, GPO user rights and application roles.",
+  "Delete groups that grant nothing, or record why they are kept.",
+]
+frameworks = [
+  "NIST 800-53 AC-2",
+]
+verify = '''
+Get-ADGroup -Filter * -Properties Members, adminCount |
+  Where-Object { -not $_.Members -and $_.adminCount -ne 1 -and [int]$_.SID.Value.Split('-')[-1] -ge 1000 } |
+  Select-Object Name, DistinguishedName'''
+
+[[check]]
+id = "AD-ACC-017"
+title = "Circular group nesting"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Groups are nested in a loop, so a group ends up a member of itself."
+impact = "Circular nesting makes effective membership hard to review and confuses tools and applications."
+remediation = [
+  "Break the loop by removing one of the nested memberships.",
+]
+verify = "Get-ADGroupMember <group> -Recursive"
+
+[[check]]
+id = "AD-ACC-018"
+title = "Large groups (> N members) that grant access to resources"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Groups have more than 500 direct members."
+impact = "Access granted to a very large group reaches everyone in it, and membership of such groups is rarely reviewed. A single mistaken grant exposes a large part of the directory."
+remediation = [
+  "Use smaller groups scoped to a role or team when granting access.",
+  "Replace broad groups on resource permissions with the specific groups that need access.",
+]
+verify = "Get-ADGroup -Filter * -Properties Member | Where-Object { $_.Member.Count -gt 500 } | Select-Object Name, @{n='Members';e={$_.Member.Count}}"
+mitre = ["T1069.002"]

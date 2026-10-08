@@ -1,0 +1,596 @@
+# EN-APP: Applications and service principals
+
+area = "EN-APP"
+
+[[check]]
+id = "EN-APP-001"
+title = "Users can consent to apps (user consent settings)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Users can consent to applications from any publisher for any delegated permission that does not require admin consent. The legacy user consent policy is assigned in the authorization policy."
+impact = "Any user can be tricked into granting an attacker's application access to their mail, files and profile, and the access continues after a password reset because it relies on the app's tokens."
+attack = [
+  "Registers a multi-tenant application with a convincing name and requests mail and file permissions.",
+  "Sends users a link to the consent prompt.",
+  "Uses the granted delegated permissions to read and send mail or download files through Microsoft Graph.",
+]
+remediation = [
+  "In the Microsoft Entra admin center, go to Identity > Applications > Enterprise applications > Consent and permissions > User consent settings.",
+  "Select Do not allow user consent, or Allow user consent for apps from verified publishers, for selected permissions, and classify only low-risk permissions.",
+  "Turn on the admin consent workflow so users can request the apps they need.",
+]
+verify = "(Get-MgPolicyAuthorizationPolicy).DefaultUserRolePermissions.PermissionGrantPoliciesAssigned"
+frameworks = ["CIS Microsoft 365 5.1.5.1", "Microsoft Secure Score"]
+cvss = "AV:N/AC:L/PR:N/UI:R/S:U/C:H/I:L/A:N"
+mitre = ["T1550", "T1528", "T1566.002"]
+
+[[check.detail.references]]
+title = "Configure how users consent to applications"
+url = "https://learn.microsoft.com/entra/identity/enterprise-apps/configure-user-consent"
+
+[[check.detail.references]]
+title = "App consent grant investigation"
+url = "https://learn.microsoft.com/security/operations/incident-response-playbook-app-consent"
+
+[[check]]
+id = "EN-APP-002"
+title = "Admin consent workflow enabled"
+status = "implemented"
+mitre = ["T1528", "T1566.002"]
+severity = "medium"
+
+[check.detail]
+description = "The admin consent workflow is turned off. Users cannot request admin approval for an application that needs consent, and when user consent is restricted they have no supported way to get the apps they need."
+impact = "Without a request path, users look for workarounds and administrators tend to relax consent settings or grant consent without a review, which increases the chance of over-privileged apps."
+remediation = [
+  "In the Microsoft Entra admin center, go to Identity > Applications > Enterprise applications > Consent and permissions > Admin consent settings.",
+  "Set Users can request admin consent to apps they are unable to consent to to Yes and name reviewers who can grant the requested permissions.",
+  "Turn on email notifications and request expiry, and review pending requests regularly.",
+]
+verify = "Get-MgPolicyAdminConsentRequestPolicy | Select-Object IsEnabled, NotifyReviewers, RequestDurationInDays"
+frameworks = ["CIS Microsoft 365 5.1.5.2"]
+cvss = "AV:N/AC:H/PR:N/UI:R/S:U/C:L/I:L/A:N"
+
+[[check.detail.references]]
+title = "Configure the admin consent workflow"
+url = "https://learn.microsoft.com/entra/identity/enterprise-apps/configure-admin-consent-workflow"
+
+[[check]]
+id = "EN-APP-003"
+title = "Apps with high-risk delegated permissions (Mail.ReadWrite, Files.ReadWrite.All, etc.) granted tenant-wide"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "One or more applications have tenant-wide delegated permission grants (admin consent for all users) that include high-risk scopes such as Mail.ReadWrite, Mail.Send, Files.ReadWrite.All, Sites.ReadWrite.All, Directory.ReadWrite.All, RoleManagement.ReadWrite.Directory, Application.ReadWrite.All, AppRoleAssignment.ReadWrite.All, User.ReadWrite.All, Group.ReadWrite.All, full_access_as_user or EWS.AccessAsUser.All."
+impact = "Any user who signs in to the application gives it these permissions on their behalf without a consent prompt, so a compromised or malicious app can read and change mail, files or directory objects for every user, limited only by each user's own access."
+attack = [
+  "Takes control of the application, for example by stealing its secret or compromising its publisher.",
+  "Obtains delegated tokens for users who sign in to the app.",
+  "Reads or sends mail, changes files or modifies directory objects through Microsoft Graph or Exchange.",
+]
+remediation = [
+  "In the Microsoft Entra admin center, go to Identity > Applications > Enterprise applications, open each reported app and review Permissions > Admin consent.",
+  "Revoke scopes the app does not need, or remove the grant and the app if it is not used.",
+  "Prefer narrower scopes such as Mail.Read or Files.Read, or user-level consent limited to the people who need the app.",
+]
+verify = "Get-MgOauth2PermissionGrant -Filter \"consentType eq 'AllPrincipals'\" -All | Select-Object ClientId, ResourceId, Scope"
+cvss = "AV:N/AC:H/PR:N/UI:R/S:U/C:H/I:H/A:N"
+mitre = ["T1550", "T1528"]
+
+[[check.detail.references]]
+title = "Review permissions granted to enterprise applications"
+url = "https://learn.microsoft.com/entra/identity/enterprise-apps/manage-application-permissions"
+
+[[check.detail.references]]
+title = "Grant tenant-wide admin consent to an application"
+url = "https://learn.microsoft.com/entra/identity/enterprise-apps/grant-admin-consent"
+
+[[check]]
+id = "EN-APP-004"
+title = "Apps with high-risk application permissions (RoleManagement.ReadWrite.Directory, AppRoleAssignment.ReadWrite.All, Directory.ReadWrite.All, Application.ReadWrite.All)"
+status = "implemented"
+severity = "critical"
+
+[check.detail]
+description = "One or more applications hold high-risk application permissions on Microsoft Graph or Exchange Online, such as RoleManagement.ReadWrite.Directory, AppRoleAssignment.ReadWrite.All, Application.ReadWrite.All, Directory.ReadWrite.All, User.ReadWrite.All, Group.ReadWrite.All, Mail.ReadWrite, Mail.Send, Files.ReadWrite.All, Sites.FullControl.All, full_access_as_app, UserAuthenticationMethod.ReadWrite.All or Policy.ReadWrite.ConditionalAccess."
+impact = "Application permissions work without a signed-in user and across the whole tenant. Several of them allow the app to grant itself Global Administrator or any other permission, so whoever controls the app's credentials controls the tenant or all of its mail and files."
+attack = [
+  "Obtains a secret or certificate of the application, or adds one through an owner or an application administrator role.",
+  "Requests an app-only token with the client credentials flow.",
+  "Assigns itself a privileged role or further permissions, or reads and sends mail and files for every user.",
+]
+remediation = [
+  "In the Microsoft Entra admin center, go to Identity > Applications > Enterprise applications, open each reported app and review Permissions under Admin consent.",
+  "Remove permissions the workload does not need and replace them with narrower ones, for example Sites.Selected or Exchange application RBAC scoped to specific mailboxes.",
+  "Protect the remaining apps: certificate credentials only, no non-admin owners, app instance property lock, and monitoring of their sign-ins and credential changes.",
+]
+verify = "Get-MgServicePrincipalAppRoleAssignment -ServicePrincipalId <servicePrincipalId> | Select-Object ResourceDisplayName, AppRoleId"
+cvss = "AV:N/AC:H/PR:N/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1098", "T1550", "T1528"]
+
+[[check.detail.references]]
+title = "Review permissions granted to enterprise applications"
+url = "https://learn.microsoft.com/entra/identity/enterprise-apps/manage-application-permissions"
+
+[[check.detail.references]]
+title = "Security best practices for application properties in Microsoft Entra ID"
+url = "https://learn.microsoft.com/entra/identity-platform/security-best-practices-for-app-registration"
+
+[[check]]
+id = "EN-APP-005"
+title = "Service principals with privileged directory roles"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "One or more service principals hold privileged directory roles, such as Global Administrator, Privileged Role Administrator or Application Administrator."
+impact = "The roles apply whenever the service principal authenticates, with no MFA or PIM activation, so anyone who obtains or adds a credential for it gains those administrative rights."
+attack = [
+  "Finds or adds a credential for the service principal.",
+  "Authenticates with the client credentials flow.",
+  "Uses the privileged role to create admins, add credentials to other apps or change security settings.",
+]
+remediation = [
+  "In the Microsoft Entra admin center, go to Identity > Roles & admins, open each privileged role and filter assignments by service principals.",
+  "Remove the role, or replace it with the specific Microsoft Graph application permissions the workload needs.",
+  "For any that must remain, use certificate credentials, remove owners and monitor the service principal's sign-ins.",
+]
+verify = "Get-MgRoleManagementDirectoryRoleAssignment -All -ExpandProperty Principal | Where-Object { $_.Principal.AdditionalProperties['@odata.type'] -eq '#microsoft.graph.servicePrincipal' }"
+cvss = "AV:N/AC:H/PR:N/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1078.004", "T1098", "T1098.003"]
+
+[[check.detail.references]]
+title = "Privileged roles and permissions in Microsoft Entra ID"
+url = "https://learn.microsoft.com/entra/identity/role-based-access-control/privileged-roles-permissions"
+
+[[check]]
+id = "EN-APP-006"
+title = "Applications with expired or soon-expiring secrets and certificates"
+status = "implemented"
+mitre = ["T1098.001"]
+severity = "low"
+
+[check.detail]
+description = "One or more app registrations have client secrets or certificates that have expired or expire within 30 days."
+impact = "Expired credentials break the integrations that use them. Stale credentials left on an app also add clutter that hides credentials an attacker may have added."
+remediation = [
+  "In the Microsoft Entra admin center, go to Identity > Applications > App registrations > (app) > Certificates & secrets.",
+  "Add a replacement credential before expiry and update the workload, preferring a certificate or federated credential.",
+  "Delete expired credentials once the workload uses the new one.",
+]
+verify = "Get-MgApplication -All -Property displayName,passwordCredentials,keyCredentials | Select-Object DisplayName, @{n='Secrets';e={$_.PasswordCredentials.EndDateTime}}, @{n='Certs';e={$_.KeyCredentials.EndDateTime}}"
+
+[[check.detail.references]]
+title = "Security best practices for application properties in Microsoft Entra ID"
+url = "https://learn.microsoft.com/entra/identity-platform/security-best-practices-for-app-registration"
+
+[[check]]
+id = "EN-APP-007"
+title = "Applications with long-lived secrets (> 1 year)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "One or more app registrations have client secrets with a validity period longer than one year."
+impact = "A leaked long-lived secret gives access to the application for years. Secrets are often copied into scripts, pipelines and configuration files, so the chance of a leak grows with the lifetime."
+attack = [
+  "Finds the secret in source code, a pipeline variable, a configuration file or a backup.",
+  "Authenticates as the application with the client credentials flow.",
+  "Uses the application's permissions for as long as the secret stays valid.",
+]
+remediation = [
+  "In the Microsoft Entra admin center, go to Identity > Applications > App registrations > (app) > Certificates & secrets and review the expiry of each secret.",
+  "Replace long-lived secrets with certificates, managed identities or federated credentials, or with secrets valid for one year or less.",
+  "Enforce a maximum lifetime with an application management policy (Microsoft Entra Workload ID).",
+]
+verify = "Get-MgApplication -All -Property displayName,passwordCredentials | Select-Object DisplayName, @{n='Secrets';e={$_.PasswordCredentials | Select-Object StartDateTime, EndDateTime}}"
+cvss = "AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:L/A:N"
+mitre = ["T1552", "T1078.004", "T1098.001"]
+
+[[check.detail.references]]
+title = "Security best practices for application properties in Microsoft Entra ID"
+url = "https://learn.microsoft.com/entra/identity-platform/security-best-practices-for-app-registration"
+
+[[check]]
+id = "EN-APP-008"
+title = "Applications using client secrets instead of certificates or federated credentials"
+status = "implemented"
+mitre = ["T1098.001"]
+severity = "low"
+
+[check.detail]
+description = "One or more app registrations authenticate with client secrets instead of certificates, managed identities or federated identity credentials."
+impact = "A client secret is a shared password that is easy to copy and leak. Certificates and federated credentials are harder to steal and reuse."
+remediation = [
+  "In the Microsoft Entra admin center, go to Identity > Applications > App registrations > (app) > Certificates & secrets.",
+  "Add a certificate or a federated credential (for example for GitHub Actions or Kubernetes), or move Azure-hosted workloads to a managed identity.",
+  "Delete the client secret once the workload no longer uses it.",
+]
+verify = "Get-MgApplication -All -Property displayName,passwordCredentials | Where-Object { $_.PasswordCredentials.Count -gt 0 } | Select-Object DisplayName"
+
+[[check.detail.references]]
+title = "Workload identity federation"
+url = "https://learn.microsoft.com/entra/workload-id/workload-identity-federation"
+
+[[check.detail.references]]
+title = "Application credentials for the Microsoft identity platform"
+url = "https://learn.microsoft.com/entra/identity-platform/certificate-credentials"
+
+[[check]]
+id = "EN-APP-009"
+title = "Owners of privileged applications (non-admin owners can escalate)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "One or more privileged applications, holding privileged directory roles or high-risk application permissions, have owners. An owner of an application or service principal can add secrets and certificates to it."
+impact = "An owner can become the application at any time by adding a credential, so the owner account is effectively as privileged as the app, often without being treated as an admin."
+attack = [
+  "Compromises a user who owns a privileged application.",
+  "Adds a new client secret to the app registration or service principal.",
+  "Authenticates as the application and uses its roles or permissions.",
+]
+remediation = [
+  "In the Microsoft Entra admin center, go to Identity > Applications > App registrations and Enterprise applications, open each reported app and review Owners.",
+  "Remove owners from privileged apps and let only admins with an application management role manage their credentials.",
+  "Turn on app instance property lock for credentials on these apps.",
+]
+verify = "Get-MgServicePrincipalOwner -ServicePrincipalId <servicePrincipalId>; Get-MgApplicationOwner -ApplicationId <applicationObjectId>"
+cvss = "AV:N/AC:H/PR:L/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1098", "T1078.004"]
+
+[[check.detail.references]]
+title = "Security best practices for application properties in Microsoft Entra ID"
+url = "https://learn.microsoft.com/entra/identity-platform/security-best-practices-for-app-registration"
+
+[[check]]
+id = "EN-APP-010"
+title = "Multi-tenant apps from unverified publishers with consent"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "One or more multi-tenant applications published by other organizations, without a verified publisher, hold tenant-wide delegated grants or application permissions in this tenant."
+impact = "The identity of the publisher of these apps has not been verified by Microsoft, and they can access data in this tenant. Unverified apps are a common vehicle for consent phishing."
+attack = [
+  "Publishes an unverified multi-tenant app that imitates a known service.",
+  "Obtains consent in the tenant through a user or an administrator.",
+  "Uses the granted permissions from its own tenant to read data.",
+]
+remediation = [
+  "In the Microsoft Entra admin center, go to Identity > Applications > Enterprise applications, filter on Application type: All applications and review the publisher and permissions of each reported app.",
+  "Confirm with the business owner that the app is known and needed, and revoke permissions or delete the service principal if not.",
+  "Restrict user consent to apps from verified publishers.",
+]
+verify = "Get-MgServicePrincipal -All -Property displayName,appOwnerOrganizationId,verifiedPublisher | Select-Object DisplayName, AppOwnerOrganizationId, @{n='Publisher';e={$_.VerifiedPublisher.DisplayName}}"
+cvss = "AV:N/AC:H/PR:N/UI:R/S:U/C:H/I:L/A:N"
+mitre = ["T1550", "T1528"]
+
+[[check.detail.references]]
+title = "Publisher verification overview"
+url = "https://learn.microsoft.com/entra/identity-platform/publisher-verification-overview"
+
+[[check.detail.references]]
+title = "App consent grant investigation"
+url = "https://learn.microsoft.com/security/operations/incident-response-playbook-app-consent"
+
+[[check]]
+id = "EN-APP-011"
+title = "Apps with redirect URIs to unregistered/wildcard/localhost/http domains (takeover risk)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "One or more app registrations have redirect URIs that contain wildcards or use plain http on a host other than localhost."
+impact = "Authorization codes and tokens are sent to the redirect URI. A wildcard or http URI can let an attacker who controls a matching host, or who can intercept traffic, receive users' codes or tokens for the app."
+attack = [
+  "Gains control of a host that matches the wildcard, or a network position on the http path.",
+  "Sends users a sign-in link for the app with that redirect URI.",
+  "Captures the authorization code or token and uses it to access data as the user.",
+]
+remediation = [
+  "In the Microsoft Entra admin center, go to Identity > Applications > App registrations > (app) > Authentication and review the redirect URIs.",
+  "Replace wildcard URIs with exact URIs and change http URIs to https.",
+  "Remove redirect URIs for hosts or domains the organization no longer owns.",
+]
+verify = "Get-MgApplication -All -Property displayName,web,spa,publicClient | Select-Object DisplayName, @{n='Web';e={$_.Web.RedirectUris}}, @{n='Spa';e={$_.Spa.RedirectUris}}"
+cvss = "AV:N/AC:H/PR:N/UI:R/S:U/C:H/I:L/A:N"
+mitre = ["T1550"]
+
+[[check.detail.references]]
+title = "Redirect URI configuration for Microsoft Entra applications"
+url = "https://learn.microsoft.com/entra/identity-platform/reply-url"
+
+[[check]]
+id = "EN-APP-012"
+title = "Unused apps and service principals (no sign-in)"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "An enabled service principal of an app registered in this tenant was created more than 90 days ago and has no sign-in in the last 90 days, from the service principal sign-in activity report."
+impact = "Unused apps keep their credentials and permissions; nobody notices when an attacker adds a secret to one and starts using it."
+remediation = [
+  "Confirm with the owner and delete the app registration, or disable the service principal.",
+  "Remove its credentials and permissions if it must stay.",
+]
+verify = "Invoke-MgGraphRequest GET beta/reports/servicePrincipalSignInActivities"
+mitre = ["T1098.001", "T1078.004"]
+
+[[check.detail.references]]
+title = "Service principal sign-in activity"
+url = "https://learn.microsoft.com/graph/api/resources/serviceprincipalsigninactivity"
+
+[[check]]
+id = "EN-APP-013"
+title = "First-party Microsoft service principals with added credentials (backdoor indicator)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "One or more service principals of Microsoft first-party applications have client secrets or certificates that were added in this tenant. Microsoft apps do not normally need credentials added by the customer."
+impact = "Credentials on a first-party service principal let someone authenticate as a trusted Microsoft app with its permissions, which is a known persistence technique that is easy to miss in reviews."
+attack = [
+  "Gains a role that can manage service principals, such as Application Administrator.",
+  "Adds a secret or certificate to a Microsoft first-party service principal with useful permissions.",
+  "Authenticates as that service principal later to regain access to the tenant.",
+]
+remediation = [
+  "In the Microsoft Entra admin center, go to Identity > Applications > Enterprise applications and open each reported service principal.",
+  "Remove the credentials (service principal credentials are not shown in the portal; use Remove-MgServicePrincipalPassword or Remove-MgServicePrincipalKey) after confirming no documented scenario needs them.",
+  "Search the audit logs for the Add service principal credentials activity to find who added them and when, and treat unexplained ones as an incident.",
+]
+verify = "Get-MgServicePrincipal -All -Property displayName,appOwnerOrganizationId,passwordCredentials,keyCredentials | Where-Object { $_.AppOwnerOrganizationId -eq 'f8cdef31-a31e-4b4a-93e4-5f571e91255a' -and ($_.PasswordCredentials.Count -gt 0 -or $_.KeyCredentials.Count -gt 0) }"
+cvss = "AV:N/AC:H/PR:H/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1098", "T1078.004", "T1098.001"]
+
+[[check.detail.references]]
+title = "Security best practices for application properties in Microsoft Entra ID"
+url = "https://learn.microsoft.com/entra/identity-platform/security-best-practices-for-app-registration"
+
+[[check]]
+id = "EN-APP-014"
+title = "Federated identity credentials inventory (GitHub, Kubernetes subjects too broad)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "A federated identity credential trusts an issuer that is not a well-known identity provider, has a wildcard in its subject, or lets GitHub Actions runs for any pull request get a token."
+impact = "Whoever can make the issuer produce a token with a matching subject, such as anyone opening a pull request from a fork, can sign in as the app without a secret."
+remediation = [
+  "Narrow the subject to a protected branch or environment (repo:org/repo:environment:prod).",
+  "Remove credentials for issuers that are not yours.",
+]
+verify = "Get-MgApplicationFederatedIdentityCredential -ApplicationId <id>"
+mitre = ["T1078.004", "T1528"]
+
+[[check.detail.references]]
+title = "Workload identity federation"
+url = "https://learn.microsoft.com/entra/workload-id/workload-identity-federation"
+
+[[check]]
+id = "EN-APP-015"
+title = "Managed identities with privileged roles"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "One or more managed identities hold privileged directory roles or high-risk application permissions."
+impact = "Anyone who can run code on the Azure resource that owns the managed identity, such as a VM, function or automation account, can request tokens for it and use those privileges in Entra ID."
+attack = [
+  "Gains code execution or contributor access on the Azure resource that has the managed identity.",
+  "Requests a token for Microsoft Graph from the resource's managed identity endpoint.",
+  "Uses the identity's roles or permissions to change the directory or read data.",
+]
+remediation = [
+  "In the Microsoft Entra admin center, go to Identity > Applications > Enterprise applications, filter Application type: Managed Identities and review each reported identity's roles and permissions.",
+  "Remove privileges the workload does not need, or move the workload to a narrower permission set.",
+  "Restrict who can manage or run code on the Azure resources that hold these identities, and treat those resources as privileged.",
+]
+verify = "Get-MgServicePrincipal -Filter \"servicePrincipalType eq 'ManagedIdentity'\" -All | ForEach-Object { Get-MgServicePrincipalAppRoleAssignment -ServicePrincipalId $_.Id }"
+cvss = "AV:N/AC:H/PR:L/UI:N/S:C/C:H/I:H/A:H"
+mitre = ["T1078.004", "T1550", "T1098.003"]
+
+[[check.detail.references]]
+title = "Managed identities for Azure resources"
+url = "https://learn.microsoft.com/entra/identity/managed-identities-azure-resources/overview"
+
+[[check]]
+id = "EN-APP-016"
+title = "App instance property lock not enabled"
+status = "implemented"
+mitre = ["T1098.001"]
+severity = "low"
+
+[check.detail]
+description = "One or more app registrations do not have app instance property lock enabled. Without it, the service principal of the app in a tenant can have its credentials and other sensitive properties changed."
+impact = "An attacker with rights over the service principal can add credentials to it directly instead of to the app registration, which is less visible and works for multi-tenant apps in other tenants too."
+remediation = [
+  "In the Microsoft Entra admin center, go to Identity > Applications > App registrations > (app) > Authentication > App instance property lock.",
+  "Select Enable property lock and lock all properties, or at least credentials used for signing and verification.",
+]
+verify = "Get-MgApplication -All -Property displayName,servicePrincipalLockConfiguration | Select-Object DisplayName, @{n='Lock';e={$_.ServicePrincipalLockConfiguration.IsEnabled}}"
+
+[[check.detail.references]]
+title = "How to configure app instance property lock in your applications"
+url = "https://learn.microsoft.com/entra/identity-platform/howto-configure-app-instance-property-locks"
+
+[[check]]
+id = "EN-APP-017"
+title = "Apps allowing implicit grant flows"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "One or more app registrations allow access tokens to be issued through the OAuth 2.0 implicit grant flow."
+impact = "With implicit grant, access tokens are returned in the URL fragment, where they can leak through browser history, logs or malicious scripts. Microsoft recommends the authorization code flow with PKCE instead."
+attack = [
+  "Sends a user a crafted sign-in link that requests a token through the implicit flow.",
+  "Captures the access token from the redirect, for example through a script on the page or a log.",
+  "Calls APIs as the user with the stolen token.",
+]
+remediation = [
+  "In the Microsoft Entra admin center, go to Identity > Applications > App registrations > (app) > Authentication.",
+  "Under Implicit grant and hybrid flows, clear Access tokens (used for implicit flows).",
+  "Move the application to the authorization code flow with PKCE.",
+]
+verify = "Get-MgApplication -All -Property displayName,web | Where-Object { $_.Web.ImplicitGrantSettings.EnableAccessTokenIssuance } | Select-Object DisplayName"
+cvss = "AV:N/AC:H/PR:N/UI:R/S:U/C:H/I:N/A:N"
+mitre = ["T1550"]
+
+[[check.detail.references]]
+title = "Microsoft identity platform and OAuth 2.0 implicit grant flow"
+url = "https://learn.microsoft.com/entra/identity-platform/v2-oauth2-implicit-grant-flow"
+
+[[check]]
+id = "EN-APP-018"
+title = "Apps with \"assignment required\" off and broad permissions"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "An enabled service principal does not require user assignment (appRoleAssignmentRequired is false) and holds high-risk permissions: tenant-wide delegated consent such as Mail.ReadWrite or Directory.ReadWrite.All, or application permissions of the same weight."
+impact = "Every user in the tenant, including guests and compromised accounts, can sign in to the app and act through its broad permissions, so the app's reach is the whole directory instead of a named group."
+remediation = [
+  "Turn on \"Assignment required\" on the enterprise app and assign only the users or groups that need it.",
+  "Reduce the consented permissions to what the app actually uses.",
+]
+verify = "Get-MgServicePrincipal -ServicePrincipalId <id> | Select-Object DisplayName, AppRoleAssignmentRequired"
+mitre = ["T1528", "T1078.004"]
+
+[[check.detail.references]]
+title = "Configure user assignment for an app"
+url = "https://learn.microsoft.com/entra/identity/enterprise-apps/assign-user-or-group-access-portal"
+
+[[check]]
+id = "EN-APP-019"
+title = "Illicit consent indicators (recent consents to unknown apps)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "The audit log shows consents in the last 30 days to apps that neither have a verified publisher nor belong to this tenant."
+impact = "Consent phishing gets an attacker's app delegated access to mail and files without a password; consents to unverified apps are the usual sign of it."
+remediation = [
+  "Review each consent; revoke the grant and disable the app if it is not known.",
+  "Restrict user consent to verified publishers and low-impact permissions, and turn on the admin consent workflow.",
+]
+verify = "Search the Entra audit log for activity \"Consent to application\" in the last 30 days."
+mitre = ["T1528", "T1566.002"]
+
+[[check.detail.references]]
+title = "Investigate and remediate risky OAuth apps"
+url = "https://learn.microsoft.com/defender-cloud-apps/investigate-risky-oauth"
+
+[[check.detail.references]]
+title = "Detect and remediate illicit consent grants"
+url = "https://learn.microsoft.com/microsoft-365/security/office-365-security/detect-and-remediate-illicit-consent-grants"
+
+[[check]]
+id = "EN-APP-020"
+title = "Enterprise apps with SAML signing certificates expiring"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "One or more enterprise applications that use SAML single sign-on have a signing certificate that has expired or expires within 60 days."
+impact = "When the signing certificate expires, users can no longer sign in to the application through single sign-on, which causes an outage for that application."
+remediation = [
+  "In the Microsoft Entra admin center, go to Identity > Applications > Enterprise applications > (app) > Single sign-on > SAML Certificates.",
+  "Create a new certificate, upload it to the application or service provider, and make it active once the provider accepts it.",
+  "Add notification email addresses so the owners get expiry warnings.",
+]
+verify = "Get-MgServicePrincipal -Filter \"preferredSingleSignOnMode eq 'saml'\" -All -Property displayName,keyCredentials | Select-Object DisplayName, @{n='Expiry';e={$_.KeyCredentials.EndDateTime}}"
+cvss = "AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:L"
+
+[[check.detail.references]]
+title = "Tutorial: Manage federation certificates"
+url = "https://learn.microsoft.com/entra/identity/enterprise-apps/tutorial-manage-certificates-for-federated-single-sign-on"
+
+[[check]]
+id = "EN-APP-021"
+title = "App proxy apps without pre-authentication"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "An App Proxy application is published with passthrough instead of Microsoft Entra pre-authentication."
+impact = "The internal application is reachable from the internet without sign-in, MFA or Conditional Access."
+remediation = [
+  "Switch the application to Microsoft Entra ID pre-authentication, or remove the publication.",
+]
+verify = "Entra admin center > Enterprise applications > App Proxy > Pre Authentication"
+
+[[check.detail.references]]
+title = "App Proxy security"
+url = "https://learn.microsoft.com/entra/identity/app-proxy/application-proxy-security"
+
+[[check]]
+id = "EN-APP-022"
+title = "Apps with secrets in notes or description (inventory)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "An app registration's notes or description mention a password, secret, API key or token. The check looks for those words; it does not read or report the text."
+impact = "App registrations are readable by every member of the tenant by default, so a credential written there is readable by anyone who signs in."
+remediation = [
+  "Remove the credential from the notes or description and rotate it.",
+  "Keep credentials in Key Vault and refer to the vault entry instead.",
+]
+verify = "Get-MgApplication -All -Property DisplayName,Notes,Description | Where-Object { $_.Notes -or $_.Description }"
+mitre = ["T1552"]
+
+[[check]]
+id = "EN-APP-023"
+title = "Workload identity risk detections"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "A service principal is marked at risk by Identity Protection for workload identities."
+impact = "The app's credentials may be leaked or used in an attack; it keeps its permissions until someone acts."
+remediation = [
+  "Investigate the detections, rotate the app's credentials and confirm or dismiss the risk.",
+  "Add a Conditional Access policy that blocks risky workload identities.",
+]
+verify = "Get-MgRiskyServicePrincipal -Filter \"riskState eq 'atRisk'\""
+mitre = ["T1078.004", "T1528"]
+
+[[check.detail.references]]
+title = "Securing workload identities"
+url = "https://learn.microsoft.com/entra/id-protection/concept-workload-identity-risk"
+
+[[check]]
+id = "EN-APP-024"
+title = "Microsoft Graph PowerShell / CLI apps consented with broad scopes"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Microsoft Graph PowerShell (Microsoft Graph Command Line Tools), Azure PowerShell or Azure CLI has a tenant-wide delegated permission grant (admin consent for all users) that includes write scopes."
+impact = "Every user in the tenant can sign in to these public tools without a consent prompt and use the write scopes up to their own directory permissions, which makes scripted changes and data access easy from any device with a stolen session."
+attack = [
+  "Compromises an ordinary user's credentials or session.",
+  "Signs in with Microsoft Graph PowerShell or Azure CLI, which already have consent for the tenant.",
+  "Uses the write scopes to change objects the user can manage or to read and modify data at scale.",
+]
+remediation = [
+  "In the Microsoft Entra admin center, go to Identity > Applications > Enterprise applications, open Microsoft Graph Command Line Tools, Azure PowerShell and Azure CLI and review Permissions > Admin consent.",
+  "Revoke the tenant-wide grant and let administrators consent for themselves only, or keep only read scopes tenant-wide.",
+  "Set Assignment required to Yes on these service principals and assign only the admins who use the tools.",
+]
+verify = "Get-MgServicePrincipal -Filter \"appId eq '14d82eec-204b-4c2f-b7e8-296a70dab67e'\" | ForEach-Object { Get-MgOauth2PermissionGrant -Filter \"clientId eq '$($_.Id)' and consentType eq 'AllPrincipals'\" } | Select-Object Scope"
+cvss = "AV:N/AC:H/PR:L/UI:N/S:U/C:H/I:H/A:N"
+mitre = ["T1550", "T1078.004", "T1528"]
+
+[[check.detail.references]]
+title = "Review permissions granted to enterprise applications"
+url = "https://learn.microsoft.com/entra/identity/enterprise-apps/manage-application-permissions"
+
+[[check.detail.references]]
+title = "Grant tenant-wide admin consent to an application"
+url = "https://learn.microsoft.com/entra/identity/enterprise-apps/grant-admin-consent"

@@ -1,0 +1,300 @@
+# AD-FND: Forest and domain fundamentals
+
+area = "AD-FND"
+
+[[check]]
+id = "AD-FND-001"
+title = "Forest functional level below 2016"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "The forest functional level is below Windows Server 2016. Several protections only work at higher levels, for example Privileged Access Management with time-bound group membership."
+impact = "Newer security features stay unavailable, and the level shows that old domain controllers may still be supported. It is not exploitable on its own."
+remediation = [
+  "Retire or upgrade every domain controller below Windows Server 2016 in every domain.",
+  "Raise the domain functional levels, then the forest functional level.",
+]
+verify = "(Get-ADForest).ForestMode"
+
+[[check.detail.references]]
+title = "Active Directory Domain Services functional levels"
+url = "https://learn.microsoft.com/windows-server/identity/ad-ds/active-directory-functional-levels"
+
+[[check]]
+id = "AD-FND-002"
+title = "Domain functional level below 2016"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "The domain functional level is below Windows Server 2016. At Windows Server 2012 R2 and above, Protected Users gets its domain controller side protections; 2016 adds automatic NTLM secret rolling for smart-card-only accounts."
+impact = "Domain-level protections such as Protected Users restrictions on domain controllers and authentication policies may not apply."
+remediation = [
+  "Upgrade or retire domain controllers below Windows Server 2016.",
+  "Raise the domain functional level.",
+]
+verify = "(Get-ADDomain).DomainMode"
+
+[[check.detail.references]]
+title = "Active Directory Domain Services functional levels"
+url = "https://learn.microsoft.com/windows-server/identity/ad-ds/active-directory-functional-levels"
+
+[[check]]
+id = "AD-FND-003"
+title = "Domains or trusts still running deprecated DC OSes (2008 R2, 2012, 2012 R2)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "Domain controllers run Windows Server 2012 R2 or older (including RODCs)."
+impact = "These versions no longer receive security updates. Vulnerabilities found since end of support stay open on the servers that hold every credential in the domain."
+remediation = [
+  "Replace the domain controllers with ones running a supported Windows Server version.",
+  "Demote the old domain controllers once the new ones replicate.",
+]
+frameworks = [
+  "NIST 800-53 SI-2",
+]
+verify = "Get-ADDomainController -Filter * | Select-Object HostName, OperatingSystem"
+cvss = "AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:H"
+mitre = ["T1210"]
+
+[[check]]
+id = "AD-FND-004"
+title = "Schema version and schema extensions inventory (Exchange, LAPS, SCCM, third party)"
+status = "implemented"
+severity = "info"
+
+[check.detail]
+description = "Inventory of the schema version and the products that extended the schema (Exchange, LAPS, Configuration Manager, Skype for Business, and other extensions)."
+impact = "Schema extensions show which products have, or had, deep integration with the directory. Leftovers from removed products often keep permissions and accounts."
+remediation = [
+  "Confirm each product listed is still in use.",
+  "Review the accounts and permissions left by products that were removed.",
+]
+verify = "Get-ADObject (Get-ADRootDSE).schemaNamingContext -Properties objectVersion"
+mitre = ["T1087.002"]
+
+[[check]]
+id = "AD-FND-005"
+title = "FSMO role placement and holders reachable"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Inventory of the operations master (FSMO) role holders: PDC emulator, RID master, infrastructure master, schema master and domain naming master. Fails if a role has no holder recorded."
+impact = "Operations that need a role (password changes reaching the PDC, new RID pools, schema updates) fail when its holder is missing."
+remediation = [
+  "Make sure each role is held by a healthy, well-protected domain controller.",
+  "Transfer roles off servers that are being retired.",
+]
+verify = "netdom query fsmo"
+mitre = ["T1087.002"]
+
+[[check]]
+id = "AD-FND-006"
+title = "FSMO roles held by a DC that is offline or decommissioned (orphaned metadata)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "An operations master role is held by a domain controller that is no longer present in the forest's sites (deleted or not cleaned up)."
+impact = "The role cannot be used until it is seized, which blocks new RID pools, schema updates or domain changes, and points to incomplete metadata cleanup."
+remediation = [
+  "Seize the role to a healthy domain controller with Move-ADDirectoryServerOperationMasterRole -Force.",
+  "Clean up the metadata of the removed domain controller.",
+]
+verify = "netdom query fsmo"
+mitre = ["T1490"]
+
+[[check]]
+id = "AD-FND-007"
+title = "Tombstone lifetime below 180 days"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "The tombstone lifetime is below 180 days. It sets how long deleted objects are kept and how old a backup can be and still be restored."
+impact = "Backups older than the tombstone lifetime cannot be used for forest recovery, which shortens the window to recover after a compromise that went unnoticed."
+remediation = [
+  "Set tombstoneLifetime to 180 on CN=Directory Service,CN=Windows NT,CN=Services in the configuration partition.",
+  "Align backup retention with the new value.",
+]
+verify = "(Get-ADObject \"CN=Directory Service,CN=Windows NT,CN=Services,$((Get-ADRootDSE).configurationNamingContext)\" -Properties tombstoneLifetime).tombstoneLifetime"
+
+[[check]]
+id = "AD-FND-008"
+title = "AD Recycle Bin not enabled"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "The Active Directory Recycle Bin optional feature is not enabled. Without it, deleted objects lose most of their attributes and group memberships."
+impact = "Accidentally or maliciously deleted users, groups or OUs cannot be restored with their memberships and attributes without an authoritative restore from backup."
+remediation = [
+  "Enable the Recycle Bin: Enable-ADOptionalFeature 'Recycle Bin Feature' -Scope ForestOrConfigurationSet -Target <forest>. This cannot be undone and needs the Windows Server 2008 R2 forest functional level.",
+]
+verify = "Get-ADOptionalFeature -Filter 'Name -like \"Recycle*\"' | Select-Object Name, EnabledScopes"
+
+[[check]]
+id = "AD-FND-009"
+title = "Deleted-object lifetime configuration"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "The deleted-object lifetime (msDS-DeletedObjectLifetime, or the tombstone lifetime when it is not set) is below 180 days."
+impact = "Deleted objects can be restored with their attributes only within this window. A short window limits recovery after an accidental or malicious deletion."
+remediation = [
+  "Set msDS-DeletedObjectLifetime (and tombstoneLifetime) to at least 180 days.",
+]
+verify = "Get-ADObject \"CN=Directory Service,CN=Windows NT,CN=Services,$((Get-ADRootDSE).configurationNamingContext)\" -Properties msDS-DeletedObjectLifetime, tombstoneLifetime"
+mitre = ["T1490"]
+
+[[check]]
+id = "AD-FND-010"
+title = "Optional features inventory (Privileged Access Management feature)"
+status = "implemented"
+severity = "info"
+
+[check.detail]
+description = "Inventory of the forest's enabled optional features, including the Recycle Bin and the Privileged Access Management feature."
+impact = "The Privileged Access Management feature allows time-bound group membership, which limits standing privilege."
+remediation = [
+  "Consider enabling the Privileged Access Management feature for time-bound admin membership (cannot be turned off).",
+]
+verify = "Get-ADOptionalFeature -Filter * | Select-Object Name, EnabledScopes"
+mitre = ["T1078.002"]
+
+[[check]]
+id = "AD-FND-011"
+title = "dSHeuristics anomalies (anonymous LDAP enabled, List Object mode, AdminSDHolder exclusions)"
+status = "implemented"
+severity = "high"
+
+[check.detail]
+description = "The dSHeuristics attribute changes forest-wide security behaviour. The 7th character set to 2 allows anonymous LDAP operations; a non-zero 16th character removes operator groups from AdminSDHolder protection."
+impact = "Anonymous LDAP lets anyone on the network read the directory. Excluding operator groups from AdminSDHolder lets their permissions be changed silently and stay changed."
+remediation = [
+  "Set the 7th character of dSHeuristics back to 0 unless a documented legacy application needs anonymous binds.",
+  "Set the 16th character (dwAdminSDExMask) to 0 so all operator groups stay protected.",
+]
+verify = "(Get-ADObject \"CN=Directory Service,CN=Windows NT,CN=Services,$((Get-ADRootDSE).configurationNamingContext)\" -Properties dSHeuristics).dSHeuristics"
+mitre = ["T1087.002"]
+
+[[check.detail.references]]
+title = "Appendix C: Protected accounts and groups in Active Directory"
+url = "https://learn.microsoft.com/windows-server/identity/ad-ds/plan/security-best-practices/appendix-c--protected-accounts-and-groups-in-active-directory"
+
+[[check]]
+id = "AD-FND-012"
+title = "ms-DS-MachineAccountQuota above 0"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "ms-DS-MachineAccountQuota is above 0, so any authenticated user can create computer accounts in the domain (10 by default)."
+impact = "An attacker with any user account can create a computer account it fully controls. That account is a common building block for resource-based constrained delegation and relay attacks (for example noPac and KrbRelayUp)."
+remediation = [
+  "Set ms-DS-MachineAccountQuota to 0 on the domain head.",
+  "Delegate the right to join computers to a dedicated group on the target OUs.",
+]
+verify = "Get-ADObject (Get-ADDomain).DistinguishedName -Properties ms-DS-MachineAccountQuota"
+mitre = ["T1136.002"]
+
+[[check.detail.references]]
+title = "Default limit to number of workstations a user can join to the domain"
+url = "https://learn.microsoft.com/troubleshoot/windows-server/active-directory/default-workstation-numbers-join-domain"
+
+[[check]]
+id = "AD-FND-013"
+title = "Domain naming: single-label domain names, disjoint namespace"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "The domain has a single-label DNS name, or domain controllers use a DNS suffix different from the domain (disjoint namespace)."
+impact = "Single-label domains are not supported by many Microsoft products, including Entra Connect. Disjoint namespaces need extra SPN and DNS configuration and often break Kerberos for some clients."
+remediation = [
+  "Plan a domain rename or migration for single-label domains.",
+  "Align domain controller DNS suffixes with the domain name, or document the disjoint namespace and its SPNs.",
+]
+verify = "Get-ADDomainController -Filter * | Select-Object HostName, Domain"
+mitre = ["T1557"]
+
+[[check]]
+id = "AD-FND-014"
+title = "UPN suffixes and alternate suffixes inventory"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Inventory of alternate UPN suffixes, and enabled users whose UPN suffix is neither a domain of the forest nor a registered UPN suffix."
+impact = "Users with unregistered suffixes cannot sign in with their UPN reliably and do not sync cleanly to Entra ID."
+remediation = [
+  "Register the suffix in Active Directory Domains and Trusts, or change the users' UPNs.",
+  "Remove UPN suffixes that are no longer used.",
+]
+verify = "Get-ADForest | Select-Object -ExpandProperty UPNSuffixes"
+mitre = ["T1087.002"]
+
+[[check]]
+id = "AD-FND-015"
+title = "Number of domains, sites, DCs and objects (sizing context)"
+status = "implemented"
+severity = "info"
+
+[check.detail]
+description = "Number of domains, sites, domain controllers, users, computers, groups and OUs, for context."
+impact = "The size of the directory sets the scale of the findings and how much effort remediation takes."
+remediation = [
+  "No action. Use the figures to size remediation work.",
+]
+verify = "(Get-ADForest).Domains; (Get-ADForest).Sites; (Get-ADUser -Filter *).Count"
+mitre = ["T1087.002"]
+
+[[check]]
+id = "AD-FND-016"
+title = "Lingering or stale cross-references in the Partitions container"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Cross-reference objects in CN=Partitions are disabled: partitions that were pre-created and never finished, or not removed cleanly."
+impact = "Stale cross-references confuse tools that list the forest's domains, and can block reusing the domain name."
+remediation = [
+  "Delete cross-references for partitions that no longer exist after confirming no domain controller holds them.",
+]
+verify = "Get-ADObject -SearchBase \"CN=Partitions,$((Get-ADRootDSE).configurationNamingContext)\" -LDAPFilter '(&(objectClass=crossRef)(enabled=FALSE))'"
+mitre = ["T1490"]
+
+[[check]]
+id = "AD-FND-017"
+title = "Application partitions inventory and orphaned DNS partitions"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Inventory of application partitions (such as DNS partitions), and those with no replica location left."
+impact = "An application partition no domain controller holds is orphaned: its data cannot be read and its cross-reference should be removed."
+remediation = [
+  "Remove orphaned application partitions with ntdsutil or dnscmd /DeleteDirectoryPartition.",
+]
+verify = "Get-ADObject -SearchBase \"CN=Partitions,$((Get-ADRootDSE).configurationNamingContext)\" -Filter 'objectClass -eq \"crossRef\"' -Properties nCName, msDS-NC-Replica-Locations"
+mitre = ["T1490"]
+
+[[check]]
+id = "AD-FND-018"
+title = "Forest-wide `LDAPAdminLimits` (MaxPageSize, MaxQueryDuration) changed from defaults"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "The forest's LDAP query policy has limits (MaxPageSize, MaxQueryDuration, MaxValRange, MaxResultSetSize, MaxConnections, MaxConnIdleTime) changed from their defaults."
+impact = "Raised limits make the directory easier to exhaust with heavy queries; lowered limits can break applications and collection tools."
+remediation = [
+  "Return the limits to the defaults unless a documented application needs the change.",
+]
+verify = "ntdsutil \"ldap policies\" connections \"connect to server localhost\" q \"show values\" q q"
+mitre = ["T1087.002"]

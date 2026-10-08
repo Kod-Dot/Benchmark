@@ -1,0 +1,273 @@
+# EN-DEV: Devices
+
+area = "EN-DEV"
+
+[[check]]
+id = "EN-DEV-001"
+title = "Who can join devices to Entra ID"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "All users can join devices to Microsoft Entra ID."
+impact = "Any user, or an attacker with any user's credentials, can join a device under their control and obtain a device identity, which may satisfy device-based Conditional Access or be used to request tokens."
+attack = [
+  "Signs in with a stolen user password.",
+  "Joins an attacker-controlled machine to Microsoft Entra ID.",
+  "Uses the device identity to access resources or persist in the tenant.",
+]
+remediation = [
+  "In the Microsoft Entra admin center, go to Identity > Devices > All devices > Device settings.",
+  "Set Users may join devices to Microsoft Entra to Selected and choose a group of device enrollment staff, or None if devices are joined through Windows Autopilot.",
+]
+verify = "(Invoke-MgGraphRequest -Method GET -Uri \"https://graph.microsoft.com/beta/policies/deviceRegistrationPolicy\").azureADJoin"
+cvss = "AV:N/AC:L/PR:L/UI:N/S:U/C:L/I:L/A:N"
+mitre = ["T1098", "T1098.005"]
+
+[[check.detail.references]]
+title = "Manage device identities using the Microsoft Entra admin center"
+url = "https://learn.microsoft.com/entra/identity/devices/manage-device-identities"
+
+[[check]]
+id = "EN-DEV-002"
+title = "Device join requires MFA"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Joining or registering a device does not require multifactor authentication: the device registration policy does not require it, and no enabled Conditional Access policy covers the Register or join devices user action."
+impact = "An attacker with only a user's password can register or join a device, which can be used to obtain long-lived tokens and to meet device conditions in Conditional Access."
+attack = [
+  "Signs in with a stolen password.",
+  "Registers a new device for the user without an MFA prompt.",
+  "Uses the device and its tokens to keep access to the account.",
+]
+remediation = [
+  "In the Microsoft Entra admin center, create a Conditional Access policy for All users with Target resources > User actions > Register or join devices and Grant: Require multifactor authentication.",
+  "Then, under Identity > Devices > All devices > Device settings, set Require Multifactor Authentication to register or join devices with Microsoft Entra to No, as Microsoft recommends when the Conditional Access policy is used.",
+]
+verify = "(Invoke-MgGraphRequest -Method GET -Uri \"https://graph.microsoft.com/beta/policies/deviceRegistrationPolicy\").multiFactorAuthConfiguration"
+cvss = "AV:N/AC:L/PR:L/UI:N/S:U/C:L/I:L/A:N"
+mitre = ["T1098", "T1078.004", "T1098.005"]
+
+[[check.detail.references]]
+title = "Manage device identities using the Microsoft Entra admin center"
+url = "https://learn.microsoft.com/entra/identity/devices/manage-device-identities"
+
+[[check.detail.references]]
+title = "Conditional Access: Target resources"
+url = "https://learn.microsoft.com/entra/identity/conditional-access/concept-conditional-access-cloud-apps"
+
+[[check]]
+id = "EN-DEV-003"
+title = "Max devices per user"
+status = "implemented"
+mitre = ["T1098.005"]
+severity = "low"
+
+[check.detail]
+description = "The maximum number of devices per user is above 20."
+impact = "A compromised account can register many devices before reaching the limit, which makes persistence and cleanup harder."
+remediation = [
+  "In the Microsoft Entra admin center, go to Identity > Devices > All devices > Device settings.",
+  "Set Maximum number of devices per user to 20 or fewer, based on actual need.",
+]
+verify = "(Invoke-MgGraphRequest -Method GET -Uri \"https://graph.microsoft.com/beta/policies/deviceRegistrationPolicy\").userDeviceQuota"
+
+[[check.detail.references]]
+title = "Manage device identities using the Microsoft Entra admin center"
+url = "https://learn.microsoft.com/entra/identity/devices/manage-device-identities"
+
+[[check]]
+id = "EN-DEV-004"
+title = "Additional local administrators on Entra-joined devices"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "The user who joins a device to Microsoft Entra ID is added as a local administrator on that device. The Registering user is added as local administrator on the device during Microsoft Entra join setting is All."
+impact = "Ordinary users get full control of their workstations, so malware running as the user can disable defenses and take credentials stored on the device."
+attack = [
+  "Runs code as the user through phishing or a malicious download.",
+  "Uses the user's local administrator rights to disable security tools and read credentials in memory.",
+]
+remediation = [
+  "In the Microsoft Entra admin center, go to Identity > Devices > All devices > Device settings > Manage Additional local administrators on all Microsoft Entra joined devices.",
+  "Set Registering user is added as local administrator on the device during Microsoft Entra join to None, or to Selected for a small group.",
+  "Deploy devices with Windows Autopilot so the enrolling user is a standard user.",
+]
+verify = "(Invoke-MgGraphRequest -Method GET -Uri \"https://graph.microsoft.com/beta/policies/deviceRegistrationPolicy\").azureADJoin"
+cvss = "AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:N"
+mitre = ["T1078.003"]
+
+[[check.detail.references]]
+title = "How to manage the local administrators group on Microsoft Entra joined devices"
+url = "https://learn.microsoft.com/entra/identity/devices/assign-local-admin"
+
+[[check]]
+id = "EN-DEV-005"
+title = "Stale devices (no activity in 90 days)"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Enabled devices have had no sign-in activity in the last 90 days."
+impact = "Stale device objects clutter the directory and can keep access, BitLocker keys, and group memberships tied to devices that may be lost or out of use."
+remediation = [
+  "Confirm with device owners or Intune that the devices are no longer in use.",
+  "Disable the stale devices, wait for a grace period, then delete them.",
+  "Set up a recurring cleanup process based on the approximate last sign-in date.",
+]
+verify = "Get-MgDevice -All -Property DisplayName,AccountEnabled,ApproximateLastSignInDateTime | Where-Object { $_.AccountEnabled -and $_.ApproximateLastSignInDateTime -lt (Get-Date).AddDays(-90) } | Select-Object DisplayName, ApproximateLastSignInDateTime"
+
+[[check.detail.references]]
+title = "How to manage stale devices in Microsoft Entra ID"
+url = "https://learn.microsoft.com/entra/identity/devices/manage-stale-devices"
+
+[[check]]
+id = "EN-DEV-006"
+title = "Devices without compliance state (if Intune present)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "With Intune licensed, an enabled device has no compliance state."
+impact = "Conditional Access that requires a compliant device treats it as non-compliant at best, and device-based reports miss it."
+remediation = [
+  "Enroll the device in Intune or remove it.",
+  "Assign compliance policies to all devices and mark devices without a policy as non-compliant.",
+]
+verify = "Get-MgDevice -All | Where-Object { $null -eq $_.IsCompliant }"
+
+[[check.detail.references]]
+title = "Device compliance policies"
+url = "https://learn.microsoft.com/mem/intune/protect/device-compliance-get-started"
+
+[[check]]
+id = "EN-DEV-007"
+title = "Hybrid join status and errors"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "A device synced from Active Directory for hybrid join (trust type ServerAd) never completed registration."
+impact = "Pending hybrid devices do not meet \"require hybrid joined device\" in Conditional Access, which leads to exceptions being added for them."
+remediation = [
+  "Check the device's dsregcmd /status and the Entra Connect sync scope.",
+  "Remove stale pending devices.",
+]
+verify = "dsregcmd /status"
+
+[[check.detail.references]]
+title = "Troubleshoot hybrid joined devices"
+url = "https://learn.microsoft.com/entra/identity/devices/troubleshoot-hybrid-join-windows-current"
+
+[[check]]
+id = "EN-DEV-008"
+title = "BitLocker keys stored in Entra (coverage)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "An active Microsoft Entra joined or hybrid joined Windows device has no BitLocker recovery key for its system drive stored in Entra ID. Only which devices have a key is read, never a key."
+impact = "The device is either not encrypted or its key is not escrowed: a lost device is readable, or a locked-out user cannot be recovered."
+remediation = [
+  "Require BitLocker with key escrow to Entra ID through Intune disk encryption policy.",
+]
+verify = "Get-MgInformationProtectionBitlockerRecoveryKey -Filter \"deviceId eq '<id>'\""
+
+[[check.detail.references]]
+title = "BitLocker recovery keys in Entra ID"
+url = "https://learn.microsoft.com/entra/identity/devices/manage-device-identities#view-or-copy-bitlocker-keys"
+
+[[check]]
+id = "EN-DEV-009"
+title = "Users can read BitLocker keys for own devices setting"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "Users can read the BitLocker recovery keys of the devices they own."
+impact = "Anyone who has a user's credentials can get the recovery key and unlock that user's encrypted disk, for example on a stolen laptop."
+attack = [
+  "Steals a laptop and phishes or reuses the owner's password.",
+  "Reads the BitLocker recovery key from the self-service portal and unlocks the disk.",
+]
+remediation = [
+  "In the Microsoft Entra admin center, go to Identity > Devices > All devices > Device settings.",
+  "Set Restrict users from recovering the BitLocker key(s) for their owned devices to Yes, and handle recovery requests through the helpdesk.",
+]
+verify = "(Get-MgPolicyAuthorizationPolicy).DefaultUserRolePermissions | Select-Object AllowedToReadBitlockerKeysForOwnedDevice"
+
+[[check.detail.references]]
+title = "What are the default user permissions in Microsoft Entra ID?"
+url = "https://learn.microsoft.com/entra/fundamentals/users-default-permissions"
+
+[[check.detail.references]]
+title = "Manage device identities using the Microsoft Entra admin center"
+url = "https://learn.microsoft.com/entra/identity/devices/manage-device-identities"
+
+[[check]]
+id = "EN-DEV-010"
+title = "Windows LAPS in Entra enabled and coverage"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "Windows LAPS in Microsoft Entra ID is not enabled in the device settings."
+impact = "Without LAPS, Entra-joined devices typically share the same local administrator password or have none managed, so one compromised device lets an attacker log on to others with the same account."
+attack = [
+  "Gains local administrator on one device.",
+  "Extracts the local administrator password hash.",
+  "Reuses it to sign in to other devices that have the same password.",
+]
+remediation = [
+  "In the Microsoft Entra admin center, go to Identity > Devices > All devices > Device settings and set Enable Microsoft Entra Local Administrator Password Solution (LAPS) to Yes.",
+  "Deploy a Windows LAPS policy through Intune with the backup directory set to Microsoft Entra ID.",
+  "Limit who can read the stored passwords.",
+]
+verify = "(Invoke-MgGraphRequest -Method GET -Uri \"https://graph.microsoft.com/beta/policies/deviceRegistrationPolicy\").localAdminPassword"
+cvss = "AV:A/AC:L/PR:H/UI:N/S:C/C:H/I:H/A:N"
+mitre = ["T1078.003"]
+
+[[check.detail.references]]
+title = "Windows Local Administrator Password Solution in Microsoft Entra ID"
+url = "https://learn.microsoft.com/entra/identity/devices/howto-manage-local-admin-passwords"
+
+[[check]]
+id = "EN-DEV-011"
+title = "Device registration via Workplace join controls"
+status = "implemented"
+severity = "low"
+
+[check.detail]
+description = "The device registration policy lets every user register (workplace join) personal devices."
+impact = "Registered personal devices count as known devices and can be used to satisfy device-based conditions, and an attacker with a password can register a device to persist."
+remediation = [
+  "Limit registration to selected users, and require MFA to register devices.",
+]
+verify = "Invoke-MgGraphRequest GET beta/policies/deviceRegistrationPolicy"
+mitre = ["T1098"]
+
+[[check.detail.references]]
+title = "Configure device settings"
+url = "https://learn.microsoft.com/entra/identity/devices/manage-device-identities"
+
+[[check]]
+id = "EN-DEV-012"
+title = "Non-compliant devices accessing resources (sign-in logs)"
+status = "implemented"
+severity = "medium"
+
+[check.detail]
+description = "A registered device that Intune reports as not compliant signed in successfully, from a sample of successful sign-ins in the last 30 days."
+impact = "Conditional Access is not requiring a compliant device for those apps, so devices that miss updates, encryption or protection reach company data."
+remediation = [
+  "Require a compliant device (or an app protection policy) in Conditional Access for the apps listed.",
+  "Fix or retire the non-compliant devices.",
+]
+verify = "Sign-in logs filtered on device compliance: Not compliant, status Success."
+
+[[check.detail.references]]
+title = "Require device compliance with Conditional Access"
+url = "https://learn.microsoft.com/entra/identity/conditional-access/policy-all-users-device-compliance"
